@@ -71,6 +71,10 @@ struct ConfigData {
     uint32_t PortB_Baud;        // Baudrate Port B, frei waehlbar (Vorbelegung je nach Modus)
     int      PortC_GPS_Enabled; // 0=Aus, 1=An
 
+    // Sound-Speicher 0=Auto, 1=Flash, 2=SD (siehe sound_store.h), wirkt
+    // erst nach einem Neustart.
+    int      Sound_Storage;
+
     uint8_t sport_poll_id[2];    // S.Port Physical Poll-ID Sensor 1+2 (z.B. 0xA1, 0x22)
 
     char WiFi_SSID[32];
