@@ -2,7 +2,7 @@
 #define PORT_FUNCTION_H
 
 /*
- * port_function.h  –  ESP32-RC-Sound (Port-B-Rollen-Registry)
+ * port_function.h  –  Soundmodul Mini (Port-B-Rollen-Registry, aus ESP32-RC-Sound v7)
  *
  * Registriert jede Port-B-Rolle (siehe enum PortBMode in config.h) als
  * {name, defaultBaud, begin, update, isActive}-Eintrag. setup()/loop() im
@@ -46,7 +46,7 @@ const PortBFunctionModule* getPortBModule(PortBMode f);
 const char* portBFunctionName(PortBMode f);
 
 // ";"-getrennte Namensliste aller Rollen in Enum-Reihenfolge, z.B.
-// "Aus;CRSF;S.Port;Hott (bald);Raw" - fuer CRSF_TEXT_SELECTION und das
+// "Aus;CRSF;S.Port;Raw" - fuer CRSF_TEXT_SELECTION und das
 // Web-Dropdown identisch nutzbar (Index in der Liste == numerischer
 // PortBMode-Wert). Einmal hier gepflegt statt an mehreren Stellen von Hand.
 const char* portBFunctionOptionsString();

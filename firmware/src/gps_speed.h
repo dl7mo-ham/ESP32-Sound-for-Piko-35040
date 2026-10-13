@@ -1,17 +1,13 @@
 /*
- * gps_speed.h  –  ESP32-RC-Sound  (Port C - per PortC_GPS_Enabled
- * unabhaengig schaltbar, siehe Port-Modell in config.h)
+ * gps_speed.h  –  Soundmodul Mini (Port C - per PortC_GPS_Enabled
+ * schaltbar, siehe Port-Modell in config.h; aus ESP32-RC-Sound v7)
  *
- * GPS-Geschwindigkeitsmessung, nur auf Hardware V3 nutzbar (dort sind die
- * Pins frei - siehe config.h).
  * Liest ein NMEA-GPS-Modul (z. B. u-blox NEO-M8N oder ATGM336H) über eine
  * Software-Serial ein und stellt Ground Speed sowie Positionsdaten bereit.
  *
- * Pinbelegung:
- *   GPS-TX  -> GPIO 27  (PWM-Pin 4, Empfang der NMEA-Daten)
- *   GPS-RX  <- GPIO 14  (PWM-Pin 3, Senden der Konfiguration an das GPS)
- *
- * S.Port (UART1, GPIO 32/33) und CRSF (UART2, GPIO 16/17) bleiben unberührt.
+ * Pinbelegung (pins.h):
+ *   GPS-TX  -> PIN_GPS_RX  (Empfang der NMEA-Daten)
+ *   GPS-RX  <- PIN_GPS_TX  (Senden der Konfiguration an das GPS)
  *
  * Nach dem Start wird das GPS einmalig per CASIC-Kommando auf 5 Hz gestellt
  * (ATGM336H/AT6558) und auf die Ausgabe von GGA+RMC reduziert. Die Einstellung
@@ -24,7 +20,7 @@
 
 #include <Arduino.h>
 
-void     gpsSpeedInit();       // GPS initialisieren (RX=GPIO27, TX=GPIO14)
+void     gpsSpeedInit();       // GPS initialisieren (Pins siehe pins.h)
 void     gpsSpeedUpdate();     // NMEA einlesen/auswerten + Konfig nach Boot senden
 
 float    gpsGetSpeedKmh();     // aktuelle Geschwindigkeit in km/h

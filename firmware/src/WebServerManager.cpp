@@ -8,17 +8,17 @@
 #include "XT_I2S_Audio.h"
 #include "sport_lipo.h"
 #include "gps_speed.h"
-#include "src/CRSF_ESP32/crsf_esp32.h"
+#include "CRSF_ESP32/crsf_esp32.h"
 #include "port_function.h"   // Port-B-Rollen-Registry
 #include <Update.h>          // Firmware-Update per WLAN (OTA), siehe handleApiOtaUpdate*()
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
-extern bool gpsPinConflict; // SBUS+GPS GPIO27-Konflikt, siehe ESP32-RC-Sound.ino setup()
+extern bool gpsPinConflict; // beim Mini immer false (kein SBUS), bleibt fuer das Web-JSON
 // Die tatsaechlich AKTIVEN (seit dem letzten Neustart geladenen) Port B/C-
 // Werte - koennen von config.PortB_Mode/PortC_GPS_Enabled abweichen, wenn
 // seitdem ueber Web/Lua etwas geaendert, aber noch nicht neu gestartet
-// wurde (siehe Erklaerung in ESP32-RC-Sound.ino).
+// wurde (siehe Erklaerung in main.cpp).
 extern int PortB_Mode_boot;
 extern int PortC_GPS_Enabled_boot;
 
@@ -30,7 +30,7 @@ static const char RCSOUND_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ESP32 RC-Sound</title>
+<title>Sound Mini</title>
 <style>
 :root{
   --bg:#0d1117;--surf:#161b22;--surf2:#21262d;
@@ -96,7 +96,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 </head>
 <body>
 <header>
-  <h1>&#9654; ESP32 RC-Sound</h1>
+  <h1>&#9654; Sound Mini</h1>
   <span class="hv" id="hv">laden...</span>
 </header>
 <nav>
@@ -167,12 +167,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
   <div class="card" style="margin-top:10px">
     <div class="card-title">Voreinstellungen</div>
-    <div class="g2">
-      <button class="btn btn-s" onclick="xget('/setsbus',0,function(){loadConfig();})">SBUS</button>
-      <button class="btn btn-s" onclick="xget('/setpwm',0,function(){loadConfig();})">PWM</button>
-    </div>
-    <button class="btn btn-s" style="margin-top:6px" onclick="xget('/setpin',0,function(){loadConfig();})">PIN</button>
-    <button class="btn btn-r" style="margin-top:6px" onclick="if(confirm('Werkseinstellung laden?'))xget('/reset',0,function(){loadConfig();})">Werkseinstellung</button>
+    <button class="btn btn-r" onclick="if(confirm('Werkseinstellung laden?'))xget('/reset',0,function(){loadConfig();})">Werkseinstellung</button>
   </div>
   <!-- Loop-/Standgas-/Start-Sound-Dateien verwalten (Upload+Loeschen),
        analog zur Sound-Datei-Verwaltung im Tab "Sounds". -->
@@ -269,35 +264,11 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 
 <!-- ═══ EINSTELLUNGEN ═══════════════════════════════════════════════════ -->
 <div id="tab-settings" class="hidden">
-  <div class="card">
-    <div class="card-title">RC-System</div>
-    <select id="rc-sys" onchange="onRcSys()">
-      <option value="0">FrSky</option>
-      <option value="1">FlySky</option>
-      <option value="2">ELRS (SBUS)</option>
-      <option value="3">Hott</option>
-      <option value="4">ELRS (CRSF)</option>
-    </select>
-  </div>
-  <div class="card" id="c-ekch">
-    <div class="card-title">Einkanal Kanal</div>
-    <select id="ek-ch"></select>
-  </div>
-  <div class="card" id="c-ekmo">
-    <div class="card-title">Einkanal-Mode</div>
-    <select id="ek-mode">
-      <option value="0">Normal</option>
-      <option value="10">SBUS WM Adr 0</option>
-      <option value="11">SBUS WM Adr 1</option>
-      <option value="12">SBUS WM Adr 2</option>
-      <option value="13">SBUS WM Adr 3</option>
-    </select>
-  </div>
-  <div class="card hidden" id="c-madr">
+  <div class="card" id="c-madr">
     <div class="card-title">Modul Adresse (CRSF)</div>
     <select id="mod-adr"></select>
   </div>
-  <div class="card hidden" id="c-mkan">
+  <div class="card" id="c-mkan">
     <div class="card-title">Mehrfachadress-Erweiterung (MKan)</div>
     <div class="row" style="margin-bottom:10px">
       <span class="lbl">Gruppe 1 (MKan 01-08)</span>
@@ -308,81 +279,13 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <select id="mkan-adr1"></select>
     </div>
   </div>
-  <div class="card hidden" id="c-sbusgrp">
-    <div class="card-title">Mehrfachadress-Erweiterung (MKan, SBUS)</div>
-    <div class="row" style="margin-bottom:6px">
-      <span class="lbl">Gruppe 1 Kanal (MKan 01-08)</span>
-      <select id="sbusgrp-ch0"></select>
-    </div>
-    <div class="row" style="margin-bottom:10px">
-      <span class="lbl">Gruppe 1 Modus</span>
-      <select id="sbusgrp-mode0">
-        <option value="0">Normal</option>
-        <option value="10">SBUS WM Adr 0</option>
-        <option value="11">SBUS WM Adr 1</option>
-        <option value="12">SBUS WM Adr 2</option>
-        <option value="13">SBUS WM Adr 3</option>
-      </select>
-    </div>
-    <div class="row" style="margin-bottom:6px">
-      <span class="lbl">Gruppe 2 Kanal (MKan 09-16)</span>
-      <select id="sbusgrp-ch1"></select>
-    </div>
-    <div class="row">
-      <span class="lbl">Gruppe 2 Modus</span>
-      <select id="sbusgrp-mode1">
-        <option value="0">Normal</option>
-        <option value="10">SBUS WM Adr 0</option>
-        <option value="11">SBUS WM Adr 1</option>
-        <option value="12">SBUS WM Adr 2</option>
-        <option value="13">SBUS WM Adr 3</option>
-      </select>
-    </div>
-    <div style="font-size:12px;color:var(--sub);margin-top:10px">
-      Nutzt je Gruppe einen eigenen SBUS-Kanal (Deaktiviert = kein Kanal
-      zugewiesen) - anders als MKan bei CRSF/ELRS belegt das zusaetzliche
-      RC-Kanaele, da SBUS keine adressierten Pakete kennt.
-    </div>
-  </div>
   <hr>
-  <div class="card" id="c-pwm">
-    <div class="card-title">PWM Einstellungen</div>
-    <div class="row" style="margin-bottom:10px">
-      <span class="lbl">PWM min (&micro;s)</span>
-      <input type="number" id="pwm-min" min="0" max="4095" style="width:120px">
-    </div>
-    <div class="row">
-      <span class="lbl">PWM max (&micro;s)</span>
-      <input type="number" id="pwm-max" min="0" max="4095" style="width:120px">
-    </div>
-  </div>
-
-  <hr>
-  <div class="card">
-    <div class="card-title">Hardware Config</div>
-    <select id="hw-cfg" onchange="onHwCfg()">
-      <option value="0">V1 (GPIO 16,17,22,0,2,4)</option>
-      <option value="1">V2 (GPIO 16,17,14,27,32,33)</option>
-      <option value="2">V3 (nur BUS+Einkanal, + Port B/C)</option>
-    </select>
-    <!-- Zeigt "(Neustart noetig!)", sobald Hardware_Config_Pending vom aktiv
-         laufenden Hardware_Config abweicht (hardwareConfigRestartPending(),
-         siehe config.h) - derselbe Hinweis, den auch das CRSF/Lua-Menue am
-         Sender zeigt. Der Wert kommt ueber /api/config als "restart_pending"
-         im JSON. -->
-    <div id="hw-restart-hint" class="hidden" style="color:var(--yellow);font-size:12px;margin-top:8px">
-      &#9888; Neustart erforderlich, damit die neue Hardware Config aktiv wird.
-    </div>
-  </div>
-  <hr>
-  <!-- Port B (echter 2. Hardware-UART, GPIO32/33) und Port C (GPS,
-       SoftwareSerial GPIO27/14) sind unabhaengig von der Hardware-Version
-       waehlbar - nur sichtbar/wirksam auf Hardware V3 (siehe onHwCfg()), da
-       V1/V2 diese Pins fuer PWM-Eingaenge brauchen. -->
+  <!-- Port B (zweiter Hardware-UART) und Port C (GPS, SoftwareSerial),
+       Pins siehe pins.h. -->
   <div class="card" id="c-portbc">
     <div class="card-title">Port B / Port C</div>
     <div class="row" style="margin-bottom:10px">
-      <span class="lbl">Port B Modus (GPIO32/33)</span>
+      <span class="lbl">Port B Modus</span>
       <!-- Optionen kommen zur Laufzeit vom Geraet (s.portb_options in
            /api/config, siehe fillSelFlat() weiter unten) statt hier UND in
            port_function.cpp UND im CRSF/Lua-Menue von Hand dreifach
@@ -394,7 +297,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <input type="number" id="portb-baud" min="300" max="2000000" style="width:120px">
     </div>
     <div class="row">
-      <span class="lbl">Port C (GPS, GPIO27/14)</span>
+      <span class="lbl">Port C (GPS)</span>
       <select id="portc-gps">
         <option value="0">Aus</option>
         <option value="1">An</option>
@@ -402,8 +305,6 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Aenderungen an Port B/C wirken erst nach einem Neustart des Moduls.
-      Port C (GPS) kollidiert mit SBUS (GPIO27 wird von beiden belegt) - fuer
-      GPS bitte Einkanal/RC-System auf CRSF stellen.
     </div>
   </div>
   <button class="btn btn-p" onclick="saveSettings()">Speichern</button>
@@ -506,9 +407,9 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 
   <!-- "WLAN dauerhaft an" - schaltet den AP beim Booten fest ein und haelt
-       ihn dauerhaft an; ueberstimmt GPIO13-Bootpin, den manuellen Schalter
+       ihn dauerhaft an; ueberstimmt WLAN-Bootpin, den manuellen Schalter
        und den Auto-Failsafe weiter unten komplett (siehe config.WifiAlwaysOn
-       in config.h, wifiFailsafeCheck()/setup() in ESP32-RC-Sound.ino).
+       in config.h, wifiFailsafeCheck()/setup() in main.cpp).
        Default AN. -->
   <div class="card" id="c-wifi-always" style="margin-top:10px">
     <div class="card-title">WLAN dauerhaft aktiv (empfohlen)</div>
@@ -519,8 +420,8 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <button class="btn btn-p" onclick="saveWifi()">Speichern</button>
     <div style="font-size:12px;color:var(--sub);margin-top:8px">
       Modul ist nach jedem Einschalten sofort per WLAN erreichbar, ohne
-      GPIO13-Bootpin oder manuellen Schalter. Ist diese Option aktiv, wirken
-      "WLAN automatisch bei Signalverlust" weiter unten sowie der GPIO13-
+      WLAN-Bootpin oder manuellen Schalter. Ist diese Option aktiv, wirken
+      "WLAN automatisch bei Signalverlust" weiter unten sowie der WLAN-
       Bootpin nicht mehr (dort ausgegraut). Eine Aenderung hier wird zwar
       sofort gespeichert, wirkt sich aber wie die anderen Einstellungen auf
       dieser Seite erst ab dem naechsten Neustart des Moduls aus - das WLAN
@@ -529,7 +430,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 
   <!-- Manueller WLAN-Schalter - schaltet den AP sofort ein/aus, ohne
-       Neustart und ohne das Boot-Verhalten (WifiPin/GPIO13) zu aendern
+       Neustart und ohne das Boot-Verhalten (WLAN-Pin, siehe pins.h) zu aendern
        (siehe handleApiWifiEnable() in WebServerManager.cpp). -->
   <div class="card" id="c-wifi-now" style="margin-top:10px">
     <div class="card-title">WLAN jetzt</div>
@@ -547,7 +448,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 
   <!-- WLAN automatisch aktivieren, wenn ueber die eingestellte Zeit kein
        gueltiges RC-Signal anliegt (siehe wifiFailsafeCheck() in
-       ESP32-RC-Sound.ino) - z.B. wenn kein Sender gebunden ist. -->
+       main.cpp) - z.B. wenn kein Sender gebunden ist. -->
   <div class="card" id="c-wifi-auto" style="margin-top:10px">
     <div class="card-title">WLAN automatisch bei Signalverlust</div>
     <div id="wifi-auto-overridden-hint" class="hidden" style="font-size:12px;color:var(--yellow);margin-bottom:8px">
@@ -564,7 +465,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <button class="btn btn-p" style="margin-top:10px" onclick="saveWifi()">Speichern</button>
     <div style="font-size:12px;color:var(--sub);margin-top:8px">
       Schaltet das WLAN automatisch ein, wenn ueber die eingestellte Zeit kein
-      gueltiges RC-Signal (CRSF/SBUS) anliegt. Bleibt danach an, bis es
+      gueltiges CRSF-Signal anliegt. Bleibt danach an, bis es
       manuell ausgeschaltet wird oder das Modul neu startet - kein
       "Flackern", wenn das Signal zwischenzeitlich zurueckkehrt.
     </div>
@@ -604,10 +505,6 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <button class="btn btn-s" style="width:auto;padding:4px 12px;margin:0;font-size:11px" onclick="loadDebug()">&#8635; Aktualisieren</button>
     </div>
     <div class="dbg-grid" id="dbg-ch"></div>
-  </div>
-  <div class="card">
-    <div class="card-title">PWM Pins</div>
-    <div id="dbg-pwm"></div>
   </div>
   <div class="card">
     <div class="card-title">WAV Dateien</div>
@@ -697,33 +594,20 @@ function xpost(url,data,cb){
 // Dropdown-Gruppen – aufgeteilt damit V3/V4 filtern kann
 var G_BUS_LOW ={l:'BUS Kanal Low', o:function(){var a=[];for(var i=0;i<16;i++)a.push([i,'BUS Kanal Low '+(i<9?'0':'')+(i+1)]);return a;}()};
 var G_BUS_HIGH={l:'BUS Kanal High',o:function(){var a=[];for(var i=0;i<16;i++)a.push([20+i,'BUS Kanal High '+(i<9?'0':'')+(i+1)]);return a;}()};
-var G_PWM_LOW ={l:'PWM Pin Low',   o:function(){var a=[];for(var i=0;i<6;i++)a.push([40+i,'PWM Pin Low '+(i+1)]);return a;}()};
-var G_PWM_HIGH={l:'PWM Pin High',  o:function(){var a=[];for(var i=0;i<6;i++)a.push([50+i,'PWM Pin High '+(i+1)]);return a;}()};
-var G_PIN     ={l:'Eingang Pin',   o:function(){var a=[];for(var i=0;i<6;i++)a.push([60+i,'Eingang Pin '+(i+1)]);return a;}()};
 var G_EK      ={l:'Einkanal',      o:function(){var a=[];for(var i=0;i<8;i++)a.push([70+i,'Einkanal '+(i<9?'0':'')+(i+1)]);return a;}()};
 // "MKan" 80-95 (2 CRSF-Gruppenadressen x 8 Einzelschalter, siehe
-// ESP32-RC-Sound.ino) - eine der Quellgruppen fuer Sound 1-24.
+// main.cpp) - eine der Quellgruppen fuer Sound 1-4.
 var G_MKAN    ={l:'Mehrfachkanal (MKan)', o:function(){var a=[];for(var i=0;i<16;i++)a.push([80+i,'MKan '+(i<9?'0':'')+(i+1)]);return a;}()};
 var G_OPT     ={l:'Optionen',      o:[[200,'Dauerbetrieb an'],[999,'Deaktiviert']]};
 var G_OPT_D   ={l:'Optionen',      o:[[999,'Deaktiviert']]};
-var G_PWM_SPD ={l:'PWM Pin',       o:function(){var a=[];for(var i=0;i<6;i++)a.push([20+i,'PWM Pin '+(i+1)]);return a;}()};
 var G_BUS_SPD ={l:'BUS Kanal',     o:function(){var a=[];for(var i=0;i<16;i++)a.push([i,'BUS Kanal '+(i<9?'0':'')+(i+1)]);return a;}()};
 
-// Gruppen je nach HW-Config zusammenstellen
-// hw < 2 (V1/V2): alle; hw >= 2 (V3/V4): nur BUS + Einkanal
-function srcGroups(hw) {
-  var g = [G_BUS_LOW, G_BUS_HIGH];
-  if (hw < 2) { g.push(G_PWM_LOW, G_PWM_HIGH, G_PIN); }
-  g.push(G_EK);
-  g.push(G_MKAN);
-  g.push(G_OPT);
-  return g;
+// Nur CRSF: BUS-Kanaele, Einkanal, MKan und Optionen.
+function srcGroups() {
+  return [G_BUS_LOW, G_BUS_HIGH, G_EK, G_MKAN, G_OPT];
 }
-function spdGroups(hw) {
-  var g = [G_BUS_SPD];
-  if (hw < 2) g.push(G_PWM_SPD);
-  g.push(G_OPT_D);
-  return g;
+function spdGroups() {
+  return [G_BUS_SPD, G_OPT_D];
 }
 
 function fillSel(id,groups){
@@ -737,17 +621,6 @@ function fillSel(id,groups){
     });
     sel.appendChild(og);
   });
-}
-// id-Parameter, damit dieselbe SBUS-Kanalliste (16 Kanaele + "Deaktiviert")
-// sowohl fuer "Einkanal Kanal" (ek-ch) als auch fuer die beiden SBUS-
-// Gruppenkanaele (sbusgrp-ch0/1) verwendet werden kann.
-function fillEkCh(id){
-  var sel=document.getElementById(id); sel.innerHTML='';
-  var og=document.createElement('optgroup'); og.label='SBUS Kanal';
-  for(var i=0;i<16;i++){var o=document.createElement('option');o.value=i;o.textContent='SBUS Kanal '+(i<9?'0':'')+(i+1);og.appendChild(o);}
-  sel.appendChild(og);
-  var og2=document.createElement('optgroup'); og2.label='Optionen';
-  var o2=document.createElement('option');o2.value=999;o2.textContent='Deaktiviert';og2.appendChild(o2);sel.appendChild(og2);
 }
 // Flache Optionsliste (Index == value), anders als fillSel() oben, das nur
 // gruppierte <optgroup>-Daten kennt. Fuer Port-B-Modus genuegt eine flache
@@ -783,30 +656,6 @@ function gi(id){return parseInt(gv(id))||0;}
 function slUpd(sid,lid){var v=gv(sid);document.getElementById(lid).textContent=v;}
 function slSet(sid,lid,v){sv(sid,v);if(lid)document.getElementById(lid).textContent=v;}
 
-// ─── RC-System / HW-Config bedingte Felder ──────────────────────────────
-function onRcSys(){
-  var crsf=(gi('rc-sys')===4);
-  document.getElementById('c-ekch').className='card'+(crsf?' hidden':'');
-  document.getElementById('c-ekmo').className='card'+(crsf?' hidden':'');
-  document.getElementById('c-madr').className='card'+(crsf?'':' hidden');
-  document.getElementById('c-mkan').className='card'+(crsf?'':' hidden');
-  document.getElementById('c-sbusgrp').className='card'+(crsf?' hidden':'');
-}
-function onHwCfg(){
-  var hw = gi('hw-cfg');
-  document.getElementById('c-pwm').className = 'card'+(hw<2?'':' hidden');
-  // Port B/C nur auf Hardware V3 sichtbar (V1/V2 brauchen GPIO32/33/27/14
-  // fuer die PWM-Einkanal-Eingaenge, siehe config.h).
-  var pbc=document.getElementById('c-portbc');
-  if(pbc) pbc.className = 'card'+(hw>=2?'':' hidden');
-  // Quell-Dropdowns neu befüllen – V3/V4 ohne PWM/Pin-Gruppen
-  var curMSrc = gv('m-src');
-  var curMSpd = gv('m-spd');
-  var curSSrc = gv('s-src');
-  fillSel('m-src', srcGroups(hw)); sv('m-src', curMSrc);
-  fillSel('m-spd', spdGroups(hw));       sv('m-spd', curMSpd);
-  fillSel('s-src', srcGroups(hw)); sv('s-src', curSSrc);
-}
 // Baudrate beim Wechsel der Port-B-Rolle auf den protokolltypischen Standard
 // vorbelegen (bleibt danach frei editierbar - im Web-UI gibt es anders als
 // im CRSF/Lua-Menue keine 1-Byte-Grenze, die Baudrate ist hier also
@@ -825,9 +674,9 @@ function onPortBMode(){
 
 // ─── Sound-Tabs ──────────────────────────────────────────────────────────
 function buildSndTabs(){
-  // 24 Sound-Slots.
+  // 4 Sound-Slots.
   var c=document.getElementById('stabs'); c.innerHTML='';
-  for(var i=1;i<=24;i++){
+  for(var i=1;i<=4;i++){
     var b=document.createElement('div');
     b.className='stab'+(i===1?' active':'');
     b.textContent='Sound '+i; b.setAttribute('data-s',i);
@@ -864,15 +713,8 @@ function loadConfig(){
     slSet('m-dead','lv-m-dead',m.deadband);
     if(cfg.sounds) selSnd(curSnd);
     var s=cfg.settings;
-    sv('rc-sys',s.rc_system); sv('ek-ch',s.ek_channel);
-    sv('ek-mode',s.ek_mode); sv('mod-adr',s.modul_adr);
+    sv('mod-adr',s.modul_adr);
     sv('mkan-adr0',s.mkan_adr0); sv('mkan-adr1',s.mkan_adr1);
-    sv('sbusgrp-ch0',s.sbusgrp_ch0); sv('sbusgrp-mode0',s.sbusgrp_mode0);
-    sv('sbusgrp-ch1',s.sbusgrp_ch1); sv('sbusgrp-mode1',s.sbusgrp_mode1);
-    sv('pwm-min',s.pwm_min); sv('pwm-max',s.pwm_max);
-    sv('hw-cfg',s.hw_config_pending);
-    var rh=document.getElementById('hw-restart-hint');
-    if(rh) rh.className = s.restart_pending ? '' : 'hidden';
     // Port B/C laden: Options-Liste und Baudraten-Standardwerte kommen vom
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
@@ -880,7 +722,6 @@ function loadConfig(){
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
     sv('portb-mode', s.portb_mode); sv('portb-baud', s.portb_baud); sv('portc-gps', s.portc_gps);
     onPortBMode();
-    onRcSys(); onHwCfg();
     var w=cfg.wifi;
     sv('w-ssid',w.ssid); sv('w-pass',w.pass||'');
     sv('w-ip',w.ip); sv('w-dev',w.device);
@@ -912,13 +753,6 @@ function renderDbg(){
       ch.innerHTML+='<div class="dbg-item"><div class="dbg-k">K'+(i+1)+'</div><div class="dbg-v">'+v+'</div></div>';
     });
   }
-  var pw=document.getElementById('dbg-pwm');
-  if(pw&&dbg.pwm){
-    pw.innerHTML='';
-    dbg.pwm.forEach(function(p,i){
-      pw.innerHTML+='<div class="row"><span class="lbl">PWM '+(i+1)+'</span><span style="font-size:13px;font-family:var(--mono)">'+p.us+' &micro;s &rarr; '+p.pct+' %</span></div>';
-    });
-  }
   var wv=document.getElementById('dbg-wav');
   if(wv&&dbg.wav){
     var w=dbg.wav,h='';
@@ -934,8 +768,6 @@ function renderDbg(){
   if(gp&&dbg.gps){
     var g=dbg.gps;
     if(!g.active){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">Port C (GPS) ist aus</span></div>';}
-    else if(g.pinConflict){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">deaktiviert</span></div>'+
-      '<div style="font-size:11px;color:var(--sub);margin-top:8px">GPIO27-Konflikt: Port C (GPS) + SBUS gleichzeitig gewaehlt - GPIO27 wird von SBUS UND GPS beansprucht. GPS bleibt deaktiviert, SBUS hat Vorrang. Fuer GPS bitte Einkanal/RC-System auf CRSF stellen.</div>';}
     else{gp.innerHTML='<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
       '<div class="row"><span class="lbl">Satelliten</span><span style="font-family:var(--mono)">'+g.sats+'</span></div>'+
       '<div class="row"><span class="lbl">Geschwindigkeit</span><span style="font-family:var(--mono)">'+g.speed+' km/h</span></div>';}
@@ -969,7 +801,7 @@ function renderDbg(){
       '<div class="row"><span class="lbl">Parameter-Reads erhalten</span><span style="font-family:var(--mono)">'+c.param_reads+'</span></div>'+
       '<div class="row"><span class="lbl">Parameter-Writes erhalten</span><span style="font-family:var(--mono)">'+c.param_writes+'</span></div>';
     var hint2='';
-    if(c.raw_bytes==0) hint2='Es kommen ueberhaupt keine Bytes an - TX/RX vertauscht oder RC-System nicht auf CRSF gestellt?';
+    if(c.raw_bytes==0) hint2='Es kommen ueberhaupt keine Bytes an - TX/RX vertauscht oder Baudrate falsch?';
     else if(c.device_pings==0) hint2='Es kommen Bytes/Frames an, aber noch kein Device-Ping vom Sender - "Sensoren entdecken"/Geraeteliste am Sender einmal ausloesen.';
     if(hint2) h2+='<div style="font-size:11px;color:var(--sub);margin-top:8px">'+hint2+'</div>';
     cd.innerHTML=h2;
@@ -978,7 +810,7 @@ function renderDbg(){
   if(dc&&cfg.motor&&cfg.settings){
     var m=cfg.motor,s=cfg.settings;
     dc.innerHTML=
-      'HW:'+s.hw_config+' RC-Sys:'+s.rc_system+' EK-Ch:'+s.ek_channel+'<br>'+
+      'Modul-Adr:'+s.modul_adr+' MKan:'+s.mkan_adr0+'/'+s.mkan_adr1+'<br>'+
       'Motor-Start:'+m.source+' Speed:'+m.speed_src+'<br>'+
       'Rampe:'+m.ramp+' Totband:'+m.deadband+'<br>'+
       'S.Port:0x'+(cfg.sport?cfg.sport.poll_id0:'?')+'/0x'+(cfg.sport?cfg.sport.poll_id1:'?');
@@ -1099,7 +931,7 @@ function uploadSoundFile(file){
   document.getElementById('snd-upload-file').value='';
 }
 // Datei-Verwaltung fuer Sound-Dateien (Motor: loop/shut/start.wav, Sound
-// 1-24: soundN.wav) - Status abfragen, aktuellen Sound-Slot loeschen,
+// 1-4: soundN.wav) - Status abfragen, aktuellen Sound-Slot loeschen,
 // Motor-Dateien hochladen/loeschen. sndFiles ist ein einfacher Client-Cache
 // (name -> {exists,size}), damit nicht nach jeder Kleinigkeit neu vom Geraet
 // gelesen werden muss; nach Upload/Loeschen wird er lokal nachgefuehrt.
@@ -1178,16 +1010,10 @@ function deleteMotorFile(name){
 }
 function saveSettings(){
   var d={
-    rc_system:gi('rc-sys'),   ek_channel:gi('ek-ch'),
-    ek_mode:gi('ek-mode'),    modul_adr:gi('mod-adr'),
-    hw_config_pending:gi('hw-cfg'),
+    modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
-    sbusgrp_ch0:gi('sbusgrp-ch0'), sbusgrp_mode0:gi('sbusgrp-mode0'),
-    sbusgrp_ch1:gi('sbusgrp-ch1'), sbusgrp_mode1:gi('sbusgrp-mode1'),
     portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'), portc_gps:gi('portc-gps')
   };
-  // PWM nur bei V1/V2 senden (bei V3/V4 nicht vorhanden)
-  if(gi('hw-cfg')<2){d.pwm_min=gi('pwm-min');d.pwm_max=gi('pwm-max');}
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
     // Konfiguration serverseitig als "dirty", der eigentliche NVS-Schreib-
@@ -1195,11 +1021,8 @@ function saveSettings(){
     // Pruefung in loop() (seit v7.16, siehe dortigen Kommentar) - genau wie
     // bei /api/sound.
     try{var p=JSON.parse(r);if(p.ok){
-      // Komplett neu von /api/config laden statt nur die gerade gesendeten
-      // Felder lokal zu uebernehmen: "restart_pending" wird vom Server
-      // berechnet (nicht Teil von d) und muss deshalb aktualisiert werden,
-      // damit der Neustart-Hinweis sofort stimmt, ohne dass man die Seite
-      // neu laden muss.
+      // Komplett neu von /api/config laden, damit die Anzeige den vom
+      // Server tatsaechlich uebernommenen (begrenzten) Werten entspricht.
       loadConfig();
       toast('Einstellungen gespeichert');return;}}catch(e){}
     toast('Fehler',1);
@@ -1215,7 +1038,7 @@ function exportConfig(){
   xget('/api/config',0,function(resp){
     var text=resp;
     try{ text=JSON.stringify(JSON.parse(resp),null,2); }catch(e){ /* notfalls Rohtext exportieren */ }
-    var name='esp32-rc-sound-config';
+    var name='sound-mini-config';
     var dev=gv('w-dev');
     if(dev) name+='-'+dev.replace(/[^A-Za-z0-9_-]+/g,'_');
     name+='.json';
@@ -1268,16 +1091,13 @@ function runSteps(steps,done){
 // WebServerManager.cpp) - der Import laeuft daher als Kette einzelner POSTs:
 // einmal /api/config fuer die globalen Einstellungen, einmal /api/sound fuer
 // Motor (id 0), dann /api/sound je Sound-Slot, zum Schluss ein einzelnes
-// /save (statt 25x einzeln auf den Flash zu schreiben).
+// /save (statt 5x einzeln auf den Flash zu schreiben).
 function importConfigData(data){
   var s=data.settings||{}, w=data.wifi||{}, sp=data.sport||{}, m=data.motor||{};
 
   var settingsPost=stripUndef({
-    rc_system:s.rc_system, ek_channel:s.ek_channel, ek_mode:s.ek_mode, modul_adr:s.modul_adr,
+    modul_adr:s.modul_adr,
     mkan_adr0:s.mkan_adr0, mkan_adr1:s.mkan_adr1,
-    sbusgrp_ch0:s.sbusgrp_ch0, sbusgrp_mode0:s.sbusgrp_mode0,
-    sbusgrp_ch1:s.sbusgrp_ch1, sbusgrp_mode1:s.sbusgrp_mode1,
-    hw_config_pending:s.hw_config_pending, pwm_min:s.pwm_min, pwm_max:s.pwm_max,
     portb_mode:s.portb_mode, portb_baud:s.portb_baud, portc_gps:s.portc_gps,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
@@ -1476,12 +1296,11 @@ function saveLipo(){
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────
-// Dropdowns initial mit hw=0 befüllen; nach loadConfig() mit echtem hw-Wert neu befüllen
-fillSel('m-src', srcGroups(0, false));
-fillSel('m-spd', spdGroups(0));
-fillSel('s-src', srcGroups(0));
-fillEkCh('ek-ch'); fillModAdr(); fillGroupAdr('mkan-adr0'); fillGroupAdr('mkan-adr1');
-fillEkCh('sbusgrp-ch0'); fillEkCh('sbusgrp-ch1'); buildSndTabs();
+fillSel('m-src', srcGroups());
+fillSel('m-spd', spdGroups());
+fillSel('s-src', srcGroups());
+fillModAdr(); fillGroupAdr('mkan-adr0'); fillGroupAdr('mkan-adr1');
+buildSndTabs();
 loadConfig();
 loadSoundFileStatus(); // Datei-Status initial laden (Tab "Motor" ist beim Start aktiv)
 </script>
@@ -1496,8 +1315,8 @@ unsigned long WebServerManager::lastSdActivityMs = 0;
 
 // v7.16: Cooldown-Dauer nach einer SD-Schreiboperation, bevor der naechste
 // blockierende NVS-Flash-Schreibvorgang (saveConfigForce(), siehe loop() in
-// ESP32-RC-Sound.ino) zugelassen wird. Feldbefund: ohne Stuetzkondensator am
-// Modul (Versorgung ueber lange, duenne SBUS-Leitung vom Empfaenger-BEC)
+// main.cpp) zugelassen wird. Feldbefund: ohne Stuetzkondensator am
+// Modul (Versorgung ueber lange, duenne Leitung vom Empfaenger-BEC)
 // reichte ein SD-Upload direkt gefolgt von einem sofortigen Config-Save aus,
 // um einen Brownout-Reset-Loop auszuloesen; ein paar Sekunden Abstand (in
 // der Praxis durch Umschalten zwischen Sound-Slots erzeugt) behoben es
@@ -1510,18 +1329,17 @@ bool WebServerManager::sdActivityCooldownActive() {
   return lastSdActivityMs != 0 && (millis() - lastSdActivityMs) < SD_SAVE_COOLDOWN_MS;
 }
 
-extern bool          Sound_on_web[RCSOUND_NUM_SLOTS]; // v5: 25 statt 9
+extern bool          Sound_on_web[RCSOUND_NUM_SLOTS];
 extern uint16_t      channel_output[16];
-extern volatile unsigned int PWM_pulse_width[6];
 extern XT_Wav_Class  Sound_loop;
 extern XT_Wav_Class  Sound_shut;
 extern XT_Wav_Class  Sound_start;
-// Pointer-Array Sounds[] (Index 0=Motor/ungenutzt, 1..24=Sound1..Sound24,
-// siehe ESP32-RC-Sound.ino) - deckt alle RCSOUND_NUM_SLOTS-1 Sounds ab.
+// Pointer-Array Sounds[] (Index 0=Motor/ungenutzt, 1..4=Sound1..Sound4,
+// siehe main.cpp) - deckt alle RCSOUND_NUM_SLOTS-1 Sounds ab.
 extern XT_Wav_Class* Sounds[RCSOUND_NUM_SLOTS];
 extern char          versionString[6];
 extern uint16_t      Version; // fuer den Dateinamen beim SD-Export, siehe handleApiSdExport()
-extern bool          isValidEinSource(int c); // siehe ESP32-RC-Sound.ino
+extern bool          isValidEinSource(int c); // siehe main.cpp
 extern bool          BUS_OK; // fuer den WLAN-Live-Status in handleApiDebug(), siehe unten
 
 // storedApSsid/-Password merken sich die Zugangsdaten aus begin() fuer
@@ -1597,7 +1415,7 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
 // ── AP tatsaechlich aktivieren (WiFi-Funk + Webserver-Socket) ────────────
 // Aufrufbar sowohl beim Booten als auch zur Laufzeit: manuell (Web-Button/
 // Lua-Feld 174) oder automatisch bei RC-Signalverlust (siehe
-// wifiFailsafeCheck() in ESP32-RC-Sound.ino). Idempotent - ein bereits
+// wifiFailsafeCheck() in main.cpp). Idempotent - ein bereits
 // aktiver AP wird nicht doppelt gestartet. Der Freie-Heap-Log gilt fuer
 // JEDEN AP-Start, nicht nur den beim Booten: WiFi.softAP() ist in diesem
 // Projekt historisch die stoeranfaelligste Stelle ueberhaupt - ein AP-Start
@@ -1740,10 +1558,8 @@ static String jsonEscape(const char* s) {
 // ── POST /api/config ─────────────────────────────────────────────────────
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
-//   settings: { rc_system, ek_channel, ek_mode, modul_adr,
-//               mkan_adr0, mkan_adr1,
-//               sbusgrp_ch0, sbusgrp_mode0, sbusgrp_ch1, sbusgrp_mode1,
-//               hw_config, pwm_min, pwm_max }
+//   settings: { modul_adr, mkan_adr0, mkan_adr1,
+//               portb_mode, portb_baud, portc_gps }
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
 void WebServerManager::handleApiConfigPost() {
@@ -1753,32 +1569,16 @@ void WebServerManager::handleApiConfigPost() {
   int  v;
 
   // Settings
-  if (jsonGetInt(body, "rc_system",  v)) { config.Einkanal_RC_System        = constrain(v,0,4);    changed=true; }
-  if (jsonGetInt(body, "ek_channel", v)) { config.Einkanal_Channel           = (v==999)?999:constrain(v,0,15); changed=true; }
-  if (jsonGetInt(body, "ek_mode",    v)) { config.Einkanal_mode              = v;                   changed=true; }
   if (jsonGetInt(body, "modul_adr",  v)) { config.modul_adress               = constrain(v,0,20);   changed=true; }
   // Die unabhaengigen MKan-Gruppenadressen - jede fuer sich auf 0-255
   // begrenzt (255=Gruppe deaktiviert), wie auch im CRSF-Parametermenue
-  // (siehe crsfWriteParam() idx 168-169 in ESP32-RC-Sound.ino). Duerfen sich
+  // (siehe crsfWriteParam() in main.cpp). Duerfen sich
   // unterscheiden oder gleich sein - hier keine Reihenfolge/Eindeutigkeit
   // erzwungen (siehe Kommentar in config.h/EK_Gruppen_Adresse).
   if (jsonGetInt(body, "mkan_adr0", v)) { config.EK_Gruppen_Adresse[0]       = constrain(v,0,255);  changed=true; }
   if (jsonGetInt(body, "mkan_adr1", v)) { config.EK_Gruppen_Adresse[1]       = constrain(v,0,255);  changed=true; }
-  // SBUS-Pendant zu mkan_adr0/1 (siehe config.h/SBUS_Gruppen_Channel): je
-  // ein fest zugewiesener SBUS-Kanal (999=Gruppe aus) statt einer freien
-  // Busadresse, plus Modus auf diesem Kanal - dieselbe Konvention wie
-  // ek_mode: 0=Normal, 10-13=WM Adr 0-3 (kein constrain(0,3), siehe
-  // Kommentar bei config.SBUS_Gruppen_Mode/config.Einkanal_mode).
-  if (jsonGetInt(body, "sbusgrp_ch0",   v)) { config.SBUS_Gruppen_Channel[0] = (v==999)?999:constrain(v,0,15); changed=true; }
-  if (jsonGetInt(body, "sbusgrp_mode0", v)) { config.SBUS_Gruppen_Mode[0]    = v;                    changed=true; }
-  if (jsonGetInt(body, "sbusgrp_ch1",   v)) { config.SBUS_Gruppen_Channel[1] = (v==999)?999:constrain(v,0,15); changed=true; }
-  if (jsonGetInt(body, "sbusgrp_mode1", v)) { config.SBUS_Gruppen_Mode[1]    = v;                    changed=true; }
-  if (jsonGetInt(body, "hw_config_pending",  v)) { config.Hardware_Config_Pending = constrain(v,0,2); changed=true;
-    Serial.printf("[API] Hardware_Config_Pending -> %d (wirkt erst nach Neustart)\n", config.Hardware_Config_Pending); }
-  if (jsonGetInt(body, "pwm_min",    v)) { config.PWM_scale_min              = constrain(v,0,4095); changed=true; }
-  if (jsonGetInt(body, "pwm_max",    v)) { config.PWM_scale_max              = constrain(v,0,4095); changed=true; }
-  // Port B / Port C - wirkt wie hw_config_pending erst nach einem Neustart
-  // (siehe setup() in ESP32-RC-Sound.ino, PortB_Mode_boot/
+  // Port B / Port C - wirkt erst nach einem Neustart
+  // (siehe setup() in main.cpp, PortB_Mode_boot/
   // PortC_GPS_Enabled_boot). Anders als im CRSF/Lua-Menue (1-Byte-
   // Wertebereich, siehe dort) ist die Baudrate hier ueber JSON wirklich
   // frei eingebbar, kein Snapping auf eine feste Liste.
@@ -1805,7 +1605,7 @@ void WebServerManager::handleApiConfigPost() {
   // dem naechsten Bootvorgang, KEIN sofortiges enableAP() hier. Bewusst so
   // (seit v7.15) - ein WLAN-Start zur Laufzeit ist historisch die
   // fehleranfaelligste Operation in diesem Projekt (Heap-Fragmentierung,
-  // siehe SDCardInit()-Kommentar in ESP32-RC-Sound.ino); ein Aufruf aus
+  // siehe SDCardInit()-Kommentar in main.cpp); ein Aufruf aus
   // diesem HTTP-Handler heraus ist dafuer unnoetiges zusaetzliches Risiko,
   // da der AP durch den Default "an" beim Booten ohnehin schon laeuft.
   if (jsonGetInt(body, "wifi_always_on", v)) {
@@ -1824,7 +1624,7 @@ void WebServerManager::handleApiConfigPost() {
   // v7.16: nur noch markDirty() statt eines sofortigen, blockierenden
   // saveConfigForce() hier im HTTP-Handler - der eigentliche NVS-Schreib-
   // vorgang passiert jetzt ausschliesslich ueber die debounced Pruefung in
-  // loop() (ESP32-RC-Sound.ino), die zusaetzlich einen SD-Aktivitaets-
+  // loop() (main.cpp), die zusaetzlich einen SD-Aktivitaets-
   // Cooldown beachtet (siehe sdActivityCooldownActive()). Aendert nichts an
   // der Persistenz (spaetestens ~500ms-3.5s spaeter gespeichert), reduziert
   // aber das Risiko eines Brownouts, wenn kurz zuvor auf die SD-Karte
@@ -1856,7 +1656,7 @@ String WebServerManager::buildConfigJson() {
   j += "\"ramp\":"       + String(config.throttle_ramp)          + ",";
   j += "\"deadband\":"   + String(config.throttle_dead_band)     + "},";
 
-  // Sounds 1-24, deckt RCSOUND_NUM_SLOTS-1 vollstaendig ab
+  // Sounds 1-4, deckt RCSOUND_NUM_SLOTS-1 vollstaendig ab
   j += "\"sounds\":[";
   for (int i = 1; i < RCSOUND_NUM_SLOTS; i++) {
     if (i > 1) j += ",";
@@ -1869,9 +1669,6 @@ String WebServerManager::buildConfigJson() {
 
   // Einstellungen
   j += "\"settings\":{";
-  j += "\"hw_config\":"  + String(config.Hardware_Config)         + ",";
-  j += "\"hw_config_pending\":" + String(config.Hardware_Config_Pending) + ",";
-  j += "\"restart_pending\":" + String(hardwareConfigRestartPending() ? 1 : 0) + ",";
   j += "\"portb_mode\":" + String(config.PortB_Mode) + ",";
   j += "\"portb_baud\":" + String(config.PortB_Baud) + ",";
   // Optionsliste + Standard-Baudraten kommen aus der Port-B-Rollen-Registry
@@ -1887,21 +1684,11 @@ String WebServerManager::buildConfigJson() {
   }
   j += "],";
   j += "\"portc_gps\":"  + String(config.PortC_GPS_Enabled) + ",";
-  j += "\"rc_system\":"  + String(config.Einkanal_RC_System)      + ",";
-  j += "\"ek_channel\":" + String(config.Einkanal_Channel)        + ",";
-  j += "\"ek_mode\":"    + String(config.Einkanal_mode)           + ",";
   j += "\"modul_adr\":"  + String(config.modul_adress)            + ",";
   // Die MKan-Gruppenadressen (auch ueber das CRSF-Parametermenue am Sender
   // einstellbar).
   j += "\"mkan_adr0\":"  + String(config.EK_Gruppen_Adresse[0])   + ",";
-  j += "\"mkan_adr1\":"  + String(config.EK_Gruppen_Adresse[1])   + ",";
-  // SBUS-Pendant zu mkan_adr0/1 (siehe config.h/SBUS_Gruppen_Channel).
-  j += "\"sbusgrp_ch0\":"   + String(config.SBUS_Gruppen_Channel[0]) + ",";
-  j += "\"sbusgrp_mode0\":" + String(config.SBUS_Gruppen_Mode[0])    + ",";
-  j += "\"sbusgrp_ch1\":"   + String(config.SBUS_Gruppen_Channel[1]) + ",";
-  j += "\"sbusgrp_mode1\":" + String(config.SBUS_Gruppen_Mode[1])    + ",";
-  j += "\"pwm_min\":"    + String(config.PWM_scale_min)           + ",";
-  j += "\"pwm_max\":"    + String(config.PWM_scale_max)           + "},";
+  j += "\"mkan_adr1\":"  + String(config.EK_Gruppen_Adresse[1])   + "},";
 
   // S.Port Poll-IDs
   char p0[4], p1[4];
@@ -1933,8 +1720,8 @@ void WebServerManager::handleApiConfig() {
 
 // ── SD-Kartenpfad fuer die Konfigurations-Backups ─────────────────────────
 // Eigener Unterordner statt Wurzelverzeichnis, um nicht mit den Sound-Dateien
-// (/sound1.wav ... /sound24.wav, /loop.wav, /shut.wav, /start.wav, siehe
-// ESP32-RC-Sound.ino) zu kollidieren. Kurzer Name ohne Punkt fuer maximale
+// (/sound1.wav ... /sound4.wav, /loop.wav, /shut.wav, /start.wav, siehe
+// main.cpp) zu kollidieren. Kurzer Name ohne Punkt fuer maximale
 // Kompatibilitaet (8.3-sicher), auch wenn aktuelle SD-Bibliotheken lange
 // Dateinamen normalerweise unterstuetzen.
 static constexpr const char* SD_BACKUP_DIR = "/cfgbkup";
@@ -2091,7 +1878,7 @@ void WebServerManager::handleApiSdDelete() {
 // beliebiges Schreiben auf die SD-Karte ueber diesen Endpunkt).
 static bool isValidSoundUploadName(const String& name) {
   if (name == "loop.wav" || name == "shut.wav" || name == "start.wav") return true;
-  // "sound1.wav" .. "sound24.wav"
+  // "sound1.wav" .. "sound4.wav"
   if (!name.startsWith("sound") || !name.endsWith(".wav")) return false;
   String numPart = name.substring(5, name.length() - 4);
   if (numPart.length() == 0 || numPart.length() > 2) return false;
@@ -2099,12 +1886,12 @@ static bool isValidSoundUploadName(const String& name) {
     if (!isDigit(numPart[i])) return false;
   }
   int n = numPart.toInt();
-  return n >= 1 && n <= 24;
+  return n >= 1 && n <= RCSOUND_NUM_SOUNDS;
 }
 
 // Liefert (falls vorhanden) das Sound-Objekt, das die Datei "name" abspielt -
 // Bugfix v7.09: siehe Aufrufer (handleApiSoundUploadData()/-Delete()). Fuer
-// Sound1-24 (Sounds[]) wird das Handle vom Haupt-Loop() ohnehin bei jedem
+// Sound1-4 (Sounds[]) wird das Handle vom Haupt-Loop() ohnehin bei jedem
 // neuen Trigger frisch per LoadWavFile() geoeffnet (siehe handleSound() im
 // .ino); fuer die drei Motor-Dateien (loop/shut/start.wav) dagegen NICHT -
 // die werden per LoadFiles() nur EINMAL beim Boot geoeffnet und danach nie
@@ -2116,7 +1903,7 @@ static XT_Wav_Class* soundObjectFor(const String& name) {
   if (name == "start.wav") return &Sound_start;
   if (name.startsWith("sound") && name.endsWith(".wav")) {
     int n = name.substring(5, name.length() - 4).toInt();
-    if (n >= 1 && n <= 24) return Sounds[n];
+    if (n >= 1 && n <= RCSOUND_NUM_SOUNDS) return Sounds[n];
   }
   return nullptr;
 }
@@ -2129,7 +1916,7 @@ static XT_Wav_Class* soundObjectFor(const String& name) {
 // Von diesen 5 Deskriptoren sind 3 permanent durch die Motor-Dateien
 // (loop/shut/start.wav) belegt - LoadFiles() oeffnet sie EINMAL beim Boot und
 // schliesst sie nie wieder, auch wenn der Motor gar nicht laeuft. Zusammen mit
-// jedem gerade aktiven Sound1-24 blieb fuer den Upload oft kein einziger
+// jedem gerade aktiven Sound1-4 blieb fuer den Upload oft kein einziger
 // Deskriptor mehr uebrig -> SD.open() scheiterte mit "no free file descriptors"
 // und es traf je nach zufaellig gerade offenen Sounds mal Slot 1, mal 3, mal 8.
 // Loesung ohne jeden zusaetzlichen Speicherbedarf: die NICHT gerade
@@ -2146,14 +1933,14 @@ static XT_Wav_Class* const kMotorSounds[3] = { &Sound_loop, &Sound_shut, &Sound_
 // Schliesst die ungenutzten Motor-Handles; "except" (der Sound, den der
 // Aufrufer ohnehin selbst schliesst/laedt) wird uebersprungen.
 // Rueckgabe: Bitmaske der tatsaechlich geschlossenen Handles fuer restore...().
-// v7.12: deckt jetzt NICHT nur die 3 Motor-Dateien ab, sondern auch die 24
+// v7.12: deckt jetzt NICHT nur die 3 Motor-Dateien ab, sondern auch die 4
 // Sound-Slots. Grund: handleSound() im .ino schliesst das Handle eines Slots
 // erst, wenn dessen Quelle wieder AUS geht UND die Wiedergabe beendet ist -
 // ein Slot, dessen Quelle dauerhaft anliegt (z.B. Quelle "immer an", oder ein
 // Schalter, der angeschaltet stehen bleibt), belegt seinen Deskriptor also
 // dauerhaft weiter, obwohl gar nichts mehr zu hoeren ist. Genau diese Slots
 // haben den knappen Vorrat zusaetzlich zu den Motor-Dateien aufgebraucht.
-// Bit 0-2 = Motor (loop/shut/start), Bit 3-26 = Sounds[1..24].
+// Bit 0-2 = Motor (loop/shut/start), Bit 3-6 = Sounds[1..4].
 static uint32_t releaseIdleSoundHandles(XT_Wav_Class* except) {
   uint32_t mask = 0;
   for (uint8_t i = 0; i < 3; i++) {
@@ -2164,7 +1951,7 @@ static uint32_t releaseIdleSoundHandles(XT_Wav_Class* except) {
     s->UnLoadWavFile();
     mask |= (1ul << i);
   }
-  for (uint8_t n = 1; n <= 24; n++) {
+  for (uint8_t n = 1; n <= RCSOUND_NUM_SOUNDS; n++) {
     XT_Wav_Class* s = Sounds[n];
     if (s == nullptr) continue;
     if (s == except)  continue;
@@ -2186,7 +1973,7 @@ static uint32_t releaseIdleSoundHandles(XT_Wav_Class* except) {
 static void restoreSoundHandles(uint32_t mask) {
   for (uint8_t i = 0; i < 3; i++)
     if (mask & (1ul << i)) kMotorSounds[i]->LoadWavFile();
-  for (uint8_t n = 1; n <= 24; n++)
+  for (uint8_t n = 1; n <= RCSOUND_NUM_SOUNDS; n++)
     if ((mask & (1ul << (n + 2))) && Sounds[n]) Sounds[n]->LoadWavFile();
 }
 
@@ -2358,7 +2145,7 @@ void WebServerManager::handleApiSoundUploadData() {
     // Ab hier halten wir den SD-Mutex NICHT mehr - LoadWavFile() darf ihn
     // jetzt gefahrlos selbst nehmen (siehe Kommentar oben bei UPLOAD_FILE_START).
     // Erfolg: laedt den Sound mit dem NEUEN Inhalt neu - sonst bliebe er bis
-    // zum naechsten Trigger (Sound1-24) bzw. bis zum naechsten Reboot
+    // zum naechsten Trigger (Sound1-4) bzw. bis zum naechsten Reboot
     // (Motor-Loop/Shut/Start, die sonst nie neu geladen werden) stumm.
     // Fehler/Abbruch: die Datei wurde oben geloescht, LoadWavFile() schlaegt
     // dann korrekt fehl und setzt FileOK=false (kein Sound mehr auf diesem
@@ -2403,7 +2190,7 @@ static bool sdFileInfo(const String& path, uint32_t& outSize) {
 
 // ── GET /api/soundfiles ───────────────────────────────────────────────────
 // Liefert fuer alle von der Firmware erwarteten Sound-Dateien (Motor:
-// loop/shut/start.wav, Sound 1-24: soundN.wav), ob sie auf der SD-Karte
+// loop/shut/start.wav, Sound 1-4: soundN.wav), ob sie auf der SD-Karte
 // vorhanden sind und wie gross sie sind - Grundlage fuer die Datei-Verwaltung
 // im Webinterface (Tab "Motor"/"Sounds": Status je Datei, Upload/Loeschen).
 void WebServerManager::handleApiSoundFiles() {
@@ -2412,7 +2199,7 @@ void WebServerManager::handleApiSoundFiles() {
 
   String j = "{\"ok\":true,\"files\":{";
   bool first = true;
-  for (int i = 0; i < 3 + 24; i++) {
+  for (int i = 0; i < 3 + RCSOUND_NUM_SOUNDS; i++) {
     String name = (i < 3) ? String(fixedNames[i]) : ("sound" + String(i - 2) + ".wav");
     uint32_t size = 0;
     bool exists = haveSd && sdFileInfo("/" + name, size);
@@ -2573,7 +2360,7 @@ void WebServerManager::handleApiOtaUpdate() {
 // schaltet enableAP()/disableAP() (siehe weiter oben, kurz nach begin())
 // sofort, OHNE die Konfiguration zu aendern oder das Modul neu zu starten.
 // Bildet nur den aktuellen Laufzeit-Zustand ab - das Boot-Verhalten
-// (WifiPin/GPIO13) bleibt unberuehrt.
+// (WLAN-Pin, siehe pins.h) bleibt unberuehrt.
 void WebServerManager::handleApiWifiEnable() {
   bool on = false;
   if (server.hasArg("plain")) {
@@ -2597,24 +2384,13 @@ void WebServerManager::handleApiWifiEnable() {
 }
 
 // ── GET /api/debug ────────────────────────────────────────────────────────
-// Live-Daten: BUS-Kanäle, PWM, WAV-Status, S.Port.
+// Live-Daten: BUS-Kanäle, WAV-Status, S.Port.
 void WebServerManager::handleApiDebug() {
   String j = "{";
 
   // BUS-Kanäle 1-16
   j += "\"channels\":[";
   for (int i = 0; i < 16; i++) { if (i) j += ","; j += String(channel_output[i]); }
-  j += "],";
-
-  // PWM Pins 1-6
-  j += "\"pwm\":[";
-  for (int i = 0; i < 6; i++) {
-    if (i) j += ",";
-    j += "{\"us\":"  + String(PWM_pulse_width[i]) + ",";
-    j += "\"pct\":"  + String(map(PWM_pulse_width[i],
-                                   config.PWM_scale_min,
-                                   config.PWM_scale_max, 0, 100)) + "}";
-  }
   j += "],";
 
   // WAV-Dateistatus
@@ -2632,7 +2408,6 @@ void WebServerManager::handleApiDebug() {
   j += "]},";
 
   // S.Port Live-Daten
-  j += "\"hw_config\":"  + String(config.Hardware_Config) + ",";
   // Der AKTIVE (Boot-)Wert, nicht der evtl. schon geaenderte, aber noch
   // nicht neu gestartete config.PortB_Mode.
   j += "\"portb_mode\":" + String(PortB_Mode_boot) + ",";
@@ -2715,7 +2490,7 @@ void WebServerManager::handleApiSound() {
 
   if (body.indexOf("\"test\":true") >= 0) Sound_on_web[id] = true;
 
-  // Ein Rohwert, den einTyp() (ESP32-RC-Sound.ino) nicht als gueltig erkennt
+  // Ein Rohwert, den einTyp() (main.cpp) nicht als gueltig erkennt
   // (z.B. aus einer alten Konfigurationsdatei mit einem inzwischen
   // entfallenen Wertebereich), wird auf 999 (Deaktiviert) zurueckgesetzt -
   // siehe isValidEinSource(). Greift auch bei jedem Konfigurations-Import.
@@ -2765,15 +2540,6 @@ void WebServerManager::handleRequest() {
   // loop().
   if (uri == "/save")      { markDirty(); }
   if (uri == "/reset")     { Reset_all(); }
-  if (uri == "/setsbus")   { set_sbus(); }
-  if (uri == "/setpwm")    { set_pwm(); }
-  if (uri == "/setpin")    { set_pin(); }
-
-  // ── PWM Skalierung (eigene Route /setPWM?pwmMin=X&pwmMax=Y) ──────────
-  if (uri == "/setPWM") {
-    if (server.hasArg("pwmMin")) { config.PWM_scale_min = constrain(server.arg("pwmMin").toInt(),0,4095); markDirty(); }
-    if (server.hasArg("pwmMax")) { config.PWM_scale_max = constrain(server.arg("pwmMax").toInt(),0,4095); markDirty(); }
-  }
 
   // safeMenu ist bereits oben bei "/Sound/on" berechnet (siehe dort) und
   // wird fuer die Array-Zugriffe unten (Volumen_Sound[safeMenu] etc.)
@@ -2783,8 +2549,8 @@ void WebServerManager::handleRequest() {
   // ── Numerische Parameter (alle via /?KEY=VAL& ) ───────────────────────
   // Dieselben Grenzen wie in handleApiSound()/handleApiConfigPost() - anders
   // als die moderne /api/*-Route liefen diese Legacy-Parameter sonst
-  // ungeprueft per toInt() (ungueltige Quellen, negative Lautstaerken oder
-  // widerspruechliche PWM-Grenzen waeren moeglich).
+  // ungeprueft per toInt() (ungueltige Quellen oder negative Lautstaerken
+  // waeren moeglich).
   // WebServer.h: server.arg("KEY") liefert den Wert, server.hasArg() prüft Existenz
   if (server.hasArg("VolumenSound"))         { config.Volumen_Sound[safeMenu]      = constrain(server.arg("VolumenSound").toInt(),0,200);      markDirty(); }
   if (server.hasArg("Drehzahlmin"))          { config.Min_Speed_Sound_0            = constrain(server.arg("Drehzahlmin").toInt(),0,200);       markDirty(); }
@@ -2794,17 +2560,12 @@ void WebServerManager::handleRequest() {
   if (server.hasArg("MotorOnToggle"))        { config.engine_on_toggle             = constrain(server.arg("MotorOnToggle").toInt(),0,1);       markDirty(); }
   if (server.hasArg("SoundON"))              { config.Source_Start_Sound[safeMenu] = server.arg("SoundON").toInt();                            markDirty(); }
   if (server.hasArg("SoundSPEED"))           { config.Source_Speed_Sound_0         = server.arg("SoundSPEED").toInt();                         markDirty(); }
-  if (server.hasArg("RCSytem"))              { config.Einkanal_RC_System           = constrain(server.arg("RCSytem").toInt(),0,4);             markDirty(); }
-  if (server.hasArg("SbuschannelEinkanal"))  { config.Einkanal_Channel             = constrain(server.arg("SbuschannelEinkanal").toInt(),0,999); markDirty(); }
   if (server.hasArg("MODULADRESSE"))         { config.modul_adress                 = constrain(server.arg("MODULADRESSE").toInt(),0,20);       markDirty(); }
   if (server.hasArg("SportPollID0"))         { config.sport_poll_id[0]             = (uint8_t)strtol(server.arg("SportPollID0").c_str(), nullptr, 16); markDirty(); }
   if (server.hasArg("SportPollID1"))         { config.sport_poll_id[1]             = (uint8_t)strtol(server.arg("SportPollID1").c_str(), nullptr, 16); markDirty(); }
-  if (server.hasArg("EinkanalMode"))         { config.Einkanal_mode                = server.arg("EinkanalMode").toInt();                       markDirty(); }
   if (server.hasArg("SoundMODE"))            { config.Mode_Sound[safeMenu]         = constrain(server.arg("SoundMODE").toInt(),0,2);           markDirty(); }
   if (server.hasArg("ThrottleRamp"))         { config.throttle_ramp                = constrain(server.arg("ThrottleRamp").toInt(),0,50);       markDirty(); }
   if (server.hasArg("ThrottleDeadBand"))     { config.throttle_dead_band           = constrain(server.arg("ThrottleDeadBand").toInt(),0,50);   markDirty(); }
-  if (server.hasArg("HardwareConfig"))       { config.Hardware_Config_Pending      = constrain(server.arg("HardwareConfig").toInt(),0,2);      markDirty();
-    Serial.printf("[Legacy] Hardware_Config_Pending -> %d (wirkt erst nach Neustart)\n", config.Hardware_Config_Pending); }
 
   // ── String-Parameter (URL-dekodiert) ─────────────────────────────────
   if (server.hasArg("WiFi_SSID")) {

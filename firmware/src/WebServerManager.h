@@ -6,7 +6,7 @@
 class WebServerManager {
 public:
   // begin() registriert nur die Routen und merkt sich SSID/Passwort - wird
-  // IMMER in setup() aufgerufen (unabhaengig vom WifiPin/GPIO13-Zustand),
+  // IMMER in setup() aufgerufen (unabhaengig vom WLAN-Pin-Zustand),
   // damit WLAN auch nachtraeglich gestartet werden kann. Das tatsaechliche
   // Ein-/Ausschalten von AP-Funk + Webserver-Socket uebernehmen
   // enableAP()/disableAP() - aufrufbar sowohl beim Booten (falls WifiPin

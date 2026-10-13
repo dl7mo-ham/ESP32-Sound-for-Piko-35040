@@ -1,7 +1,6 @@
 /*
- * sport_lipo.cpp  –  ESP32-RC-Sound  (Port B, Rolle PORTB_SPORT - ab v6.0
- * unabhaengig von der Hardware-Version waehlbar statt fest an "V4" gekoppelt,
- * siehe Port-Modell in config.h)
+ * sport_lipo.cpp  –  Soundmodul Mini (Port B, Rolle PORTB_SPORT, aus
+ * ESP32-RC-Sound v7, siehe Port-Modell in config.h)
  *
  * S.Port Master: ESP32 pollt FrSky FLVSS/MLVSS Sensoren und parst
  * Einzelzell-Spannungen. Automatische Erkennung der Zellanzahl (1–6S).
@@ -25,7 +24,7 @@
  */
 
 #include "sport_lipo.h"
-#include "src/CRSF_ESP32/crsf_esp32.h"
+#include "CRSF_ESP32/crsf_esp32.h"
 #include "config.h"
 
 // Zugriff auf den CRSF-Instanz aus dem Hauptsketch
@@ -35,10 +34,8 @@ extern CRSF crsf;
 LipoSensorData lipoSensor[SPORT_NUM_SENSORS] = {};
 
 // ── UART-Instanz ──────────────────────────────────────────────────────
-// SBUS belegt Serial1, CRSF belegt Serial2.
-// S.Port bekommt den jeweils freien UART:
-//   SBUS-Betrieb (RC-System != 4) -> S.Port auf Serial2
-//   CRSF-Betrieb (RC-System == 4) -> S.Port auf Serial1
+// Port A (CRSF) belegt Serial2, Port B (hier S.Port) bekommt Serial1 -
+// uebergeben von der Port-B-Rollen-Registry (siehe main.cpp/setup()).
 static HardwareSerial* sportSerialPtr = nullptr;
 
 // ── State-Machine ─────────────────────────────────────────────────────
@@ -229,10 +226,7 @@ static void sportProcessByte(uint8_t b) {
 
 // ── Initialisierung ───────────────────────────────────────────────────
 // serial/rxPin/txPin/baud kommen jetzt als Parameter von der Port-B-Rollen-
-// Registry (siehe port_function.cpp) - welcher Hardware-UART frei ist,
-// entscheidet ausschliesslich portBFreeSerial() im .ino (einzige Stelle,
-// vorher war dieselbe SBUS/CRSF-Fallunterscheidung hier UND im .ino
-// dupliziert).
+// Registry (siehe port_function.cpp), den UART legt setup() in main.cpp fest.
 void sportLipoInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     sportSerialPtr = serial;
     sportSerialPtr->begin(baud, SERIAL_8N1, rxPin, txPin, true);
@@ -246,9 +240,8 @@ void sportLipoInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_
     pollSensor = 0;
     lastPollMs = 0;
 
-    Serial.printf("[S.Port] Init: TX=GPIO%d  RX=GPIO%d  %u Baud (invertiert, UART%d)\n",
-                  txPin, rxPin, (unsigned)baud,
-                  (config.Einkanal_RC_System == 4) ? 1 : 2);
+    Serial.printf("[S.Port] Init: TX=GPIO%d  RX=GPIO%d  %u Baud (invertiert)\n",
+                  txPin, rxPin, (unsigned)baud);
 }
 
 // isActive(): true, sobald sportLipoInit() gelaufen ist (Registry-Getter,
@@ -257,10 +250,8 @@ bool sportLipoIsActive() { return sportSerialPtr != nullptr; }
 
 // ── Update (non-blocking, in loop() aufrufen) ─────────────────────────
 void sportLipoUpdate() {
-    // Schutz: Wird Hardware_Config zur Laufzeit auf V4 gestellt (per Web/API), ist
-    // die S.Port-UART noch nicht initialisiert (sportLipoInit() laeuft nur in setup()).
-    // Ohne diesen Check gaebe es einen Null-Pointer-Zugriff (Guru Meditation).
-    // S.Port arbeitet dann erst nach einem Neustart – der Crash bleibt aber aus.
+    // Schutz: ohne sportLipoInit() (Port B nicht auf S.Port) ist die UART nicht
+    // initialisiert - ohne diesen Check gaebe es einen Null-Pointer-Zugriff.
     if (sportSerialPtr == nullptr) return;
     unsigned long now = millis();
     sportNow = now;   // gemeinsame Zeitbasis fuer sportProcessByte() (lastUpdateMs)

@@ -652,6 +652,11 @@ XT_I2S_Class::XT_I2S_Class(uint8_t LRCLKPin, uint8_t BCLKPin, uint8_t I2SOutPin,
     pin_config.ws_io_num = LRCLKPin;
     pin_config.data_out_num = I2SOutPin;
     pin_config.data_in_num = I2S_PIN_NO_CHANGE;
+    // Mini: kein MCLK-Ausgang. pin_config liegt in einem globalen Objekt und
+    // ist daher mit 0 vorbelegt - mck_io_num = 0 wuerde den Master-Takt auf
+    // GPIO0 legen (beim ESP32-S3 Strapping-Pin/BOOT-Taster). Der MAX98357A
+    // braucht keinen MCLK.
+    pin_config.mck_io_num = I2S_PIN_NO_CHANGE;
 
     PortNum = PassedPortNum;
 

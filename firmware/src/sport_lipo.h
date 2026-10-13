@@ -2,34 +2,23 @@
 #define SPORT_LIPO_H
 
 /*
- * sport_lipo.h  –  ESP32-RC-Sound  (Port B, Rolle PORTB_SPORT - ab v6.0
- * unabhaengig waehlbar statt fest an "Hardware V4" gekoppelt, siehe
- * Port-Modell in config.h)
+ * sport_lipo.h  –  Soundmodul Mini (Port B, Rolle PORTB_SPORT, aus
+ * ESP32-RC-Sound v7)
  *
  * S.Port Master-Polling fuer bis zu 2 FrSky FLVSS/MLVSS LiPo-Sensoren.
  * Der ESP32 übernimmt die Rolle des S.Port-Masters und pollt die Sensoren
- * aktiv ueber einen dedizierten Hardware-UART (dynamisch: Serial2 bei SBUS, Serial1 bei CRSF).
+ * aktiv ueber den Port-B-UART (Serial1, Port A/CRSF liegt auf Serial2).
  *
- * Port B – Pins (nur auf Hardware V3 frei, siehe config.h):
- *   GPIO 33  → S.Port TX  (Output, kein Strapping)
- *   GPIO 32  → S.Port RX  (Input, kein Strapping)
+ * Pins: PIN_PORTB_TX / PIN_PORTB_RX, siehe pins.h.
  *
  * Schaltung (Half-Duplex, S.Port ist invertierter UART 57600 Baud):
  *
- *   ESP32 GPIO 33 (TX) ──[1N4148 Anode→Kathode]──┬── S.Port Signal (gelb)
- *   ESP32 GPIO 32 (RX) ────────────────────────────┘
+ *   ESP32 PIN_PORTB_TX ──[1N4148 Anode→Kathode]──┬── S.Port Signal (gelb)
+ *   ESP32 PIN_PORTB_RX ───────────────────────────┘
  *   ESP32 GND ──────────────────────────────────────── S.Port GND (schwarz)
  *
- *   Diode 1N4148: Anode an GPIO 33, Kathode Richtung Bus
- *   (schwarzer Ring zeigt WEG von GPIO 33, Richtung S.Port Kabel)
- *
- * Warum GPIO 32 / 33?
- *   In V1: GPIO 32/33 komplett frei (V1 nutzt GPIO 0,2,4,16,17,22)
- *   In V2: GPIO 32 = PWM 5, GPIO 33 = PWM 6 – auf Port B (nur V3) nicht relevant
- *   In V3: beide frei (V3 hat keine PWM-Eingänge)
- *   Kein Strapping-Pin, kein Boot-Konflikt, vollwertig Input+Output
- *   SBUS-Betrieb: Serial1=SBUS -> S.Port auf Serial2
- *   CRSF-Betrieb: Serial2=CRSF -> S.Port auf Serial1
+ *   Diode 1N4148: Anode an PIN_PORTB_TX, Kathode Richtung Bus
+ *   (schwarzer Ring zeigt WEG vom ESP32, Richtung S.Port Kabel)
  *
  * Sensor Poll-IDs (konfigurierbar über Weboberfläche Seite 12):
  *   Sensor 1 (Pack 1): Physical ID 1 (EdgeTX) → Poll-Byte 0xA1
@@ -40,13 +29,6 @@
  */
 
 #include <Arduino.h>
-
-// ── Pin-Konfiguration Port B ────────────────────────────────────────────
-// Nur noch Referenz/Dokumentation - sportLipoInit() bekommt rxPin/txPin seit
-// der Port-B-Rollen-Registry (siehe port_function.h) als Parameter, physisch
-// sind es aber weiterhin immer diese beiden Pins (Port B ist fest verdrahtet).
-#define SPORT_TX_PIN     33      // Output GPIO, kein Strapping
-#define SPORT_RX_PIN     32      // Input GPIO, kein Strapping
 
 // S.Port: 57600 Baud, 8N1, invertiert
 #define SPORT_BAUD       57600
@@ -97,10 +79,8 @@ extern LipoSensorData lipoSensor[SPORT_NUM_SENSORS];
 
 // ── Öffentliche Funktionen ────────────────────────────────────────────
 // Signatur passend zur Port-B-Rollen-Registry (siehe port_function.h):
-// serial = von portBFreeSerial() (im .ino) ermittelter freier Hardware-UART,
-// rxPin/txPin = physisch immer 32/33, baud = config.PortB_Baud. Die fruehere
-// interne Serial1/Serial2-Entscheidung ist damit entfallen - es gibt jetzt
-// nur noch EINE Stelle (portBFreeSerial() im .ino), die das festlegt.
+// serial = Port-B-UART (Serial1, siehe setup() in main.cpp),
+// rxPin/txPin = PIN_PORTB_RX/PIN_PORTB_TX (pins.h), baud = config.PortB_Baud.
 void    sportLipoInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud);
 void    sportLipoUpdate();              // Non-blocking, in loop() aufrufen
 bool    sportLipoIsActive();            // true = UART initialisiert (S.Port aktiv auf Port B zugewiesen)

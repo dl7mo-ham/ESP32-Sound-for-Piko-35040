@@ -1,8 +1,8 @@
 /*
- * gps_speed.cpp  –  ESP32-RC-Sound  (Port C)
+ * gps_speed.cpp  –  Soundmodul Mini (Port C, aus ESP32-RC-Sound v7)
  *
- * Siehe gps_speed.h. Liest ein NMEA-GPS über Software-Serial (RX=GPIO27,
- * TX=GPIO14) und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
+ * Siehe gps_speed.h. Liest ein NMEA-GPS über Software-Serial (Pins siehe
+ * pins.h) und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
  * aus dem GPS und muss auf dem Modul nicht berechnet werden.
  *
  * Nach dem Boot wird das GPS einmalig per CASIC-Kommando konfiguriert
@@ -12,10 +12,11 @@
 #include "gps_speed.h"
 #include <SoftwareSerial.h>   // EspSoftwareSerial
 #include <TinyGPS++.h>
+#include "pins.h"
 
 // ── Konfiguration ──────────────────────────────────────────────────────────
-#define GPS_RX_PIN     27     // GPS-TX -> ESP32 GPIO 27 (PWM-Pin 4)
-#define GPS_TX_PIN     14     // ESP32 -> GPS-RX  GPIO 14 (PWM-Pin 3)
+#define GPS_RX_PIN     PIN_GPS_RX   // GPS-TX -> ESP32
+#define GPS_TX_PIN     PIN_GPS_TX   // ESP32 -> GPS-RX
 #define GPS_BAUD       9600   // NMEA-Baudrate
 #define GPS_UPDATE_MS  200    // Positions-Updateintervall: 200=5Hz, 100=10Hz, 500=2Hz, 1000=1Hz
 #define GPS_CFG_DELAY  800    // ms nach Init warten, bevor die Konfig gesendet wird
@@ -57,7 +58,7 @@ static void gpsSendConfig() {
 
 // ── Initialisierung ────────────────────────────────────────────────────────
 void gpsSpeedInit() {
-    // Voll-Duplex-Software-Serial: RX=GPIO27 (lesen), TX=GPIO14 (konfigurieren).
+    // Voll-Duplex-Software-Serial: RX lesen, TX konfigurieren.
     // S.Port (UART1, 32/33) und CRSF (UART2, 16/17) bleiben unberührt.
     gpsSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
     initMs  = millis();
@@ -68,7 +69,7 @@ void gpsSpeedInit() {
 // ── zyklisches Einlesen/Auswerten ──────────────────────────────────────────
 void gpsSpeedUpdate() {
     // Konfiguration einmalig kurz nach dem Boot senden (GPS ist dann bereit,
-    // und ein evtl. Boot-Glitch auf GPIO14 ist längst vorbei).
+    // und ein evtl. Boot-Glitch auf dem TX-Pin ist längst vorbei).
     if (!cfgSent && (millis() - initMs) > GPS_CFG_DELAY) {
         gpsSendConfig();
         cfgSent = true;

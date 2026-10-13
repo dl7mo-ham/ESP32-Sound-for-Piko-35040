@@ -1,5 +1,5 @@
 /*
- * port_function.cpp  –  ESP32-RC-Sound v6.x (Port-B-Rollen-Registry)
+ * port_function.cpp  –  Soundmodul Mini (Port-B-Rollen-Registry, aus ESP32-RC-Sound v7)
  *
  * Bildet jede PortBMode-Rolle (siehe port_function.h) auf ihr Begin/Update/
  * IsActive-Modul ab. setup()/loop() im .ino kennen keine rollenspezifischen
@@ -9,7 +9,7 @@
 
 #include "port_function.h"
 #include "sport_lipo.h"
-#include "src/CRSF_ESP32/crsf_esp32.h"
+#include "CRSF_ESP32/crsf_esp32.h"
 #include <cstring>
 
 // Port B kann als zweite, unabhaengige CRSF-Instanz laufen (siehe
@@ -47,15 +47,6 @@ static void portBRawBegin(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, 
 static void portBRawUpdate() {}
 static bool portBRawIsActive() { return portBRawActive; }
 
-static void portBHottBegin(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
-    // In Vorbereitung: im Menue/in der Konfiguration waehlbar, aber noch
-    // kein Hott-Telemetrie-Treiber vorhanden. Bewusst KEIN UART-Init hier,
-    // damit nichts Halbfertiges auf den Pins liegt.
-    (void)serial; (void)rxPin; (void)txPin; (void)baud;
-    Serial.println("Port B: Hott-Telemetrie gewaehlt, Treiber aber noch nicht implementiert (in Vorbereitung) - Port bleibt inaktiv.");
-}
-static void portBHottUpdate() {}
-static bool portBHottIsActive() { return false; }
 
 // Index == numerischer PortBMode-Wert (siehe config.h). Index 0 (PORTB_OFF)
 // wird nie ueber dieses Array aufgeloest (getPortBModule() liefert dafuer
@@ -65,7 +56,6 @@ static const PortBFunctionModule PORTB_MODULES[PORTB_FUNCTION_COUNT] = {
     { "Aus",         0,                        nullptr,        nullptr,         nullptr },            // PORTB_OFF
     { "CRSF",        PORTB_BAUD_DEFAULT_CRSF,  portBCrsfBegin, portBCrsfUpdate, portBCrsfIsActive },   // PORTB_CRSF
     { "S.Port",      PORTB_BAUD_DEFAULT_SPORT, sportLipoInit,  sportLipoUpdate, sportLipoIsActive },   // PORTB_SPORT
-    { "Hott (bald)", PORTB_BAUD_DEFAULT_HOTT,  portBHottBegin, portBHottUpdate, portBHottIsActive },   // PORTB_HOTT
     { "Raw",         PORTB_BAUD_DEFAULT_RAW,   portBRawBegin,  portBRawUpdate,  portBRawIsActive },    // PORTB_RAW
 };
 
