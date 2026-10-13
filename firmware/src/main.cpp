@@ -42,14 +42,15 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   CRSF_PARAM_COUNT Feld-IDs, lueckenlos 1..50, Liste direkt beim
+   CRSF_PARAM_COUNT Feld-IDs, lueckenlos 1..51, Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
    ── Module ────────────────────────────────────────────────────────────
    config.cpp/.h          Persistente Konfiguration (NVS)
    WebServerManager.cpp   Weboberflaeche, REST-API, OTA-Update
-   XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S, SD-Kartenzugriff
+   XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
+   sound_store.cpp/.h     Sound-Speicher Flash (LittleFS) / SD / Auto
    CRSF_ESP32/            Gemeinsame CRSF-Bibliothek (identische Kopie
                           wie im Soundmodul V7 und im Multiswitch)
    sport_lipo.cpp/.h      S.Port-Telemetrie (Port B)
@@ -68,6 +69,7 @@
 #include "sport_lipo.h"
 #include "gps_speed.h"
 #include "port_function.h"
+#include "sound_store.h"
 
 uint16_t Version = 1;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (1 -> "0.01")
 char versionString[6];
@@ -150,7 +152,7 @@ XT_Wav_Class* Sounds[RCSOUND_NUM_SLOTS] = {
 };
 
 // ── Vorwaertsdeklarationen ────────────────────────────────────────────
-void Config(); void SDCardInit(); void LoadFiles();
+void Config(); void LoadFiles();
 void AllocateSoundBuffers(); // reserviert die Sample-Puffer erst in setup() NACH dem WLAN-AP-Start
 void einkanalFunctionCRSF(); uint8_t compressSwitches(uint16_t state);
 static void updateGroupFromAddress(uint8_t addr, uint8_t bits);
@@ -177,16 +179,17 @@ static void crsfWriteParam(uint8_t idx, uint8_t val);
 //   46:Sel WLAN jetzt (sofort, nicht persistiert)
 //   47:Sel Auto-WLAN bei Signalverlust  48:U8 Auto-WLAN Timeout (s)
 //   49:Sel WLAN dauerhaft an
-//  50: Info Geraetename
+//   50:Sel Sound-Speicher (Auto/Flash/SD, wirkt nach Neustart)
+//  51: Info Geraetename
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
 static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
-static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 11;
+static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t CRSF_PARAM_COUNT = DEVNAME_FI;
 // Die Folder-Kinderlisten unten sind Literale (std::initializer_list) - bei
 // einer Aenderung der Sound-Anzahl muessen sie von Hand nachgezogen werden.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && CRSF_PARAM_COUNT == 50,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && CRSF_PARAM_COUNT == 51,
               "CRSF-Feld-IDs passen nicht mehr zu den Folder-Listen in crsfSendParam()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -280,7 +283,7 @@ static void crsfSendParam(uint8_t idx) {
     char buf[48];
 
     if(idx==0) {
-        crsf.send_param_response_CRSF_FOLDER(0,0,"",{1,2,15,21,27,33,39,50});
+        crsf.send_param_response_CRSF_FOLDER(0,0,"",{1,2,15,21,27,33,39,51});
     }
     else if(idx==1) {
         snprintf(buf,sizeof(buf),"%s Mini S3",versionString);
@@ -364,9 +367,9 @@ static void crsfSendParam(uint8_t idx) {
         }
     }
 
-    // ── Einstellungen (39..49) ────────────────────────────────────────
+    // ── Einstellungen (39..50) ────────────────────────────────────────
     else if(idx==39) crsf.send_param_response_CRSF_FOLDER(39,0,"Einstellungen",
-        {40,41,42,43,44,45,46,47,48,49});
+        {40,41,42,43,44,45,46,47,48,49,50});
     else if(idx==40) crsf.send_param_response_CRSF_UINT8(40,39,"Modul Adresse",
         (uint8_t)constrain(config.modul_adress,0,20),0,20,"");
     else if(idx==41) crsf.send_param_response_CRSF_UINT8(41,39,"Gruppenadr. 1 (255=aus)",
@@ -396,11 +399,14 @@ static void crsfSendParam(uint8_t idx) {
     else if(idx==49) crsf.send_param_response_CRSF_TEXT_SELECTION(49,39,
         "WLAN dauerhaft an","Aus;Ein",
         config.WifiAlwaysOn?1:0,0,1);
+    else if(idx==50) crsf.send_param_response_CRSF_TEXT_SELECTION(50,39,
+        "Sound-Speicher",STORAGE_OPTIONS,
+        (uint8_t)constrain(config.Sound_Storage,0,(int)STORAGE_MAX),0,STORAGE_MAX);
 
-    // ── Geraetename (50) ──────────────────────────────────────────────
-    else if(idx==50) {
+    // ── Geraetename (51) ──────────────────────────────────────────────
+    else if(idx==51) {
         snprintf(buf,sizeof(buf),"%s (Web aendern)",config.Device_Name);
-        crsf.send_param_response_CRSF_INFO(50,0,"Geraetename",buf);
+        crsf.send_param_response_CRSF_INFO(51,0,"Geraetename",buf);
     }
 }
 
@@ -469,6 +475,10 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
     // dem Parameter-Handler heraus - WLAN-Start zur Laufzeit ist die
     // fehleranfaelligste Operation, siehe V7).
     else if(idx==49){config.WifiAlwaysOn=constrain(val,0,1);markDirty();}
+    else if(idx==50){
+        config.Sound_Storage=constrain(val,0,(int)STORAGE_MAX);markDirty();
+        Serial.printf("!!! Sound-Speicher -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",config.Sound_Storage);
+    }
 }
 
 // ======== Setup ======================================================
@@ -488,7 +498,7 @@ void setup() {
 
     pinMode(PIN_WIFI, INPUT_PULLUP);
 
-    SDCardInit();
+    soundStoreBegin((uint8_t)config.Sound_Storage);
     LoadFiles();
 
     // begin() registriert nur die HTTP-Routen und merkt sich SSID/Passwort.
@@ -715,8 +725,6 @@ float floatMap(float x,float a,float b,float c,float d){if(b==a)return c;return(
 // Wert belegt beim Mounten dauerhaft einen grossen DRAM-Block und laesst den
 // WLAN-Start an Fragmentierung scheitern. Der Deskriptor-Engpass wird beim
 // Upload durch Freigeben ungenutzter Handles geloest (WebServerManager.cpp).
-// Die SD-Karte liegt auf den Standard-SPI-Pins des S3 (siehe pins.h).
-void SDCardInit(){pinMode(PIN_SD_CS,OUTPUT);digitalWrite(PIN_SD_CS,HIGH);if(!SD.begin(PIN_SD_CS))Serial.println("FEHLER: SD!");}
 void LoadFiles(){Sound_loop.LoadWavFile();Sound_shut.LoadWavFile();Sound_start.LoadWavFile();}
 
 // Holt die Sample-Puffer ALLER Sound-Objekte vom Heap - aufgerufen aus

@@ -46,6 +46,7 @@ void Reset_all() {
     config.PortB_Mode             = PORTB_OFF;
     config.PortB_Baud             = PORTB_BAUD_DEFAULT_CRSF;
     config.PortC_GPS_Enabled      = 0;
+    config.Sound_Storage          = 0;      // Auto
     strncpy(config.WiFi_SSID,     "Sound-Mini",  sizeof(config.WiFi_SSID)     - 1);
     strncpy(config.WiFi_Password, "123456789",   sizeof(config.WiFi_Password) - 1);
     strncpy(config.WiFi_IP,       "192.168.1.1", sizeof(config.WiFi_IP)       - 1);
@@ -97,6 +98,7 @@ void loadConfig() {
     if (config.PortB_Mode < PORTB_OFF || config.PortB_Mode > PORTB_RAW) config.PortB_Mode = PORTB_OFF;
     config.PortB_Baud             = (uint32_t)p.getInt("pbbaud", (int)PORTB_BAUD_DEFAULT_CRSF);
     config.PortC_GPS_Enabled      = p.getInt("pcgps", 0) ? 1 : 0;
+    config.Sound_Storage          = constrain(p.getInt("sndstor", 0), 0, 2);
     String ssid=p.getString("ssid","Sound-Mini");
     String pass=p.getString("pass","123456789");
     String ip  =p.getString("wip", "192.168.1.1");
@@ -154,6 +156,7 @@ void saveConfigForce() {
     p.putInt("pbmode",config.PortB_Mode);
     p.putInt("pbbaud",(int)config.PortB_Baud);
     p.putInt("pcgps", config.PortC_GPS_Enabled);
+    p.putInt("sndstor", config.Sound_Storage);
     p.putString("ssid",config.WiFi_SSID);
     p.putString("pass",config.WiFi_Password);
     p.putString("wip", config.WiFi_IP);

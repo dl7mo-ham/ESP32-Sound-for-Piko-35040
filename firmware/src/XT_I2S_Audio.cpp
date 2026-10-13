@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "SD.h"
+#include "sound_store.h"
 
 WavHeader_Struct WavHeader; // Used as a place to store the header data from the wav data
 
@@ -302,9 +303,9 @@ bool XT_Wav_Class::OpenWavFile()
     // wird, ohne dass dazwischen UnLoadWavFile() lief), hier defensiv erst
     // schliessen - sonst haette man zwei offene Handles auf dieselbe Datei
     // gleichzeitig und verbraucht dabei unnoetig einen weiteren der knappen
-    // File-Deskriptoren (siehe SDCardInit()/max_files in ESP32-RC-Sound.ino).
+    // File-Deskriptoren (siehe max_files in sound_store.cpp).
     if (WavFile) WavFile.close();
-    WavFile = SD.open(FileName); // Open the wav file
+    WavFile = soundFS().open(FileName); // Flash oder SD, siehe sound_store.h
     if (WavFile == false)
     {
         Serial.print("Could not open :");

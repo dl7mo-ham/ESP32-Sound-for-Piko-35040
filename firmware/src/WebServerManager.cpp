@@ -10,6 +10,7 @@
 #include "gps_speed.h"
 #include "CRSF_ESP32/crsf_esp32.h"
 #include "port_function.h"   // Port-B-Rollen-Registry
+#include "sound_store.h"     // Sound-Speicher Flash/SD/Auto
 #include <Update.h>          // Firmware-Update per WLAN (OTA), siehe handleApiOtaUpdate*()
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
@@ -174,7 +175,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <div class="card" style="margin-top:10px">
     <div class="card-title">Motor-Sound-Dateien verwalten</div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:10px">
-      Loop-, Standgas- und Start-Sound direkt per WLAN auf die SD-Karte hochladen
+      Loop-, Standgas- und Start-Sound direkt per WLAN in den Sound-Speicher hochladen
       oder von dort l&ouml;schen - wirkt sofort, ohne Neustart des Moduls.
     </div>
     <div class="sl-wrap">
@@ -237,7 +238,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <button class="btn btn-g" onclick="testSound()">&#9654; Test Sound</button>
   </div>
   <!-- WAV-Datei fuer den aktuell ausgewaehlten Sound-Slot direkt per WLAN auf
-       die SD-Karte im Modul hochladen - kein Ausbau der Karte noetig. Nutzt
+       den Sound-Speicher (Flash oder SD) hochladen. Nutzt
        den bestehenden SD-Mutex (siehe handleApiSoundUploadData()), damit
        kein Konflikt mit laufender Sound-Wiedergabe entsteht. Zusaetzlich
        Status (vorhanden/Groesse) und Loeschen. -->
@@ -256,7 +257,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <div style="font-size:12px;color:var(--sub)" id="snd-upload-status">-</div>
     </div>
     <div style="font-size:12px;color:var(--sub);margin-top:10px">
-      Ersetzt bzw. l&ouml;scht die WAV-Datei direkt auf der SD-Karte im Modul.
+      Ersetzt bzw. l&ouml;scht die WAV-Datei im Sound-Speicher des Moduls (Flash oder SD).
       Erwartet 16-Bit-PCM-WAV; die &Auml;nderung wirkt sofort, ohne Neustart.
     </div>
   </div>
@@ -277,6 +278,21 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div class="row">
       <span class="lbl">Gruppe 2 (MKan 09-16)</span>
       <select id="mkan-adr1"></select>
+    </div>
+  </div>
+  <hr>
+  <!-- Sound-Speicher: Optionen kommen vom Geraet (s.storage_options),
+       Anzeige des aktiven Speichers und des Platzes aus /api/config. -->
+  <div class="card" id="c-storage">
+    <div class="card-title">Sound-Speicher</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="lbl">Speicherort</span>
+      <select id="snd-storage"></select>
+    </div>
+    <div style="font-size:12px;color:var(--sub)" id="storage-info">-</div>
+    <div style="color:var(--yellow);font-size:12px;margin-top:8px">
+      &#9888; Ein Wechsel wirkt erst nach einem Neustart. Auto = SD-Karte, wenn
+      eine steckt, sonst Flash. Konfigurations-Backups liegen immer auf der SD-Karte.
     </div>
   </div>
   <hr>
@@ -540,8 +556,9 @@ var toastTmr=0;
 function errText(c){
   var m={
     sd_locked:'Datei ist schreibgeschuetzt oder gesperrt - Schreibschutz auf der SD-Karte aufheben (Windows: attrib -r X:\\*.wav)',
-    sd_write :'Schreiben auf die SD-Karte fehlgeschlagen (Karte voll, schreibgeschuetzt oder defekt)',
-    sd_busy  :'SD-Karte gerade belegt - bitte erneut versuchen',
+    sd_write :'Schreiben fehlgeschlagen (Speicher voll, schreibgeschuetzt oder defekt)',
+    sd_busy  :'Speicher gerade belegt - bitte erneut versuchen',
+    no_sd    :'Keine SD-Karte erkannt',
     bad_name :'Ungueltiger Dateiname',
     aborted  :'Uebertragung abgebrochen'
   };
@@ -721,6 +738,14 @@ function loadConfig(){
     fillSelFlat('portb-mode', s.portb_options);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
     sv('portb-mode', s.portb_mode); sv('portb-baud', s.portb_baud); sv('portc-gps', s.portc_gps);
+    fillSelFlat('snd-storage', s.storage_options); sv('snd-storage', s.sound_storage);
+    var si=document.getElementById('storage-info');
+    if(si){
+      var mb=function(b){return (b/1048576).toFixed(2)+' MB';};
+      si.textContent='Aktiv: '+s.storage_active+(s.storage_ready?'':' (nicht verfuegbar!)')+
+        (s.storage_ready?', frei '+mb(s.storage_total-s.storage_used)+' von '+mb(s.storage_total):'')+
+        ', SD-Karte '+(s.sd_present?'erkannt':'nicht erkannt');
+    }
     onPortBMode();
     var w=cfg.wifi;
     sv('w-ssid',w.ssid); sv('w-pass',w.pass||'');
@@ -945,7 +970,7 @@ function loadSoundFileStatus(){
 function fmtFileStatus(name){
   var f=sndFiles[name];
   if(!f) return '-';
-  return f.exists ? (Math.round(f.size/1024)+' KB vorhanden') : 'keine Datei auf der SD-Karte';
+  return f.exists ? (Math.round(f.size/1024)+' KB vorhanden') : 'keine Datei im Sound-Speicher';
 }
 function updateSoundFileStatusDisplay(){
   var name='sound'+curSnd+'.wav';
@@ -958,7 +983,7 @@ function updateSoundFileStatusDisplay(){
 }
 function deleteSoundSlotFile(){
   var name='sound'+curSnd+'.wav';
-  if(!confirm('Datei "'+name+'" von der SD-Karte loeschen?')) return;
+  if(!confirm('Datei "'+name+'" loeschen?')) return;
   xpost('/api/sounddelete?name='+encodeURIComponent(name),{},function(r){
     try{
       var d=JSON.parse(r);
@@ -999,7 +1024,7 @@ function uploadMotorFile(name,file){
   x.send(fd);
 }
 function deleteMotorFile(name){
-  if(!confirm('Datei "'+name+'" von der SD-Karte loeschen?')) return;
+  if(!confirm('Datei "'+name+'" loeschen?')) return;
   xpost('/api/sounddelete?name='+encodeURIComponent(name),{},function(r){
     try{
       var d=JSON.parse(r);
@@ -1012,7 +1037,8 @@ function saveSettings(){
   var d={
     modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
-    portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'), portc_gps:gi('portc-gps')
+    portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'), portc_gps:gi('portc-gps'),
+    sound_storage:gi('snd-storage')
   };
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
@@ -1099,6 +1125,7 @@ function importConfigData(data){
     modul_adr:s.modul_adr,
     mkan_adr0:s.mkan_adr0, mkan_adr1:s.mkan_adr1,
     portb_mode:s.portb_mode, portb_baud:s.portb_baud, portc_gps:s.portc_gps,
+    sound_storage:s.sound_storage,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
   });
@@ -1559,7 +1586,7 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_mode, portb_baud, portc_gps }
+//               portb_mode, portb_baud, portc_gps, sound_storage }
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
 void WebServerManager::handleApiConfigPost() {
@@ -1587,6 +1614,8 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
   if (jsonGetInt(body, "portc_gps",  v)) { config.PortC_GPS_Enabled = constrain(v,0,1); changed=true;
     Serial.printf("[API] Port C (GPS) -> %d (wirkt erst nach Neustart)\n", config.PortC_GPS_Enabled); }
+  if (jsonGetInt(body, "sound_storage", v)) { config.Sound_Storage = constrain(v,0,(int)STORAGE_MAX); changed=true;
+    Serial.printf("[API] Sound-Speicher -> %d (wirkt erst nach Neustart)\n", config.Sound_Storage); }
 
   // WiFi
   { char tmp[64];
@@ -1684,6 +1713,14 @@ String WebServerManager::buildConfigJson() {
   }
   j += "],";
   j += "\"portc_gps\":"  + String(config.PortC_GPS_Enabled) + ",";
+  // Sound-Speicher: Einstellung (wirkt nach Neustart) und aktiver Zustand.
+  j += "\"sound_storage\":"   + String(config.Sound_Storage) + ",";
+  j += "\"storage_options\":\"" + String(STORAGE_OPTIONS) + "\",";
+  j += "\"storage_active\":\""  + String(soundStoreName()) + "\",";
+  j += "\"storage_ready\":"   + String(soundStoreReady() ? 1 : 0) + ",";
+  j += "\"storage_total\":"   + String((double)soundStoreTotalBytes(), 0) + ",";
+  j += "\"storage_used\":"    + String((double)soundStoreUsedBytes(), 0) + ",";
+  j += "\"sd_present\":"      + String(sdCardMounted() ? 1 : 0) + ",";
   j += "\"modul_adr\":"  + String(config.modul_adress)            + ",";
   // Die MKan-Gruppenadressen (auch ueber das CRSF-Parametermenue am Sender
   // einstellbar).
@@ -1750,6 +1787,10 @@ static bool isSafeBackupFileName(const String& name) {
 // noch (im reinen AP-Betrieb ohne Internet) eine NTP-Zeitquelle; ein GPS-Datum
 // waere nur verfuegbar, wenn Port C als GPS aktiv ist UND ein Fix vorliegt.
 void WebServerManager::handleApiSdExport() {
+  if (!sdCardMounted()) {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
+    return;
+  }
   if (!sdMutexTake(3000)) {
     server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
     return;
@@ -1783,7 +1824,7 @@ void WebServerManager::handleApiSdList() {
   String j = "{\"ok\":true,\"files\":[";
   bool first = true;
 
-  if (sdMutexTake(3000)) {
+  if (sdCardMounted() && sdMutexTake(3000)) {
     if (SD.exists(SD_BACKUP_DIR)) {
       File dir = SD.open(SD_BACKUP_DIR);
       if (dir && dir.isDirectory()) {
@@ -1825,6 +1866,10 @@ void WebServerManager::handleApiSdConfig() {
     return;
   }
   String path = String(SD_BACKUP_DIR) + "/" + name;
+  if (!sdCardMounted()) {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
+    return;
+  }
 
   if (!sdMutexTake(3000)) {
     server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
@@ -1854,6 +1899,10 @@ void WebServerManager::handleApiSdDelete() {
     return;
   }
   String path = String(SD_BACKUP_DIR) + "/" + name;
+  if (!sdCardMounted()) {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
+    return;
+  }
 
   if (!sdMutexTake(3000)) {
     server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
@@ -1917,7 +1966,7 @@ static XT_Wav_Class* soundObjectFor(const String& name) {
 // (loop/shut/start.wav) belegt - LoadFiles() oeffnet sie EINMAL beim Boot und
 // schliesst sie nie wieder, auch wenn der Motor gar nicht laeuft. Zusammen mit
 // jedem gerade aktiven Sound1-4 blieb fuer den Upload oft kein einziger
-// Deskriptor mehr uebrig -> SD.open() scheiterte mit "no free file descriptors"
+// Deskriptor mehr uebrig -> soundFS().open() scheiterte mit "no free file descriptors"
 // und es traf je nach zufaellig gerade offenen Sounds mal Slot 1, mal 3, mal 8.
 // Loesung ohne jeden zusaetzlichen Speicherbedarf: die NICHT gerade
 // abspielenden Motor-Handles fuer die Dauer des Uploads schliessen und danach
@@ -1987,12 +2036,12 @@ static void restoreSoundHandles(uint32_t mask) {
 static void logSdUploadFail(const char* name, const char* err,
                             uint32_t motorMask, uint32_t bytesSoFar) {
   uint64_t total = 0, used = 0;
-  // SD.totalBytes()/usedBytes() koennen bei nicht gemounteter Karte 0 liefern -
-  // genau das ist dann ebenfalls eine verwertbare Aussage.
-  total = SD.totalBytes();
-  used  = SD.usedBytes();
-  Serial.printf("[SD-Upload] FEHLER %s bei /%s | geschrieben=%u B | "
-                "Karte: %llu frei von %llu B | freigegebene Handles=0x%08X | Heap=%u\n",
+  // Liefert 0, wenn der Sound-Speicher nicht verfuegbar ist - auch das ist
+  // eine verwertbare Aussage.
+  total = soundStoreTotalBytes();
+  used  = soundStoreUsedBytes();
+  Serial.printf("[Upload] FEHLER %s bei /%s | geschrieben=%u B | "
+                "Speicher: %llu frei von %llu B | freigegebene Handles=0x%08X | Heap=%u\n",
                 err, name, (unsigned)bytesSoFar,
                 (unsigned long long)(total > used ? total - used : 0),
                 (unsigned long long)total, motorMask,
@@ -2044,7 +2093,7 @@ void WebServerManager::handleApiSoundUploadData() {
     // seit LoadFiles() beim Boot ohnehin dauerhaft offen), haelt die Audio-
     // Engine ihr WavFile-Handle noch offen. FILE_WRITE haengt bei der
     // Arduino-SD-Bibliothek an eine bereits vorhandene Datei AN statt sie zu
-    // ueberschreiben (O_APPEND); das anschliessende SD.remove() sollte das
+    // ueberschreiben (O_APPEND); das anschliessende soundFS().remove() sollte das
     // verhindern, schlaegt aber auf eine noch geoeffnete Datei haeufig fehl -
     // und der Rueckgabewert wurde bisher NICHT geprueft. Ergebnis: der
     // Upload haengte sich stillschweigend HINTEN an die alte Datei an, statt
@@ -2053,7 +2102,7 @@ void WebServerManager::handleApiSoundUploadData() {
     // nicht ueberschreiben", waehrend andere, gerade nicht aktive Slots
     // problemlos funktionierten.
     // Fix: das Sound-Objekt hier VORHER aktiv schliessen, UND den Erfolg von
-    // SD.remove() pruefen statt ihn zu ignorieren.
+    // soundFS().remove() pruefen statt ihn zu ignorieren.
     // WICHTIG: UnLoadWavFile()/LoadWavFile() nehmen den SD-Mutex JEWEILS
     // SELBST (siehe XT_I2S_Audio.cpp) - er ist NICHT rekursiv, ein Aufruf
     // waehrend wir ihn selbst schon halten wuerde also sofort blockieren
@@ -2062,7 +2111,7 @@ void WebServerManager::handleApiSoundUploadData() {
     XT_Wav_Class* target = soundObjectFor(name);
     if (target) target->UnLoadWavFile();
     // v7.11: zusaetzlich die ungenutzten Motor-Handles freigeben, damit fuer
-    // SD.open() unten garantiert ein Deskriptor frei ist (siehe
+    // soundFS().open() unten garantiert ein Deskriptor frei ist (siehe
     // releaseIdleSoundHandles()). Muss - wie das Schliessen des Ziel-Sounds
     // direkt darueber - VOR sdMutexTake() passieren (Deadlock-Gefahr).
     uint32_t motorMask = releaseIdleSoundHandles(target);
@@ -2078,8 +2127,8 @@ void WebServerManager::handleApiSoundUploadData() {
     uploadTargetSound = target;
     uploadMotorMask   = motorMask;
 
-    SD.remove("/" + name);
-    if (SD.exists("/" + name)) {
+    soundFS().remove("/" + name);
+    if (soundFS().exists("/" + name)) {
       // Datei liess sich trotz Schliessversuch nicht entfernen - lieber
       // sauber mit Fehler abbrechen als stillschweigend an die alte Datei
       // anzuhaengen.
@@ -2103,7 +2152,7 @@ void WebServerManager::handleApiSoundUploadData() {
       restoreSoundHandles(motorMask);
       return;
     }
-    uploadFile = SD.open("/" + name, FILE_WRITE);
+    uploadFile = soundFS().open("/" + name, FILE_WRITE);
     if (!uploadFile) {
       uploadFailed = true; uploadErrCode = "sd_write";
       logSdUploadFail(name.c_str(), "sd_write (SD.open fehlgeschlagen)", motorMask, 0);
@@ -2133,7 +2182,7 @@ void WebServerManager::handleApiSoundUploadData() {
     if (uploadFailed) {
       // Unvollstaendige/fehlerhafte Datei nicht auf der Karte stehen lassen.
       String name = server.arg("name");
-      if (isValidSoundUploadName(name)) SD.remove("/" + name);
+      if (isValidSoundUploadName(name)) soundFS().remove("/" + name);
     } else {
       Serial.printf("[SD-Upload] Fertig: %u Bytes\n", (unsigned)uploadBytes);
     }
@@ -2178,10 +2227,10 @@ void WebServerManager::handleApiSoundUpload() {
 }
 
 // Liest, ob eine Datei existiert und wie gross sie ist - kleiner Helfer fuer
-// handleApiSoundFiles(), damit dort nicht zweimal derselbe SD.open()/close()-
+// handleApiSoundFiles(), damit dort nicht zweimal derselbe soundFS().open()/close()-
 // Block steht.
 static bool sdFileInfo(const String& path, uint32_t& outSize) {
-  File f = SD.open(path, FILE_READ);
+  File f = soundFS().open(path, FILE_READ);
   if (!f) return false;
   outSize = f.size();
   f.close();
@@ -2247,8 +2296,8 @@ void WebServerManager::handleApiSoundDelete() {
     restoreSoundHandles(motorMask);
     return;
   }
-  bool existed = SD.exists("/" + name);
-  bool ok = !existed || SD.remove("/" + name);
+  bool existed = soundFS().exists("/" + name);
+  bool ok = !existed || soundFS().remove("/" + name);
   sdMutexGive();
 
   // Mutex ist jetzt frei - LoadWavFile() darf ihn gefahrlos selbst nehmen.

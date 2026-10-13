@@ -18,6 +18,23 @@ Projektplan: siehe `docs/`.
 
 2 × 1,25 MB Firmware (OTA) + ca. 1,3 MB Sounds (≈ 30 s bei 22,05 kHz, 16 Bit mono).
 
+## Sounds
+
+Dateinamen: `start.wav`, `loop.wav`, `shut.wav`, `sound1.wav` … `sound4.wav` (16 Bit PCM, 22,05 kHz mono empfohlen).
+
+Einstellung **Sound-Speicher** (Web-UI → Einstellungen oder Lua-Menü → Einstellungen), wirkt nach Neustart:
+
+- **Auto** (Standard): SD-Karte, wenn eine steckt, sonst Flash
+- **Flash**: interner Speicher (LittleFS), keine SD-Karte nötig
+- **SD**: nur SD-Karte
+
+Sounds ins Flash bringen:
+
+1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen (geht in den aktiven Speicher)
+2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs`
+
+Konfigurations-Backups liegen immer auf der SD-Karte.
+
 ## Bauen
 
 ```bash
