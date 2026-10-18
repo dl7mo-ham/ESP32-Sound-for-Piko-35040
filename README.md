@@ -44,6 +44,22 @@ pio run -t upload       # flashen
 pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ```
 
+## Hardware
+
+Bauplan mit Bauteilliste, Pinbelegung und Grafiken: [`docs/Hardware-Bauplan_Mini-S3.docx`](docs/Hardware-Bauplan_Mini-S3.docx).
+Die Pins kommen aus `firmware/src/pins.h` (noch vorläufig, ein KiCad-Schaltplan fehlt noch).
+
+![Verdrahtungsplan](docs/hardware-bilder/verdrahtung_S3.png)
+
+| Funktion | GPIO |
+|---|---|
+| Port A CRSF RX / TX | 5 / 6 |
+| Port B RX / TX | 1 / 2 |
+| Port C GPS RX / TX | 14 / 15 |
+| I2S BCLK / LRC / DOUT (MAX98357A) | 7 / 8 / 9 |
+| SD CS / MOSI / SCK / MISO (optional) | 10 / 11 / 12 / 13 |
+| WLAN-Brücke (nach GND) | 4 |
+
 ## Ordner
 
 - `firmware/` PlatformIO-Projekt
