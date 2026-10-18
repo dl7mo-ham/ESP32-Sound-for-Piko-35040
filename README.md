@@ -47,9 +47,9 @@ pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ## Hardware
 
 Bauplan mit Bauteilliste, Pinbelegung und Grafiken: [`docs/Hardware-Bauplan_Mini-S3.docx`](docs/Hardware-Bauplan_Mini-S3.docx).
-Die Pins kommen aus `firmware/src/pins.h` (ein KiCad-Schaltplan fehlt noch).
+Die Pins kommen aus `firmware/src/pins.h` (ein KiCad-Schaltplan fehlt noch). Die SD-Karte ist in diesem Aufbau nicht vorgesehen.
 
-Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V, GND-GND, SD-3V3).
+Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V, GND-GND, SD-Pin nicht gelötet, 3V3 bleibt frei).
 
 ![MAX direkt am ESP](docs/hardware-bilder/max_direkt_S3.png)
 
@@ -61,8 +61,7 @@ Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V,
 | Port A CRSF RX / TX | 5 / 6 |
 | Port B RX / TX | 7 / 8 |
 | WLAN-Brücke (nach GND) | 9 |
-| SD CS / MOSI / SCK / MISO (optional) | 10 / 11 / 12 / 13 |
-| Port C GPS RX / TX | 44 / 43 |
+| Port C RX / TX | 44 / 43 |
 
 ## Ordner
 

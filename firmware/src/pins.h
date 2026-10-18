@@ -19,7 +19,8 @@
 
 // Der MAX98357A-Breakout wird direkt auf die Versorgungsreihe des S3-Zero
 // gesteckt/geloetet (Header-Reihe von oben: 5V, GND, 3V3, IO1..IO6):
-//   VIN-5V, GND-GND, SD-3V3, GAIN-IO1, DIN-IO2, BCLK-IO3, LRC-IO4
+//   VIN-5V, GND-GND, SD offen (3V3 nicht geloetet), GAIN-IO1, DIN-IO2,
+//   BCLK-IO3, LRC-IO4
 // Siehe docs/Hardware-Bauplan_Mini-S3.docx.
 
 // ── I2S-Verstaerker (MAX98357A) ──────────────────────────────────────
