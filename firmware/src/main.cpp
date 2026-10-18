@@ -497,6 +497,7 @@ void setup() {
                   (uint8_t)constrain(config.modul_adress,0,15) * 2);
 
     pinMode(PIN_WIFI, INPUT_PULLUP);
+    pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin((uint8_t)config.Sound_Storage);
     LoadFiles();
