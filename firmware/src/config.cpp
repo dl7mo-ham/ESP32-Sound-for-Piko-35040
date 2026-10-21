@@ -45,7 +45,8 @@ void Reset_all() {
     // sinnvollen Platzhalter fuer ein spaeteres Umschalten auf CRSF.
     config.PortB_Mode             = PORTB_OFF;
     config.PortB_Baud             = PORTB_BAUD_DEFAULT_CRSF;
-    config.PortC_GPS_Enabled      = 0;
+    config.PortC_Mode             = PORTB_OFF;
+    config.PortC_Baud             = PORTB_BAUD_DEFAULT_GPS;
     config.Sound_Storage          = 0;      // Auto
     strncpy(config.WiFi_SSID,     "Sound-Mini",  sizeof(config.WiFi_SSID)     - 1);
     strncpy(config.WiFi_Password, "123456789",   sizeof(config.WiFi_Password) - 1);
@@ -95,9 +96,13 @@ void loadConfig() {
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
     config.PortB_Mode             = p.getInt("pbmode", PORTB_OFF);
-    if (config.PortB_Mode < PORTB_OFF || config.PortB_Mode > PORTB_RAW) config.PortB_Mode = PORTB_OFF;
+    if (config.PortB_Mode < PORTB_OFF || config.PortB_Mode >= (int)PORTB_FUNCTION_COUNT) config.PortB_Mode = PORTB_OFF;
     config.PortB_Baud             = (uint32_t)p.getInt("pbbaud", (int)PORTB_BAUD_DEFAULT_CRSF);
-    config.PortC_GPS_Enabled      = p.getInt("pcgps", 0) ? 1 : 0;
+    // Port C: bis v0.01 nur GPS an/aus ("pcgps"), seitdem Rolle + Baudrate.
+    if (p.isKey("pcmode")) config.PortC_Mode = p.getInt("pcmode", PORTB_OFF);
+    else                   config.PortC_Mode = p.getInt("pcgps", 0) ? PORTB_GPS : PORTB_OFF;
+    if (config.PortC_Mode < PORTB_OFF || config.PortC_Mode >= (int)PORTB_FUNCTION_COUNT) config.PortC_Mode = PORTB_OFF;
+    config.PortC_Baud             = (uint32_t)p.getInt("pcbaud", (int)PORTB_BAUD_DEFAULT_GPS);
     config.Sound_Storage          = constrain(p.getInt("sndstor", 0), 0, 2);
     String ssid=p.getString("ssid","Sound-Mini");
     String pass=p.getString("pass","123456789");
@@ -155,7 +160,8 @@ void saveConfigForce() {
     p.putInt("spid1",(int)config.sport_poll_id[1]);
     p.putInt("pbmode",config.PortB_Mode);
     p.putInt("pbbaud",(int)config.PortB_Baud);
-    p.putInt("pcgps", config.PortC_GPS_Enabled);
+    p.putInt("pcmode",config.PortC_Mode);
+    p.putInt("pcbaud",(int)config.PortC_Baud);
     p.putInt("sndstor", config.Sound_Storage);
     p.putString("ssid",config.WiFi_SSID);
     p.putString("pass",config.WiFi_Password);

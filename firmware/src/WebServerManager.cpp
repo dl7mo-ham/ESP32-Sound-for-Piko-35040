@@ -17,11 +17,12 @@
 extern CRSF crsf;
 extern bool gpsPinConflict; // beim Mini immer false (kein SBUS), bleibt fuer das Web-JSON
 // Die tatsaechlich AKTIVEN (seit dem letzten Neustart geladenen) Port B/C-
-// Werte - koennen von config.PortB_Mode/PortC_GPS_Enabled abweichen, wenn
+// Werte - koennen von config.PortB_Mode/PortC_Mode abweichen, wenn
 // seitdem ueber Web/Lua etwas geaendert, aber noch nicht neu gestartet
 // wurde (siehe Erklaerung in main.cpp).
 extern int PortB_Mode_boot;
-extern int PortC_GPS_Enabled_boot;
+extern int PortC_Mode_boot;
+extern bool PortC_Duplicate_boot;
 
 // ── PROGMEM HTML ─────────────────────────────────────────────────────────
 // Das komplette UI liegt im Flash (PROGMEM). server.send_P() streamt es
@@ -296,8 +297,8 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
   </div>
   <hr>
-  <!-- Port B (zweiter Hardware-UART) und Port C (GPS, SoftwareSerial),
-       Pins siehe pins.h. -->
+  <!-- Port B (Hardware-UART1) und Port C (Hardware-UART0), Rolle je Port
+       waehlbar, Pins siehe pins.h. -->
   <div class="card" id="c-portbc">
     <div class="card-title">Port B / Port C</div>
     <div class="row" style="margin-bottom:10px">
@@ -312,12 +313,16 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <span class="lbl">Port B Baudrate</span>
       <input type="number" id="portb-baud" min="300" max="2000000" style="width:120px">
     </div>
-    <div class="row">
-      <span class="lbl">Port C (GPS)</span>
-      <select id="portc-gps">
-        <option value="0">Aus</option>
-        <option value="1">An</option>
-      </select>
+    <div class="row" style="margin-bottom:10px">
+      <span class="lbl">Port C Modus</span>
+      <select id="portc-mode" onchange="onPortCMode()"></select>
+    </div>
+    <div class="row" id="row-portc-baud" style="margin-bottom:10px">
+      <span class="lbl">Port C Baudrate</span>
+      <input type="number" id="portc-baud" min="300" max="2000000" style="width:120px">
+    </div>
+    <div id="portc-dup" style="color:var(--red);font-size:12px;margin-top:8px;display:none">
+      &#9888; Port C hatte dieselbe Rolle wie Port B und ist deshalb aus. Jede Rolle laeuft nur auf einem Port.
     </div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Aenderungen an Port B/C wirken erst nach einem Neustart des Moduls.
@@ -527,7 +532,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div id="dbg-wav"></div>
   </div>
   <div class="card">
-    <div class="card-title">GPS (Port C)</div>
+    <div class="card-title">GPS</div>
     <div id="dbg-gps"></div>
   </div>
   <div class="card">
@@ -688,6 +693,12 @@ function onPortBMode(){
   var row = document.getElementById('row-portb-baud');
   if (row) row.className = 'row'+(m===0?' hidden':'');
 }
+function onPortCMode(){
+  var m = gi('portc-mode');
+  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0) sv('portc-baud', PORTB_BAUD_DEFAULTS[m]);
+  var row = document.getElementById('row-portc-baud');
+  if (row) row.className = 'row'+(m===0?' hidden':'');
+}
 
 // ─── Sound-Tabs ──────────────────────────────────────────────────────────
 function buildSndTabs(){
@@ -736,8 +747,13 @@ function loadConfig(){
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
     fillSelFlat('portb-mode', s.portb_options);
+    fillSelFlat('portc-mode', s.portb_options);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
-    sv('portb-mode', s.portb_mode); sv('portb-baud', s.portb_baud); sv('portc-gps', s.portc_gps);
+    sv('portb-mode', s.portb_mode); sv('portb-baud', s.portb_baud);
+    sv('portc-mode', s.portc_mode); sv('portc-baud', s.portc_baud);
+    var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_mode===0?' hidden':'');
+    var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_mode===0?' hidden':'');
+    var pd=document.getElementById('portc-dup'); if(pd) pd.style.display=s.portc_dup?'block':'none';
     fillSelFlat('snd-storage', s.storage_options); sv('snd-storage', s.sound_storage);
     var si=document.getElementById('storage-info');
     if(si){
@@ -792,7 +808,7 @@ function renderDbg(){
   var gp=document.getElementById('dbg-gps');
   if(gp&&dbg.gps){
     var g=dbg.gps;
-    if(!g.active){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">Port C (GPS) ist aus</span></div>';}
+    if(!g.active){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">Kein Port auf GPS</span></div>';}
     else{gp.innerHTML='<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
       '<div class="row"><span class="lbl">Satelliten</span><span style="font-family:var(--mono)">'+g.sats+'</span></div>'+
       '<div class="row"><span class="lbl">Geschwindigkeit</span><span style="font-family:var(--mono)">'+g.speed+' km/h</span></div>';}
@@ -845,8 +861,8 @@ function renderLipo(){
   var el=document.getElementById('lipo-packs');
   if(!el)return;
   if(!dbg.sport){el.innerHTML='<div style="color:var(--sub);font-size:12px">Keine Daten empfangen</div>';return;}
-  if(dbg.portb_mode!==undefined&&dbg.portb_mode!==2){
-    el.innerHTML='<div style="color:var(--yellow);font-size:12px">&#9888; Port B steht nicht auf S.Port-Master &ndash; LiPo-Telemetrie inaktiv.<br>Unter Einstellungen &rarr; Port B/C auf "S.Port-Master" stellen und neu starten.</div>';
+  if(dbg.sport_active!==undefined&&!dbg.sport_active){
+    el.innerHTML='<div style="color:var(--yellow);font-size:12px">&#9888; Kein Port steht auf S.Port &ndash; LiPo-Telemetrie inaktiv.<br>Unter Einstellungen &rarr; Port B oder Port C auf "S.Port" stellen und neu starten.</div>';
     return;
   }
   var sp=dbg.sport,h='';
@@ -1037,7 +1053,8 @@ function saveSettings(){
   var d={
     modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
-    portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'), portc_gps:gi('portc-gps'),
+    portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'),
+    portc_mode:gi('portc-mode'), portc_baud:gi('portc-baud'),
     sound_storage:gi('snd-storage')
   };
   xpost('/api/config',d,function(r){
@@ -1124,7 +1141,9 @@ function importConfigData(data){
   var settingsPost=stripUndef({
     modul_adr:s.modul_adr,
     mkan_adr0:s.mkan_adr0, mkan_adr1:s.mkan_adr1,
-    portb_mode:s.portb_mode, portb_baud:s.portb_baud, portc_gps:s.portc_gps,
+    portb_mode:s.portb_mode, portb_baud:s.portb_baud,
+    portc_mode:s.portc_mode, portc_baud:s.portc_baud,
+    portc_gps:(s.portc_mode===undefined?s.portc_gps:undefined),  // Sicherung von v0.01
     sound_storage:s.sound_storage,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
@@ -1586,7 +1605,8 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_mode, portb_baud, portc_gps, sound_storage }
+//               portb_mode, portb_baud, portc_mode, portc_baud,
+//               sound_storage }  (portc_gps aus v0.01-Sicherungen: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
 void WebServerManager::handleApiConfigPost() {
@@ -1606,14 +1626,17 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "mkan_adr1", v)) { config.EK_Gruppen_Adresse[1]       = constrain(v,0,255);  changed=true; }
   // Port B / Port C - wirkt erst nach einem Neustart
   // (siehe setup() in main.cpp, PortB_Mode_boot/
-  // PortC_GPS_Enabled_boot). Anders als im CRSF/Lua-Menue (1-Byte-
+  // PortC_Mode_boot). Anders als im CRSF/Lua-Menue (1-Byte-
   // Wertebereich, siehe dort) ist die Baudrate hier ueber JSON wirklich
   // frei eingebbar, kein Snapping auf eine feste Liste.
   if (jsonGetInt(body, "portb_mode", v)) { config.PortB_Mode = constrain(v,0,(int)portBFunctionMaxIndex()); changed=true;
     Serial.printf("[API] Port B Modus -> %d (wirkt erst nach Neustart)\n", config.PortB_Mode); }
   if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
-  if (jsonGetInt(body, "portc_gps",  v)) { config.PortC_GPS_Enabled = constrain(v,0,1); changed=true;
-    Serial.printf("[API] Port C (GPS) -> %d (wirkt erst nach Neustart)\n", config.PortC_GPS_Enabled); }
+  if (jsonGetInt(body, "portc_mode", v)) { config.PortC_Mode = constrain(v,0,(int)portBFunctionMaxIndex()); changed=true;
+    Serial.printf("[API] Port C Modus -> %d (wirkt erst nach Neustart)\n", config.PortC_Mode); }
+  else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Mode = v ? PORTB_GPS : PORTB_OFF;
+    config.PortC_Baud = PORTB_BAUD_DEFAULT_GPS; changed=true; }
+  if (jsonGetInt(body, "portc_baud", v)) { config.PortC_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
   if (jsonGetInt(body, "sound_storage", v)) { config.Sound_Storage = constrain(v,0,(int)STORAGE_MAX); changed=true;
     Serial.printf("[API] Sound-Speicher -> %d (wirkt erst nach Neustart)\n", config.Sound_Storage); }
 
@@ -1630,7 +1653,7 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "wifi_auto_enable",  v)) { config.WifiAutoEnable     = constrain(v,0,1) ? true : false; changed=true; }
   if (jsonGetInt(body, "wifi_auto_timeout", v)) { config.WifiAutoTimeoutSec = (uint16_t)constrain(v,5,240);    changed=true; }
   // "WLAN dauerhaft an" (siehe config.h) - rein persistierte Einstellung wie
-  // 175/176 (Auto-Failsafe) oder portb_mode/portc_gps oben: wirkt erst ab
+  // 175/176 (Auto-Failsafe) oder portb_mode/portc_mode oben: wirkt erst ab
   // dem naechsten Bootvorgang, KEIN sofortiges enableAP() hier. Bewusst so
   // (seit v7.15) - ein WLAN-Start zur Laufzeit ist historisch die
   // fehleranfaelligste Operation in diesem Projekt (Heap-Fragmentierung,
@@ -1712,7 +1735,9 @@ String WebServerManager::buildConfigJson() {
     j += String(portBFunctionDefaultBaud((PortBMode)i));
   }
   j += "],";
-  j += "\"portc_gps\":"  + String(config.PortC_GPS_Enabled) + ",";
+  j += "\"portc_mode\":" + String(config.PortC_Mode) + ",";
+  j += "\"portc_baud\":" + String(config.PortC_Baud) + ",";
+  j += "\"portc_dup\":"  + String(PortC_Duplicate_boot ? 1 : 0) + ",";
   // Sound-Speicher: Einstellung (wirkt nach Neustart) und aktiver Zustand.
   j += "\"sound_storage\":"   + String(config.Sound_Storage) + ",";
   j += "\"storage_options\":\"" + String(STORAGE_OPTIONS) + "\",";
@@ -2460,6 +2485,8 @@ void WebServerManager::handleApiDebug() {
   // Der AKTIVE (Boot-)Wert, nicht der evtl. schon geaenderte, aber noch
   // nicht neu gestartete config.PortB_Mode.
   j += "\"portb_mode\":" + String(PortB_Mode_boot) + ",";
+  j += "\"portc_mode\":" + String(PortC_Mode_boot) + ",";
+  j += "\"sport_active\":" + String(sportLipoIsActive() ? "true" : "false") + ",";
   j += "\"sport\":{";
   j += "\"total_v\":"  + String(sportGetTotalVoltage(), 2)      + ",";
   j += "\"min_cell\":" + String(sportGetMinCell(), 3)           + ",";
@@ -2492,9 +2519,9 @@ void WebServerManager::handleApiDebug() {
   }
   j += "]}";
 
-  // GPS-Status (Port C)
+  // GPS-Status (Rolle GPS auf Port B oder C)
   j += ",\"gps\":{";
-  j += "\"active\":" + String(PortC_GPS_Enabled_boot ? 1 : 0) + ",";
+  j += "\"active\":" + String(gpsIsActive() ? 1 : 0) + ",";
   j += "\"speed\":"  + String(gpsGetSpeedKmh(), 1) + ",";
   j += "\"sats\":"   + String(gpsGetSatellites())  + ",";
   j += "\"fix\":"    + String(gpsHasFix() ? 1 : 0)  + ",";

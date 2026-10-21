@@ -1,8 +1,8 @@
 /*
  * gps_speed.cpp  –  Soundmodul Mini (Port C, aus ESP32-RC-Sound v7)
  *
- * Siehe gps_speed.h. Liest ein NMEA-GPS über Software-Serial (Pins siehe
- * pins.h) und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
+ * Siehe gps_speed.h. Liest ein NMEA-GPS über einen Hardware-UART (Port B
+ * oder Port C, Rolle "GPS") und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
  * aus dem GPS und muss auf dem Modul nicht berechnet werden.
  *
  * Nach dem Boot wird das GPS einmalig per CASIC-Kommando konfiguriert
@@ -10,19 +10,15 @@
  * durch die 9600-Baud-Leitung passt.
  */
 #include "gps_speed.h"
-#include <SoftwareSerial.h>   // EspSoftwareSerial
 #include <TinyGPS++.h>
-#include "pins.h"
 
 // ── Konfiguration ──────────────────────────────────────────────────────────
-#define GPS_RX_PIN     PIN_GPS_RX   // GPS-TX -> ESP32
-#define GPS_TX_PIN     PIN_GPS_TX   // ESP32 -> GPS-RX
-#define GPS_BAUD       9600   // NMEA-Baudrate
 #define GPS_UPDATE_MS  200    // Positions-Updateintervall: 200=5Hz, 100=10Hz, 500=2Hz, 1000=1Hz
 #define GPS_CFG_DELAY  800    // ms nach Init warten, bevor die Konfig gesendet wird
 
 // ── interner Zustand ───────────────────────────────────────────────────────
-static SoftwareSerial gpsSerial;
+// Der UART kommt aus der Port-Rollen-Registry (port_function.cpp).
+static HardwareSerial* gpsSerial = nullptr;
 static TinyGPSPlus     gps;
 
 static float    speedKmh    = 0.0f;
@@ -42,7 +38,7 @@ static void gpsSendNmea(const char* body) {
     for (const char* p = body; *p; ++p) cs ^= (uint8_t)*p;
     char line[96];
     snprintf(line, sizeof(line), "$%s*%02X\r\n", body, cs);
-    gpsSerial.print(line);
+    gpsSerial->print(line);
 }
 
 // ── einmalige GPS-Konfiguration (ATGM336H / AT6558, CASIC) ─────────────────
@@ -57,17 +53,20 @@ static void gpsSendConfig() {
 }
 
 // ── Initialisierung ────────────────────────────────────────────────────────
-void gpsSpeedInit() {
-    // Voll-Duplex-Software-Serial: RX lesen, TX konfigurieren.
-    // S.Port (UART1, 32/33) und CRSF (UART2, 16/17) bleiben unberührt.
-    gpsSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+void gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
+    // RX liest NMEA, TX sendet die Konfiguration an das GPS.
+    gpsSerial = serial;
+    gpsSerial->begin(baud, SERIAL_8N1, rxPin, txPin);
     initMs  = millis();
     cfgSent = false;
-    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %d Baud\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
+    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %u Baud\n", rxPin, txPin, (unsigned)baud);
 }
+
+bool gpsIsActive() { return gpsSerial != nullptr; }
 
 // ── zyklisches Einlesen/Auswerten ──────────────────────────────────────────
 void gpsSpeedUpdate() {
+    if (!gpsSerial) return;
     // Konfiguration einmalig kurz nach dem Boot senden (GPS ist dann bereit,
     // und ein evtl. Boot-Glitch auf dem TX-Pin ist längst vorbei).
     if (!cfgSent && (millis() - initMs) > GPS_CFG_DELAY) {
@@ -77,8 +76,8 @@ void gpsSpeedUpdate() {
                       GPS_UPDATE_MS, 1000 / GPS_UPDATE_MS);
     }
 
-    while (gpsSerial.available() > 0) {
-        gps.encode((char)gpsSerial.read());
+    while (gpsSerial->available() > 0) {
+        gps.encode((char)gpsSerial->read());
     }
 
     if (gps.satellites.isValid()) sats = (uint8_t)gps.satellites.value();

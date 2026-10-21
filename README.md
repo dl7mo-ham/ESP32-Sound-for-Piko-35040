@@ -6,7 +6,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Eingang:** nur CRSF (Port A), busbasiert
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), SD-Karte optional
-- **Ports:** Port A (CRSF), Port B (zweiter UART), Port C (GPS), alle als Hardware-UART
+- **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF, S.Port, Raw oder GPS
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN
 - **Verstärker:** MAX98357A (I2S)
 
