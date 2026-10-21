@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include <Preferences.h>
+#include "RC_Common/settings_common.h"
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -43,10 +44,10 @@ void Reset_all() {
     config.sport_poll_id[1]       = 0x22;   // Physical ID 0x03 (Sensor 2 umprogrammiert)
     // Port B und Port C starten deaktiviert; PortB_Baud bekommt trotzdem einen
     // sinnvollen Platzhalter fuer ein spaeteres Umschalten auf CRSF.
-    config.PortB_Mode             = PORTB_OFF;
-    config.PortB_Baud             = PORTB_BAUD_DEFAULT_CRSF;
-    config.PortC_Mode             = PORTB_OFF;
-    config.PortC_Baud             = PORTB_BAUD_DEFAULT_GPS;
+    config.PortB_Role             = UROLE_OFF;
+    config.PortB_Baud             = uartRoleDefaultBaud(UROLE_CRSF);
+    config.PortC_Role             = UROLE_OFF;
+    config.PortC_Baud             = uartRoleDefaultBaud(UROLE_GPS);
     config.Sound_Storage          = 0;      // Auto
     strncpy(config.WiFi_SSID,     "Sound-Mini",  sizeof(config.WiFi_SSID)     - 1);
     strncpy(config.WiFi_Password, "123456789",   sizeof(config.WiFi_Password) - 1);
@@ -60,6 +61,44 @@ void Reset_all() {
     config.WifiAutoTimeoutSec  = 60;
     config.WifiAlwaysOn        = true;
     configDirty = true;
+}
+
+// ── Gemeinsame Einstellungen (RC_Common, settings_common.h) ──────────────
+// WLAN, Modul-Adresse und die Rollen von Port B/C liegen unter den
+// Schluesseln, die alle Module verwenden.
+static void configToCommon(RcCommonSettings& s) {
+    memset(&s, 0, sizeof(s));
+    strncpy(s.ssid,    config.WiFi_SSID,     sizeof(s.ssid) - 1);
+    strncpy(s.pass,    config.WiFi_Password, sizeof(s.pass) - 1);
+    strncpy(s.ip,      config.WiFi_IP,       sizeof(s.ip) - 1);
+    strncpy(s.devName, config.Device_Name,   sizeof(s.devName) - 1);
+    s.moduleAddr  = config.modul_adress;
+    s.wifiAuto    = config.WifiAutoEnable;
+    s.wifiTimeout = config.WifiAutoTimeoutSec;
+    s.wifiAlways  = config.WifiAlwaysOn;
+    s.role[0] = config.PortB_Role;
+    s.baud[0] = config.PortB_Baud;
+    s.role[1] = config.PortC_Role;
+    s.baud[1] = config.PortC_Baud;
+}
+
+static void commonToConfig(const RcCommonSettings& s) {
+    strncpy(config.WiFi_SSID,     s.ssid,    sizeof(config.WiFi_SSID) - 1);
+    strncpy(config.WiFi_Password, s.pass,    sizeof(config.WiFi_Password) - 1);
+    strncpy(config.WiFi_IP,       s.ip,      sizeof(config.WiFi_IP) - 1);
+    strncpy(config.Device_Name,   s.devName, sizeof(config.Device_Name) - 1);
+    config.WiFi_SSID[sizeof(config.WiFi_SSID)-1]         = '\0';
+    config.WiFi_Password[sizeof(config.WiFi_Password)-1] = '\0';
+    config.WiFi_IP[sizeof(config.WiFi_IP)-1]             = '\0';
+    config.Device_Name[sizeof(config.Device_Name)-1]     = '\0';
+    config.modul_adress       = s.moduleAddr;
+    config.WifiAutoEnable     = s.wifiAuto;
+    config.WifiAutoTimeoutSec = s.wifiTimeout;
+    config.WifiAlwaysOn       = s.wifiAlways;
+    config.PortB_Role         = s.role[0];
+    config.PortB_Baud         = s.baud[0];
+    config.PortC_Role         = s.role[1];
+    config.PortC_Baud         = s.baud[1];
 }
 
 void loadConfig() {
@@ -88,41 +127,25 @@ void loadConfig() {
     config.engine_on_toggle       = p.getInt("entog",0);
     config.throttle_ramp          = p.getInt("thrr", 20);
     config.throttle_dead_band     = p.getInt("thrdb",10);
-    config.modul_adress           = p.getInt("madr", 0);
     for (int i = 0; i < RCSOUND_NUM_GROUPS; i++) {
         snprintf(key,sizeof(key),"gadr%d",i);
         config.EK_Gruppen_Adresse[i] = p.getInt(key, (i==0) ? 0 : 255);
     }
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
-    config.PortB_Mode             = p.getInt("pbmode", PORTB_OFF);
-    if (config.PortB_Mode < PORTB_OFF || config.PortB_Mode >= (int)PORTB_FUNCTION_COUNT) config.PortB_Mode = PORTB_OFF;
-    config.PortB_Baud             = (uint32_t)p.getInt("pbbaud", (int)PORTB_BAUD_DEFAULT_CRSF);
-    // Port C: bis v0.01 nur GPS an/aus ("pcgps"), seitdem Rolle + Baudrate.
-    if (p.isKey("pcmode")) config.PortC_Mode = p.getInt("pcmode", PORTB_OFF);
-    else                   config.PortC_Mode = p.getInt("pcgps", 0) ? PORTB_GPS : PORTB_OFF;
-    if (config.PortC_Mode < PORTB_OFF || config.PortC_Mode >= (int)PORTB_FUNCTION_COUNT) config.PortC_Mode = PORTB_OFF;
-    config.PortC_Baud             = (uint32_t)p.getInt("pcbaud", (int)PORTB_BAUD_DEFAULT_GPS);
     config.Sound_Storage          = constrain(p.getInt("sndstor", 0), 0, 2);
-    String ssid=p.getString("ssid","Sound-Mini");
-    String pass=p.getString("pass","123456789");
-    String ip  =p.getString("wip", "192.168.1.1");
-    String dnam=p.getString("dnam","Sound-Mini");
-    bool     wifiAutoEnable  = p.getInt("wfauto", 0) ? true : false;
-    uint16_t wifiAutoTimeout = (uint16_t)constrain(p.getInt("wftmo", 60), 5, 240);
-    bool     wifiAlwaysOn    = p.getInt("wfalways", 1) ? true : false;
+    // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
+    // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
+    // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
+    // abgelegt. Fehlende Schluessel behalten die Werkseinstellung.
+    RcCommonSettings cs;
+    configToCommon(cs);
+    if (rcSettingsLoad(p, cs, nullptr)) {
+        Serial.println("Config: gemeinsame Einstellungen (RC_Common) aus alten Schluesseln uebernommen.");
+        configDirty = true;
+    }
     p.end();
-    strncpy(config.WiFi_SSID,    ssid.c_str(),sizeof(config.WiFi_SSID)-1);
-    strncpy(config.WiFi_Password,pass.c_str(),sizeof(config.WiFi_Password)-1);
-    strncpy(config.WiFi_IP,      ip.c_str(),  sizeof(config.WiFi_IP)-1);
-    strncpy(config.Device_Name,  dnam.c_str(),sizeof(config.Device_Name)-1);
-    config.WiFi_SSID[sizeof(config.WiFi_SSID)-1]='\0';
-    config.WiFi_Password[sizeof(config.WiFi_Password)-1]='\0';
-    config.WiFi_IP[sizeof(config.WiFi_IP)-1]='\0';
-    config.Device_Name[sizeof(config.Device_Name)-1]='\0';
-    config.WifiAutoEnable     = wifiAutoEnable;
-    config.WifiAutoTimeoutSec = wifiAutoTimeout;
-    config.WifiAlwaysOn       = wifiAlwaysOn;
+    commonToConfig(cs);
     // Ein ungueltiger Quellwert wird auf 999 (Deaktiviert) bereinigt.
     for (int i = 0; i < RCSOUND_NUM_SLOTS; i++) {
         if (!isValidEinSource(config.Source_Start_Sound[i])) {
@@ -151,25 +174,18 @@ void saveConfigForce() {
     p.putInt("entog",config.engine_on_toggle);
     p.putInt("thrr", config.throttle_ramp);
     p.putInt("thrdb",config.throttle_dead_band);
-    p.putInt("madr", config.modul_adress);
     for (int i = 0; i < RCSOUND_NUM_GROUPS; i++) {
         snprintf(key,sizeof(key),"gadr%d",i);
         p.putInt(key, config.EK_Gruppen_Adresse[i]);
     }
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
-    p.putInt("pbmode",config.PortB_Mode);
-    p.putInt("pbbaud",(int)config.PortB_Baud);
-    p.putInt("pcmode",config.PortC_Mode);
-    p.putInt("pcbaud",(int)config.PortC_Baud);
     p.putInt("sndstor", config.Sound_Storage);
-    p.putString("ssid",config.WiFi_SSID);
-    p.putString("pass",config.WiFi_Password);
-    p.putString("wip", config.WiFi_IP);
-    p.putString("dnam",config.Device_Name);
-    p.putInt("wfauto", config.WifiAutoEnable ? 1 : 0);
-    p.putInt("wftmo",  (int)config.WifiAutoTimeoutSec);
-    p.putInt("wfalways", config.WifiAlwaysOn ? 1 : 0);
+    // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
+    RcCommonSettings cs;
+    configToCommon(cs);
+    rcSettingsSanitize(cs);
+    rcSettingsSave(p, cs);
     p.end();
     configDirty=false;
     Serial.println("Config in NVS gespeichert.");

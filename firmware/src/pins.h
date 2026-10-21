@@ -48,6 +48,10 @@
 #define PIN_SD_CLK    12
 #define PIN_SD_MISO   13
 
+// ── Status-LED: RGB-LED (WS2812) des S3-Zero ─────────────────────────
+// Status von Port A (RC_Common, status_led.h)
+#define PIN_STATUS_LED 21
+
 // ── Port C: Hardware-UART0 (Serial0), Rolle waehlbar wie Port B ──────
 // IO43/44 sind die TX/RX-Pins am Header (UART0 ist frei, die Konsole
 // laeuft ueber USB). Das ROM-Bootlog auf IO43 (nur beim Start) wird von

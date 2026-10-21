@@ -2,25 +2,24 @@
 #define SPORT_LIPO_H
 
 /*
- * sport_lipo.h  –  Soundmodul Mini (Port B, Rolle PORTB_SPORT, aus
- * ESP32-RC-Sound v7)
+ * sport_lipo.h  –  RC_Common (Rolle "S.Port" auf einem Zusatz-UART, siehe
+ * uart_roles.h; urspruenglich aus ESP32-RC-Sound v7)
  *
  * S.Port Master-Polling fuer bis zu 2 FrSky FLVSS/MLVSS LiPo-Sensoren.
  * Der ESP32 übernimmt die Rolle des S.Port-Masters und pollt die Sensoren
- * aktiv ueber den Port-B-UART (Serial1, Port A/CRSF liegt auf Serial2).
- *
- * Pins: PIN_PORTB_TX / PIN_PORTB_RX, siehe pins.h.
+ * aktiv ueber einen Zusatz-UART (Pins siehe Projekt). Die Zellspannungen
+ * gehen als CRSF-Telemetrie an den Empfaenger.
  *
  * Schaltung (Half-Duplex, S.Port ist invertierter UART 57600 Baud):
  *
- *   ESP32 PIN_PORTB_TX ──[1N4148 Anode→Kathode]──┬── S.Port Signal (gelb)
- *   ESP32 PIN_PORTB_RX ───────────────────────────┘
+ *   ESP32 UART TX ──[1N4148 Anode→Kathode]──┬── S.Port Signal (gelb)
+ *   ESP32 UART RX ───────────────────────────┘
  *   ESP32 GND ──────────────────────────────────────── S.Port GND (schwarz)
  *
- *   Diode 1N4148: Anode an PIN_PORTB_TX, Kathode Richtung Bus
+ *   Diode 1N4148: Anode an UART TX, Kathode Richtung Bus
  *   (schwarzer Ring zeigt WEG vom ESP32, Richtung S.Port Kabel)
  *
- * Sensor Poll-IDs (konfigurierbar über Weboberfläche Seite 12):
+ * Sensor Poll-IDs (Werkseinstellung, je nach Projekt im Web aenderbar):
  *   Sensor 1 (Pack 1): Physical ID 1 (EdgeTX) → Poll-Byte 0xA1
  *   Sensor 2 (Pack 2): Physical ID 2 (EdgeTX) → Poll-Byte 0x22
  *
@@ -30,6 +29,8 @@
 
 #include <Arduino.h>
 
+class CRSF;
+
 // S.Port: 57600 Baud, 8N1, invertiert
 #define SPORT_BAUD       57600
 
@@ -37,11 +38,10 @@
 #define SPORT_MAX_CELLS    6     // FLVSS/MLVSS: max. 6S pro Sensor
 #define SPORT_NUM_SENSORS  2     // Pack 1 + Pack 2
 
-// Physical Poll-Bytes werden zur Laufzeit aus config.sport_poll_id[] gelesen.
+// Physical Poll-Bytes kommen aus dem Projekt (sportLipoUsePollIds()).
 // Standardwerte (Werkseinstellung):
 //   Sensor 1: Physical ID 0x02 → Poll-Byte 0xA1
 //   Sensor 2: Physical ID 0x03 → Poll-Byte 0x22
-// Konfigurierbar über Weboberfläche → Seite 12 (FrSky LiPo Sensoren)
 
 // ── Protokoll-Konstanten ──────────────────────────────────────────────
 #define SPORT_START_BYTE   0x7E
@@ -78,18 +78,19 @@ struct LipoSensorData {
 extern LipoSensorData lipoSensor[SPORT_NUM_SENSORS];
 
 // ── Öffentliche Funktionen ────────────────────────────────────────────
-// Signatur passend zur Port-B-Rollen-Registry (siehe port_function.h):
-// serial = Port-B-UART (Serial1, siehe setup() in main.cpp),
-// rxPin/txPin = PIN_PORTB_RX/PIN_PORTB_TX (pins.h), baud = config.PortB_Baud.
+// Aufruf aus uartPortsBegin() (uart_ports.h) fuer den Port mit Rolle S.Port.
 void    sportLipoInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud);
+// Zeiger auf die zwei Poll-IDs des Projekts (werden live gelesen, Aenderung
+// im Web wirkt sofort). Ohne Aufruf gelten 0xA1/0x22.
+void    sportLipoUsePollIds(const uint8_t* ids2);
 void    sportLipoUpdate();              // Non-blocking, in loop() aufrufen
-bool    sportLipoIsActive();            // true = UART initialisiert (S.Port aktiv auf Port B zugewiesen)
+bool    sportLipoIsActive();            // true = UART initialisiert (ein Port hat die Rolle S.Port)
 
 float   sportGetTotalVoltage();         // Gesamtspannung beider Packs (V)
 float   sportGetMinCell();              // Niedrigste Einzelzelle aller Packs (V)
 uint8_t sportGetTotalCells();           // Gesamtzellanzahl beider Packs
 uint8_t sportCalcSoC(float minCell);    // SoC aus min. Zellspannung (0–100%)
-void    sportSendCellsTelemetry(uint8_t sensorIdx); // CRSF Voltages senden
+void    sportSendCellsTelemetry(CRSF& crsf, uint8_t sensorIdx); // CRSF Voltages senden
 
 // ── Diagnose-Zaehler (immer aktiv, nicht nur bei SPORT_DEBUG_RAW) ──────
 // Uebernommen aus ESP32-GPS-Telemetry: granulare Zaehler machen "geht

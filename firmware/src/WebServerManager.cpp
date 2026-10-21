@@ -6,22 +6,22 @@
 #include "config.h"
 #include <Arduino.h>
 #include "XT_I2S_Audio.h"
-#include "sport_lipo.h"
-#include "gps_speed.h"
-#include "CRSF_ESP32/crsf_esp32.h"
-#include "port_function.h"   // Port-B-Rollen-Registry
+#include "RC_Common/sport_lipo.h"
+#include "RC_Common/gps_speed.h"
+#include "RC_Common/CRSF_ESP32/crsf_esp32.h"
+#include "RC_Common/uart_roles.h"
+#include "RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
 #include "sound_store.h"     // Sound-Speicher Flash/SD/Auto
-#include <Update.h>          // Firmware-Update per WLAN (OTA), siehe handleApiOtaUpdate*()
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
 extern bool gpsPinConflict; // beim Mini immer false (kein SBUS), bleibt fuer das Web-JSON
 // Die tatsaechlich AKTIVEN (seit dem letzten Neustart geladenen) Port B/C-
-// Werte - koennen von config.PortB_Mode/PortC_Mode abweichen, wenn
+// Werte - koennen von config.PortB_Role/PortC_Role abweichen, wenn
 // seitdem ueber Web/Lua etwas geaendert, aber noch nicht neu gestartet
 // wurde (siehe Erklaerung in main.cpp).
-extern int PortB_Mode_boot;
-extern int PortC_Mode_boot;
+extern uint8_t PortB_Role_boot;
+extern uint8_t PortC_Role_boot;
 extern bool PortC_Duplicate_boot;
 
 // ── PROGMEM HTML ─────────────────────────────────────────────────────────
@@ -302,27 +302,27 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <div class="card" id="c-portbc">
     <div class="card-title">Port B / Port C</div>
     <div class="row" style="margin-bottom:10px">
-      <span class="lbl">Port B Modus</span>
+      <span class="lbl">Port B Rolle</span>
       <!-- Optionen kommen zur Laufzeit vom Geraet (s.portb_options in
-           /api/config, siehe fillSelFlat() weiter unten) statt hier UND in
-           port_function.cpp UND im CRSF/Lua-Menue von Hand dreifach
-           identisch gepflegt zu werden. -->
+           /api/config, siehe fillSelFlat() weiter unten) - dieselbe Liste
+           wie im CRSF/Lua-Menue und in allen anderen Modulen (RC_Common,
+           uart_roles.h). -->
       <select id="portb-mode" onchange="onPortBMode()"></select>
     </div>
     <div class="row" id="row-portb-baud" style="margin-bottom:10px">
       <span class="lbl">Port B Baudrate</span>
-      <input type="number" id="portb-baud" min="300" max="2000000" style="width:120px">
+      <select id="portb-baud"></select>
     </div>
     <div class="row" style="margin-bottom:10px">
-      <span class="lbl">Port C Modus</span>
+      <span class="lbl">Port C Rolle</span>
       <select id="portc-mode" onchange="onPortCMode()"></select>
     </div>
     <div class="row" id="row-portc-baud" style="margin-bottom:10px">
       <span class="lbl">Port C Baudrate</span>
-      <input type="number" id="portc-baud" min="300" max="2000000" style="width:120px">
+      <select id="portc-baud"></select>
     </div>
     <div id="portc-dup" style="color:var(--red);font-size:12px;margin-top:8px;display:none">
-      &#9888; Port C hatte dieselbe Rolle wie Port B und ist deshalb aus. Jede Rolle laeuft nur auf einem Port.
+      &#9888; Port C hatte dieselbe Rolle wie Port B und ist deshalb aus. S.Port, GPS und Raw laufen nur auf einem Port (CRSF darf auf beiden).
     </div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Aenderungen an Port B/C wirken erst nach einem Neustart des Moduls.
@@ -377,8 +377,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <!-- Firmware-Update direkt per WLAN (OTA) - .bin-Datei hochladen, Firmware
        landet im inaktiven OTA-Segment, Modul startet danach neu. Schlaegt
        der Upload fehl/wird er abgebrochen, bootet unveraendert mit der
-       bisherigen Firmware weiter (siehe handleApiOtaUpdateData() in
-       WebServerManager.cpp). -->
+       bisherigen Firmware weiter (siehe RC_Common/web_common.cpp). -->
   <div class="card" id="c-ota" style="margin-top:10px">
     <div class="card-title">Firmware-Update (OTA)</div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:10px">
@@ -550,6 +549,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 </div>
 
 </main>
+<script src="/rc_common.js"></script>
 <script>
 var cfg={}, dbg={}, curSnd=1, lipoTmr=0;
 var TABS=['motor','sounds','settings','wifi','lipo','debug'];
@@ -647,7 +647,7 @@ function fillSel(id,groups){
 // Flache Optionsliste (Index == value), anders als fillSel() oben, das nur
 // gruppierte <optgroup>-Daten kennt. Fuer Port-B-Modus genuegt eine flache
 // Liste - Reihenfolge/Index kommt direkt vom Geraet (s.portb_options,
-// ";"-getrennt, siehe portBFunctionOptionsString() in port_function.cpp),
+// ";"-getrennt, siehe uartRoleOptions() in RC_Common/uart_roles.h),
 // damit Web-UI und CRSF/Lua-Menue garantiert dieselbe Liste zeigen.
 function fillSelFlat(id,namesStr){
   var sel=document.getElementById(id); if(!sel)return;
@@ -678,24 +678,21 @@ function gi(id){return parseInt(gv(id))||0;}
 function slUpd(sid,lid){var v=gv(sid);document.getElementById(lid).textContent=v;}
 function slSet(sid,lid,v){sv(sid,v);if(lid)document.getElementById(lid).textContent=v;}
 
-// Baudrate beim Wechsel der Port-B-Rolle auf den protokolltypischen Standard
-// vorbelegen (bleibt danach frei editierbar - im Web-UI gibt es anders als
-// im CRSF/Lua-Menue keine 1-Byte-Grenze, die Baudrate ist hier also
-// wirklich frei eingebbar, nicht nur aus einer Liste). Die Standardwerte
-// kommen vom Geraet (s.portb_baud_defaults in /api/config, siehe
-// portBFunctionDefaultBaud() in port_function.cpp) statt hier als eigenes,
-// von Hand synchron zu haltendes Objekt dupliziert zu sein - loadConfig()
-// befuellt PORTB_BAUD_DEFAULTS unten.
+// Baudrate beim Wechsel der Rolle auf den protokolltypischen Standard
+// vorbelegen, bei GPS "Auto". Die Standardwerte kommen vom Geraet
+// (s.portb_baud_defaults in /api/config, siehe uartRoleDefaultBaud() in
+// RC_Common/uart_roles.h), die Liste mit "Auto" aus /rc_common.js
+// (rcFillBaud, ein eigener Wert aus einer Sicherung bleibt erhalten).
 var PORTB_BAUD_DEFAULTS = {};
 function onPortBMode(){
   var m = gi('portb-mode');
-  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0) sv('portb-baud', PORTB_BAUD_DEFAULTS[m]);
+  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portb-baud'), PORTB_BAUD_DEFAULTS[m]);
   var row = document.getElementById('row-portb-baud');
   if (row) row.className = 'row'+(m===0?' hidden':'');
 }
 function onPortCMode(){
   var m = gi('portc-mode');
-  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0) sv('portc-baud', PORTB_BAUD_DEFAULTS[m]);
+  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portc-baud'), PORTB_BAUD_DEFAULTS[m]);
   var row = document.getElementById('row-portc-baud');
   if (row) row.className = 'row'+(m===0?' hidden':'');
 }
@@ -749,10 +746,10 @@ function loadConfig(){
     fillSelFlat('portb-mode', s.portb_options);
     fillSelFlat('portc-mode', s.portb_options);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
-    sv('portb-mode', s.portb_mode); sv('portb-baud', s.portb_baud);
-    sv('portc-mode', s.portc_mode); sv('portc-baud', s.portc_baud);
-    var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_mode===0?' hidden':'');
-    var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_mode===0?' hidden':'');
+    sv('portb-mode', s.portb_role); rcFillBaud(document.getElementById('portb-baud'), s.portb_baud);
+    sv('portc-mode', s.portc_role); rcFillBaud(document.getElementById('portc-baud'), s.portc_baud);
+    var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_role===0?' hidden':'');
+    var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_role===0?' hidden':'');
     var pd=document.getElementById('portc-dup'); if(pd) pd.style.display=s.portc_dup?'block':'none';
     fillSelFlat('snd-storage', s.storage_options); sv('snd-storage', s.sound_storage);
     var si=document.getElementById('storage-info');
@@ -809,7 +806,8 @@ function renderDbg(){
   if(gp&&dbg.gps){
     var g=dbg.gps;
     if(!g.active){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">Kein Port auf GPS</span></div>';}
-    else{gp.innerHTML='<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
+    else{gp.innerHTML='<div class="row"><span class="lbl">Baudrate</span><span style="font-family:var(--mono)">'+(g.auto?'Auto ':'')+(g.locked?g.baud:'sucht …')+'</span></div>'+
+      '<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
       '<div class="row"><span class="lbl">Satelliten</span><span style="font-family:var(--mono)">'+g.sats+'</span></div>'+
       '<div class="row"><span class="lbl">Geschwindigkeit</span><span style="font-family:var(--mono)">'+g.speed+' km/h</span></div>';}
   }
@@ -1053,8 +1051,8 @@ function saveSettings(){
   var d={
     modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
-    portb_mode:gi('portb-mode'), portb_baud:gi('portb-baud'),
-    portc_mode:gi('portc-mode'), portc_baud:gi('portc-baud'),
+    portb_role:gi('portb-mode'), portb_baud:gi('portb-baud'),
+    portc_role:gi('portc-mode'), portc_baud:gi('portc-baud'),
     sound_storage:gi('snd-storage')
   };
   xpost('/api/config',d,function(r){
@@ -1141,9 +1139,13 @@ function importConfigData(data){
   var settingsPost=stripUndef({
     modul_adr:s.modul_adr,
     mkan_adr0:s.mkan_adr0, mkan_adr1:s.mkan_adr1,
-    portb_mode:s.portb_mode, portb_baud:s.portb_baud,
-    portc_mode:s.portc_mode, portc_baud:s.portc_baud,
-    portc_gps:(s.portc_mode===undefined?s.portc_gps:undefined),  // Sicherung von v0.01
+    // portb_mode/portc_mode: Sicherungen bis v0.02 (alte Nummern, Geraet
+    // rechnet um); portc_gps: Sicherung von v0.01
+    portb_role:s.portb_role, portb_mode:(s.portb_role===undefined?s.portb_mode:undefined),
+    portb_baud:s.portb_baud,
+    portc_role:s.portc_role, portc_mode:(s.portc_role===undefined?s.portc_mode:undefined),
+    portc_baud:s.portc_baud,
+    portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
     sound_storage:s.sound_storage,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
@@ -1235,52 +1237,15 @@ function sdDeleteSelected(){
 
 // Firmware-Update per WLAN (OTA) - echtes multipart/form-data wie beim
 // Sound-Upload (uploadSoundFile()), aber an /api/otaupdate; nach Erfolg
-// startet das Modul selbst neu (siehe handleApiOtaUpdate() in
-// WebServerManager.cpp) - die Verbindung bricht dabei kurz ab, das wird dem
+// startet das Modul selbst neu (siehe RC_Common/web_common.cpp) - die Verbindung bricht dabei kurz ab, das wird dem
 // Nutzer hier erklaert statt als Fehler angezeigt.
 function uploadOtaFile(file){
-  if(!file)return;
-  if(!confirm('Firmware-Update mit "'+file.name+'" starten? Waehrend des '+
-              'Uploads die Spannungsversorgung des Moduls NICHT unterbrechen '+
-              '- moeglichst ueber ESC/Akku bestromt, nicht nur ueber USB. '+
-              'Das Modul startet danach automatisch neu.')){
-    document.getElementById('ota-file').value=''; return;
-  }
+  // v0.03: gemeinsamer Upload aus /rc_common.js (RC_Common)
   var prog=document.getElementById('ota-progress');
-  var status=document.getElementById('ota-status');
-  prog.className='row'; status.textContent='Hochladen … (0%)';
-
-  var fd=new FormData();
-  fd.append('file',file,file.name);
-
-  var x=new XMLHttpRequest();
-  x.open('POST','/api/otaupdate',true);
-  x.upload.onprogress=function(e){
-    if(e.lengthComputable) status.textContent='Hochladen … ('+Math.round(e.loaded/e.total*100)+'%)';
-  };
-  x.onload=function(){
-    // Bei Erfolg startet das Modul (nach kurzer Verzoegerung serverseitig)
-    // von selbst neu - die Antwort trifft trotzdem noch ein, bevor die
-    // Verbindung tatsaechlich abbricht.
-    try{
-      var d=JSON.parse(x.responseText);
-      if(d.ok){
-        status.textContent='Update erfolgreich ('+d.size+' Bytes) - Modul startet neu …';
-        toast('Firmware-Update erfolgreich, Modul startet neu');
-      } else {
-        status.textContent='Fehler: '+errText(d.error);
-        toast('Update fehlgeschlagen',1);
-      }
-    }catch(e){ status.textContent='Fehler beim Hochladen'; toast('Update fehlgeschlagen',1); }
-  };
-  x.onerror=function(){
-    // Kann auch bedeuten, dass das Update erfolgreich war und das Modul
-    // bereits neu startet, bevor die Antwort ankam - fuer den Nutzer nicht
-    // unterscheidbar von einem echten Verbindungsfehler.
-    status.textContent='Verbindung unterbrochen - Update war evtl. trotzdem erfolgreich (Modul neu verbinden und pruefen)';
-  };
-  x.send(fd);
-  document.getElementById('ota-file').value='';
+  if(prog) prog.className='row';
+  rcOtaUpload(file,document.getElementById('ota-status'),document.getElementById('ota-file'),function(ok){
+    toast(ok?'Firmware-Update erfolgreich, Modul startet neu':'Update fehlgeschlagen',ok?0:1);
+  });
 }
 
 // Graut die Auto-Failsafe-Karte aus, solange "WLAN dauerhaft an" aktiv ist -
@@ -1444,12 +1409,10 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   server.on("/api/soundfiles",  HTTP_GET,  []() { WebServerManager::handleApiSoundFiles(); });
   server.on("/api/sounddelete", HTTP_POST, []() { WebServerManager::handleApiSoundDelete(); });
   server.on("/api/sddelete",    HTTP_POST, []() { WebServerManager::handleApiSdDelete();    });
-  // Firmware-Update per WLAN (OTA) - gleiches Zwei-Handler-Muster wie
-  // /api/soundupload oben, schreibt aber in das OTA-Flash-Segment statt auf
-  // die SD-Karte (siehe handleApiOtaUpdateData()).
-  server.on("/api/otaupdate", HTTP_POST,
-            []() { WebServerManager::handleApiOtaUpdate(); },
-            []() { WebServerManager::handleApiOtaUpdateData(); });
+  // Firmware-Update per WLAN (POST /api/otaupdate), /rc_common.js und
+  // /api/uartroles kommen aus RC_Common (web_common.cpp), gleich in allen
+  // Modulen. Schreibt in das inaktive OTA-Segment.
+  webCommonRegister(server);
   // Manueller WLAN-Schalter (Web-Tab "WiFi"/Lua-Feld 174).
   server.on("/api/wifi_enable", HTTP_POST, []() { WebServerManager::handleApiWifiEnable(); });
   // Ein fehlgeschlagener AP-Start (z.B. WiFi-Treiber/Heap zum Zeitpunkt des
@@ -1497,7 +1460,7 @@ void WebServerManager::disableAP() {
 
 bool WebServerManager::isApActive() { return apActive; }
 // handleApiWifiEnable() (POST /api/wifi_enable) steht weiter unten, in der
-// Naehe von handleApiOtaUpdate() - braucht die dort bereits verfuegbaren
+// Naehe der SD-Handler - braucht die dort bereits verfuegbaren
 // Helfer sendJson()/sendOk() (in dieser Datei erst spaeter definiert).
 
 // ── handleClient(): non-blocking, kehrt sofort zurueck ──────────────────
@@ -1605,8 +1568,9 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_mode, portb_baud, portc_mode, portc_baud,
-//               sound_storage }  (portc_gps aus v0.01-Sicherungen: 1 -> GPS)
+//               portb_role, portb_baud, portc_role, portc_baud,
+//               sound_storage }  (portb_mode/portc_mode aus Sicherungen bis
+//               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
 void WebServerManager::handleApiConfigPost() {
@@ -1625,18 +1589,21 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "mkan_adr0", v)) { config.EK_Gruppen_Adresse[0]       = constrain(v,0,255);  changed=true; }
   if (jsonGetInt(body, "mkan_adr1", v)) { config.EK_Gruppen_Adresse[1]       = constrain(v,0,255);  changed=true; }
   // Port B / Port C - wirkt erst nach einem Neustart
-  // (siehe setup() in main.cpp, PortB_Mode_boot/
-  // PortC_Mode_boot). Anders als im CRSF/Lua-Menue (1-Byte-
+  // (siehe setup() in main.cpp, PortB_Role_boot/
+  // PortC_Role_boot). Anders als im CRSF/Lua-Menue (1-Byte-
   // Wertebereich, siehe dort) ist die Baudrate hier ueber JSON wirklich
   // frei eingebbar, kein Snapping auf eine feste Liste.
-  if (jsonGetInt(body, "portb_mode", v)) { config.PortB_Mode = constrain(v,0,(int)portBFunctionMaxIndex()); changed=true;
-    Serial.printf("[API] Port B Modus -> %d (wirkt erst nach Neustart)\n", config.PortB_Mode); }
-  if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
-  if (jsonGetInt(body, "portc_mode", v)) { config.PortC_Mode = constrain(v,0,(int)portBFunctionMaxIndex()); changed=true;
-    Serial.printf("[API] Port C Modus -> %d (wirkt erst nach Neustart)\n", config.PortC_Mode); }
-  else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Mode = v ? PORTB_GPS : PORTB_OFF;
-    config.PortC_Baud = PORTB_BAUD_DEFAULT_GPS; changed=true; }
-  if (jsonGetInt(body, "portc_baud", v)) { config.PortC_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
+  if (jsonGetInt(body, "portb_role", v)) { config.PortB_Role = uartRoleClamp(v); changed=true;
+    Serial.printf("[API] Port B Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortB_Role)); }
+  else if (jsonGetInt(body, "portb_mode", v)) { config.PortB_Role = uartRoleFromSoundMiniLegacy(v); changed=true; }
+  // v0.03: UART_BAUD_AUTO = "Auto" (GPS sucht die Baudrate selbst)
+  if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
+  if (jsonGetInt(body, "portc_role", v)) { config.PortC_Role = uartRoleClamp(v); changed=true;
+    Serial.printf("[API] Port C Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortC_Role)); }
+  else if (jsonGetInt(body, "portc_mode", v)) { config.PortC_Role = uartRoleFromSoundMiniLegacy(v); changed=true; }
+  else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Role = v ? UROLE_GPS : UROLE_OFF;
+    config.PortC_Baud = uartRoleDefaultBaud(UROLE_GPS); changed=true; }
+  if (jsonGetInt(body, "portc_baud", v)) { config.PortC_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
   if (jsonGetInt(body, "sound_storage", v)) { config.Sound_Storage = constrain(v,0,(int)STORAGE_MAX); changed=true;
     Serial.printf("[API] Sound-Speicher -> %d (wirkt erst nach Neustart)\n", config.Sound_Storage); }
 
@@ -1653,7 +1620,7 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "wifi_auto_enable",  v)) { config.WifiAutoEnable     = constrain(v,0,1) ? true : false; changed=true; }
   if (jsonGetInt(body, "wifi_auto_timeout", v)) { config.WifiAutoTimeoutSec = (uint16_t)constrain(v,5,240);    changed=true; }
   // "WLAN dauerhaft an" (siehe config.h) - rein persistierte Einstellung wie
-  // 175/176 (Auto-Failsafe) oder portb_mode/portc_mode oben: wirkt erst ab
+  // 175/176 (Auto-Failsafe) oder portb_role/portc_role oben: wirkt erst ab
   // dem naechsten Bootvorgang, KEIN sofortiges enableAP() hier. Bewusst so
   // (seit v7.15) - ein WLAN-Start zur Laufzeit ist historisch die
   // fehleranfaelligste Operation in diesem Projekt (Heap-Fragmentierung,
@@ -1721,21 +1688,18 @@ String WebServerManager::buildConfigJson() {
 
   // Einstellungen
   j += "\"settings\":{";
-  j += "\"portb_mode\":" + String(config.PortB_Mode) + ",";
+  j += "\"portb_role\":" + String(config.PortB_Role) + ",";
   j += "\"portb_baud\":" + String(config.PortB_Baud) + ",";
-  // Optionsliste + Standard-Baudraten kommen aus der Port-B-Rollen-Registry
-  // (port_function.h/.cpp), statt sie hier, im HTML und im JS zusaetzlich
-  // von Hand identisch zu pflegen. Index in beiden Listen == numerischer
-  // PortBMode-Wert (siehe fillSelFlat()/onPortBMode() im Web-UI-JavaScript
-  // unten).
-  j += "\"portb_options\":\"" + String(portBFunctionOptionsString()) + "\",";
+  // Rollenliste + Standard-Baudraten aus RC_Common (uart_roles.h), Index in
+  // beiden Listen == Rollennummer, gilt fuer Port B und C.
+  j += "\"portb_options\":\"" + String(uartRoleOptions()) + "\",";
   j += "\"portb_baud_defaults\":[";
-  for (uint8_t i = 0; i < PORTB_FUNCTION_COUNT; i++) {
+  for (uint8_t i = 0; i < UROLE_COUNT; i++) {
     if (i > 0) j += ",";
-    j += String(portBFunctionDefaultBaud((PortBMode)i));
+    j += String(uartRoleDefaultBaud(i));
   }
   j += "],";
-  j += "\"portc_mode\":" + String(config.PortC_Mode) + ",";
+  j += "\"portc_role\":" + String(config.PortC_Role) + ",";
   j += "\"portc_baud\":" + String(config.PortC_Baud) + ",";
   j += "\"portc_dup\":"  + String(PortC_Duplicate_boot ? 1 : 0) + ",";
   // Sound-Speicher: Einstellung (wirkt nach Neustart) und aktiver Zustand.
@@ -2342,93 +2306,6 @@ void WebServerManager::handleApiSoundDelete() {
   }
 }
 
-// Fortschritt zwischen den mehrfachen Aufrufen von handleApiOtaUpdateData()
-// merken - analog zu uploadFailed/uploadErrCode/uploadBytes beim Sound-
-// Upload, aber ohne SD-Mutex, da hier nicht auf die SD-Karte, sondern in
-// das interne OTA-Flash-Segment geschrieben wird. otaStarted haelt fest, ob
-// Update.begin() erfolgreich war, damit UPLOAD_FILE_WRITE/-END nach einem
-// fehlgeschlagenen Start nichts mehr tun.
-static bool     otaFailed  = false;
-static String   otaErrCode;
-static uint32_t otaBytes   = 0;
-static bool     otaStarted = false;
-
-// ── Upload-Callback fuer POST /api/otaupdate ─────────────────────────────
-// Analog zu handleApiSoundUploadData(), aber es wird nicht auf die SD-Karte,
-// sondern ueber die Arduino-"Update"-Bibliothek in das gerade INAKTIVE
-// OTA-Flash-Segment geschrieben (ota_0/ota_1 - siehe platformio.ini,
-// board_build.partitions). Die aktuell laufende Firmware liegt im jeweils
-// ANDEREN Segment und bleibt waehrend des gesamten Uploads unangetastet:
-// schlaegt der Upload fehl oder wird er abgebrochen, bootet das Modul beim
-// naechsten Start einfach mit der bisherigen Firmware weiter (kein
-// Bricking-Risiko durch einen misslungenen Upload). Kein SD-Mutex noetig,
-// da hier nicht auf die SD-Karte zugegriffen wird.
-void WebServerManager::handleApiOtaUpdateData() {
-  HTTPUpload& upload = server.upload();
-
-  if (upload.status == UPLOAD_FILE_START) {
-    otaFailed = false; otaErrCode = ""; otaBytes = 0; otaStarted = false;
-    Serial.printf("[OTA] Start: %s\n", upload.filename.c_str());
-    // Bei multipart/form-data ist die Gesamtgroesse vorab nicht bekannt -
-    // UPDATE_SIZE_UNKNOWN laesst die Bibliothek bis zum Ende des jeweiligen
-    // OTA-Segments schreiben; die eigentliche Vollstaendigkeitspruefung
-    // passiert bei Update.end() unten.
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-      otaFailed = true; otaErrCode = "update_begin";
-      return;
-    }
-    otaStarted = true;
-
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (otaFailed || !otaStarted) return; // vorheriger Fehler - Rest verwerfen
-    // Grobe Plausibilitaetspruefung am allerersten Haeppchen: jede gueltige
-    // ESP32-Firmware beginnt mit dem Magic-Byte 0xE9. Faengt eine versehent-
-    // lich falsche Datei (z.B. eine WAV- oder JSON-Datei) frueh ab, statt sie
-    // komplett hochzuladen und erst bei Update.end() abzulehnen.
-    if (otaBytes == 0 && upload.currentSize > 0 && upload.buf[0] != 0xE9) {
-      otaFailed = true; otaErrCode = "bad_file";
-      return;
-    }
-    size_t written = Update.write(upload.buf, upload.currentSize);
-    otaBytes += written;
-    if (written != upload.currentSize) {
-      otaFailed = true; otaErrCode = "flash_write"; // z.B. Segment voll
-    }
-
-  } else if (upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED) {
-    if (upload.status == UPLOAD_FILE_ABORTED) { otaFailed = true; otaErrCode = "aborted"; }
-    if (otaStarted) {
-      if (otaFailed) {
-        Update.abort();
-      } else if (!Update.end(true)) {
-        // "true" = neue Partition als bootfaehig markieren, aber nur wenn
-        // die empfangenen Bytes vollstaendig sind - schlaegt z.B. an, wenn
-        // die Datei kein vollstaendiges Firmware-Image ist oder mitten in
-        // der Uebertragung abgebrochen wurde, ohne dass ABORTED erkannt wird.
-        otaFailed = true; otaErrCode = "update_end";
-      } else {
-        Serial.printf("[OTA] Fertig: %u Bytes\n", (unsigned)otaBytes);
-      }
-    }
-  }
-}
-
-// Wird einmal aufgerufen, NACHDEM der Upload-Callback oben fertig ist -
-// schickt die JSON-Antwort und startet das Modul bei Erfolg neu. Die
-// Antwort wird per flush() explizit hinausgeschickt und dann kurz gewartet,
-// damit sie den Browser noch erreicht, BEVOR der Neustart die WLAN-
-// Verbindung (kurzzeitig) abbrechen laesst.
-void WebServerManager::handleApiOtaUpdate() {
-  if (otaFailed) {
-    server.send(200, "application/json", "{\"ok\":false,\"error\":\"" + otaErrCode + "\"}");
-    return;
-  }
-  sendJson(server, "{\"ok\":true,\"size\":" + String(otaBytes) + "}");
-  server.client().flush();
-  delay(500);
-  ESP.restart();
-}
-
 // ── POST /api/wifi_enable  {"on":true/false} ─────────────────────────────
 // Manueller WLAN-Schalter (Web-Tab "WiFi", entspricht Lua-Feld 174) -
 // schaltet enableAP()/disableAP() (siehe weiter oben, kurz nach begin())
@@ -2449,7 +2326,7 @@ void WebServerManager::handleApiWifiEnable() {
     // abschalten - sonst wuerde die eigene HTTP-Antwort evtl. nicht mehr
     // ankommen, weil die Verbindung, ueber die sie laeuft, mitten im Senden
     // wegfaellt (dieselbe Reihenfolge wie beim Neustart nach einem OTA-
-    // Update, siehe handleApiOtaUpdate() oben).
+    // Update, siehe RC_Common/web_common.cpp).
     sendJson(server, "{\"ok\":true,\"active\":false}");
     server.client().flush();
     delay(200);
@@ -2483,9 +2360,9 @@ void WebServerManager::handleApiDebug() {
 
   // S.Port Live-Daten
   // Der AKTIVE (Boot-)Wert, nicht der evtl. schon geaenderte, aber noch
-  // nicht neu gestartete config.PortB_Mode.
-  j += "\"portb_mode\":" + String(PortB_Mode_boot) + ",";
-  j += "\"portc_mode\":" + String(PortC_Mode_boot) + ",";
+  // nicht neu gestartete config.PortB_Role.
+  j += "\"portb_role\":" + String(PortB_Role_boot) + ",";
+  j += "\"portc_role\":" + String(PortC_Role_boot) + ",";
   j += "\"sport_active\":" + String(sportLipoIsActive() ? "true" : "false") + ",";
   j += "\"sport\":{";
   j += "\"total_v\":"  + String(sportGetTotalVoltage(), 2)      + ",";
@@ -2525,6 +2402,9 @@ void WebServerManager::handleApiDebug() {
   j += "\"speed\":"  + String(gpsGetSpeedKmh(), 1) + ",";
   j += "\"sats\":"   + String(gpsGetSatellites())  + ",";
   j += "\"fix\":"    + String(gpsHasFix() ? 1 : 0)  + ",";
+  j += "\"baud\":"   + String(gpsGetBaud()) + ",";               // v0.03: Baudrate "Auto"
+  j += "\"auto\":"   + String(gpsBaudAuto() ? 1 : 0) + ",";
+  j += "\"locked\":" + String(gpsBaudLocked() ? 1 : 0) + ",";
   j += "\"pinConflict\":" + String(gpsPinConflict ? 1 : 0);
   j += "}";
 

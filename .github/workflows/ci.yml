@@ -1,5 +1,10 @@
 name: CI
 
+# Gemeinsame CI aller ESP32-Module (RC_Common 1.1.0):
+#   1. firmware/src/RC_Common/ gegen MANIFEST.sha256 pruefen (Kopie
+#      unveraendert) und die Host-Tests der Basis ausfuehren.
+#   2. Firmware bauen (Arduino-Core 3.0.7) und die Images hochladen.
+
 on:
   push:
     branches: [ main ]
@@ -7,8 +12,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  rc-common:
+    name: RC_Common pruefen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Kopie unveraendert (MANIFEST.sha256)
+        run: cd firmware/src/RC_Common && sha256sum -c --quiet MANIFEST.sha256
+      - name: Host-Tests
+        run: sh firmware/src/RC_Common/tests/run_tests.sh
+
   build-firmware:
     name: Build firmware (S3)
+    needs: rc-common
     runs-on: ubuntu-latest
     defaults:
       run:

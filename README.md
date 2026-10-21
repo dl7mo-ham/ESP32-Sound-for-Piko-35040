@@ -6,11 +6,14 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Eingang:** nur CRSF (Port A), busbasiert
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), SD-Karte optional
-- **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF, S.Port, Raw oder GPS
+- **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
+- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** noch keine (Grundgerüst)
+**Aktuelle Version:** v0.03 (nicht auf Hardware getestet)
+
+Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (PlatformIO über pioarduino).
 
 Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.docx) · Projektplan: [`docs/projektplan.md`](docs/projektplan.md)
 
@@ -62,6 +65,14 @@ Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V,
 | Port B RX / TX | 7 / 8 |
 | WLAN-Brücke (nach GND) | 9 |
 | Port C RX / TX | 44 / 43 |
+| Status-LED (WS2812 auf dem S3-Zero) | 21 |
+
+## Versionen
+
+| Version | Änderung |
+|---|---|
+| 0.03 | Gemeinsame Basis **RC_Common 1.1.0**: Core 3.0.7, CRSF-Bibliothek 1.1.0 mit Router (Port B/C mit Rolle CRSF reichen Frames zwischen Port A und dem Port weiter), Rollen mit gemeinsamen Nummern (Aus, CRSF, S.Port, GPS, Raw; alte Werte werden beim ersten Start umgerechnet), gemeinsame NVS-Schlüssel, Lua-Menü als Tabelle mit unveränderten Feld-IDs, Status-LED, WLAN-Failsafe und OTA aus RC_Common. Web-API: `portb_role`/`portc_role` statt `portb_mode`/`portc_mode` (alte Sicherungen werden umgerechnet). **GPS-Baudrate „Auto“** (Vorgabe für GPS, wie Betaflight): Der Port sucht die Baudrate des GPS selbst, stellt es auf 115200 Baud und 10 Hz um (ATGM336H und u-blox) und sucht neu, wenn 3 s keine Daten kommen. Baudraten in der Weboberfläche als Auswahlliste mit „Auto“. |
+| 0.02 | Port C mit Rolle und Baudrate wie Port B, Pins verschoben |
 
 ## Ordner
 
