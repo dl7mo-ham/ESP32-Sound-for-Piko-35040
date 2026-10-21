@@ -1,26 +1,27 @@
 /*
- * gps_speed.h  –  Soundmodul Mini (Port C - per PortC_GPS_Enabled
- * schaltbar, siehe Port-Modell in config.h; aus ESP32-RC-Sound v7)
+ * gps_speed.h  –  Soundmodul Mini (Rolle "GPS" auf Port B oder C,
+ * siehe Port-Modell in config.h; aus ESP32-RC-Sound v7)
  *
- * Liest ein NMEA-GPS-Modul (z. B. u-blox NEO-M8N oder ATGM336H) über eine
- * Software-Serial ein und stellt Ground Speed sowie Positionsdaten bereit.
+ * Liest ein NMEA-GPS-Modul (z. B. u-blox NEO-M8N oder ATGM336H) über einen
+ * Hardware-UART ein und stellt Ground Speed sowie Positionsdaten bereit.
  *
- * Pinbelegung (pins.h):
- *   GPS-TX  -> PIN_GPS_RX  (Empfang der NMEA-Daten)
- *   GPS-RX  <- PIN_GPS_TX  (Senden der Konfiguration an das GPS)
+ * Anschluss an Port B oder Port C (Rolle "GPS", Pins siehe pins.h):
+ *   GPS-TX  -> Port RX  (Empfang der NMEA-Daten)
+ *   GPS-RX  <- Port TX  (Senden der Konfiguration an das GPS)
  *
  * Nach dem Start wird das GPS einmalig per CASIC-Kommando auf 5 Hz gestellt
  * (ATGM336H/AT6558) und auf die Ausgabe von GGA+RMC reduziert. Die Einstellung
  * ist flüchtig und wird bei jedem Start neu gesetzt.
  *
- * Benötigte Bibliotheken: EspSoftwareSerial (SoftwareSerial.h), TinyGPSPlus.
+ * Benötigte Bibliothek: TinyGPSPlus.
  */
 #ifndef GPS_SPEED_H
 #define GPS_SPEED_H
 
 #include <Arduino.h>
 
-void     gpsSpeedInit();       // GPS initialisieren (Pins siehe pins.h)
+void     gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud); // GPS am UART starten
+bool     gpsIsActive();        // true, sobald ein Port die Rolle GPS hat
 void     gpsSpeedUpdate();     // NMEA einlesen/auswerten + Konfig nach Boot senden
 
 float    gpsGetSpeedKmh();     // aktuelle Geschwindigkeit in km/h

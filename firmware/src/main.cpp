@@ -24,12 +24,13 @@
 
    ── Das Port-Modell ───────────────────────────────────────────────────
    Port A = CRSF (Serial2), fest.
-   Port B = zweiter Hardware-UART (Serial1), Rolle waehlbar in Web UND
-            CRSF/Lua-Menue: Aus, CRSF (zweite Instanz), S.Port-Master
-            (LiPo-Telemetrie) oder Raw-UART, je mit eigener Baudrate.
+   Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART0 (Serial0).
+            Rolle je Port waehlbar in Web UND CRSF/Lua-Menue: Aus, CRSF
+            (zweite Instanz), S.Port-Master (LiPo-Telemetrie), Raw-UART
+            oder GPS (CRSF-GPS-Telemetrie), je mit eigener Baudrate.
             Welches Modul fuer welche Rolle zustaendig ist, kommt aus der
-            Registry in port_function.h/.cpp.
-   Port C = GPS (SoftwareSerial) fuer CRSF-GPS-Telemetrie, An/Aus.
+            Registry in port_function.h/.cpp. Jede Rolle nur auf einem
+            Port; doppelt gewaehlt laeuft sie auf Port B, Port C bleibt aus.
 
    ── WLAN & Weboberflaeche ─────────────────────────────────────────────
    Der Access Point laesst sich einschalten ueber:
@@ -71,7 +72,9 @@
 #include "port_function.h"
 #include "sound_store.h"
 
-uint16_t Version = 1;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (1 -> "0.01")
+uint16_t Version = 2;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (2 -> "0.02")
+// v0.02: Port C ist ein Hardware-UART mit waehlbarer Rolle wie Port B
+//        (Aus/CRSF/S.Port/Raw/GPS), GPS ohne SoftwareSerial.
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren (CRSF-only). Die
 // Variable bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
@@ -90,16 +93,20 @@ unsigned long shutdown_timer = 0;
 enum Engine_State : uint8_t { OFF, STARTING, RUNNING, STOPPING };
 volatile uint8_t engine_State = OFF;
 
-// Boot-Snapshot: Port-B-Rolle/Baudrate und Port-C(GPS)-Zustand werden
+// Boot-Snapshot: Rolle/Baudrate von Port B und Port C werden
 // einmalig in setup() aus config uebernommen. Aendern ueber Web/Lua schreibt
 // sofort in config, wirkt aber erst nach einem Neustart - die UARTs sind
 // dann schon initialisiert und werden im Betrieb nicht umgeschaltet.
 int      PortB_Mode_boot        = PORTB_OFF;
 uint32_t PortB_Baud_boot        = PORTB_BAUD_DEFAULT_CRSF;
-int      PortC_GPS_Enabled_boot = 0;
-// Port A (CRSF) belegt Serial2, Port B bekommt Serial1.
+int      PortC_Mode_boot        = PORTB_OFF;
+uint32_t PortC_Baud_boot        = PORTB_BAUD_DEFAULT_GPS;
+bool     PortC_Duplicate_boot   = false;   // Port C hatte dieselbe Rolle wie Port B -> aus
+// Port A (CRSF) belegt Serial2, Port B Serial1, Port C Serial0 (UART0,
+// frei, weil die Konsole ueber USB laeuft).
 static HardwareSerial* const PORTA_SERIAL = &Serial2;
 static HardwareSerial* const PORTB_SERIAL = &Serial1;
+static HardwareSerial* const PORTC_SERIAL = &Serial0;
 
 uint16_t einkanal_Data = 0;   // 1 Bit/Schalter - Quelltyp "Einkanal" 70-77
 
@@ -175,7 +182,8 @@ static void crsfWriteParam(uint8_t idx, uint8_t val);
 //  39: Folder Einstellungen {40..49}
 //   40:U8 Modul Adresse
 //   41:U8 Gruppenadr.1  42:U8 Gruppenadr.2  (255=aus)
-//   43:Sel Port B Modus  44:Sel Port B Baudrate  45:Sel Port C (GPS)
+//   43:Sel Port B Modus  44:Sel Port B Baudrate  45:Sel Port C Modus
+//   52:Sel Port C Baudrate (v0.02, hinten angehaengt, im Ordner nach 45)
 //   46:Sel WLAN jetzt (sofort, nicht persistiert)
 //   47:Sel Auto-WLAN bei Signalverlust  48:U8 Auto-WLAN Timeout (s)
 //   49:Sel WLAN dauerhaft an
@@ -186,10 +194,11 @@ static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
 static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
 static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
-static constexpr uint8_t CRSF_PARAM_COUNT = DEVNAME_FI;
+static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
+static constexpr uint8_t CRSF_PARAM_COUNT = PORTC_BAUD_FI;
 // Die Folder-Kinderlisten unten sind Literale (std::initializer_list) - bei
 // einer Aenderung der Sound-Anzahl muessen sie von Hand nachgezogen werden.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && CRSF_PARAM_COUNT == 51,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 52,
               "CRSF-Feld-IDs passen nicht mehr zu den Folder-Listen in crsfSendParam()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -369,7 +378,7 @@ static void crsfSendParam(uint8_t idx) {
 
     // ── Einstellungen (39..50) ────────────────────────────────────────
     else if(idx==39) crsf.send_param_response_CRSF_FOLDER(39,0,"Einstellungen",
-        {40,41,42,43,44,45,46,47,48,49,50});
+        {40,41,42,43,44,45,52,46,47,48,49,50});
     else if(idx==40) crsf.send_param_response_CRSF_UINT8(40,39,"Modul Adresse",
         (uint8_t)constrain(config.modul_adress,0,20),0,20,"");
     else if(idx==41) crsf.send_param_response_CRSF_UINT8(41,39,"Gruppenadr. 1 (255=aus)",
@@ -384,8 +393,11 @@ static void crsfSendParam(uint8_t idx) {
         "Port B Baudrate",PORTB_BAUD_LIST_STR,
         portBBaudToIndex(config.PortB_Baud),0,PORTB_BAUD_LIST_COUNT-1);
     else if(idx==45) crsf.send_param_response_CRSF_TEXT_SELECTION(45,39,
-        "Port C (GPS)","Aus;An",
-        config.PortC_GPS_Enabled?1:0,0,1);
+        "Port C Modus",portBFunctionOptionsString(),
+        (uint8_t)constrain(config.PortC_Mode,0,(int)portBFunctionMaxIndex()),0,portBFunctionMaxIndex());
+    else if(idx==PORTC_BAUD_FI) crsf.send_param_response_CRSF_TEXT_SELECTION(PORTC_BAUD_FI,39,
+        "Port C Baudrate",PORTB_BAUD_LIST_STR,
+        portBBaudToIndex(config.PortC_Baud),0,PORTB_BAUD_LIST_COUNT-1);
     // 46 wirkt SOFORT (siehe crsfWriteParam) und wird bewusst NICHT
     // persistiert - wie "Test Sound". 47/48/49 sind persistierte Konfiguration.
     else if(idx==46) crsf.send_param_response_CRSF_TEXT_SELECTION(46,39,
@@ -442,7 +454,7 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
     else if(idx==41){config.EK_Gruppen_Adresse[0]=constrain(val,0,255);markDirty();}
     else if(idx==42){config.EK_Gruppen_Adresse[1]=constrain(val,0,255);markDirty();}
     // ── Port B / Port C - wirken erst nach einem Neustart (siehe
-    // PortB_Mode_boot/PortC_GPS_Enabled_boot).
+    // PortB_Mode_boot/PortC_Mode_boot).
     else if(idx==43){
         uint8_t m=constrain(val,0,(int)portBFunctionMaxIndex());
         if (m!=config.PortB_Mode) {
@@ -460,8 +472,18 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
         Serial.printf("!!! Port B Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",(unsigned)config.PortB_Baud);
     }
     else if(idx==45){
-        config.PortC_GPS_Enabled=constrain(val,0,1);markDirty();
-        Serial.printf("!!! Port C (GPS) -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",config.PortC_GPS_Enabled);
+        uint8_t m=constrain(val,0,(int)portBFunctionMaxIndex());
+        if (m!=config.PortC_Mode) {
+            uint32_t defBaud = portBFunctionDefaultBaud((PortBMode)m);
+            if (defBaud != 0) config.PortC_Baud = defBaud;
+        }
+        config.PortC_Mode=m; markDirty();
+        Serial.printf("!!! Port C Modus -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",m);
+    }
+    else if(idx==PORTC_BAUD_FI){
+        uint8_t i=constrain(val,0,(int)PORTB_BAUD_LIST_COUNT-1);
+        config.PortC_Baud=portBBaudList[i]; markDirty();
+        Serial.printf("!!! Port C Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",(unsigned)config.PortC_Baud);
     }
     // ── WLAN jetzt (46) - wirkt SOFORT, absichtlich ohne Persistierung:
     // der naechste Start soll wieder vom Bootpin/"dauerhaft an" abhaengen.
@@ -479,6 +501,25 @@ static void crsfWriteParam(uint8_t idx, uint8_t val) {
         config.Sound_Storage=constrain(val,0,(int)STORAGE_MAX);markDirty();
         Serial.printf("!!! Sound-Speicher -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",config.Sound_Storage);
     }
+}
+
+// Startet die Rolle eines Ports (Port B/C). PORTB_OFF -> getPortBModule()
+// liefert nullptr, der Port bleibt aus.
+static void startPort(const char* name, int mode, HardwareSerial* serial,
+                      uint8_t rxPin, uint8_t txPin, uint32_t baud) {
+    const PortBFunctionModule* mod = getPortBModule((PortBMode)mode);
+    if (mod == nullptr) return;
+    if (mod->isActive != nullptr && mod->isActive()) {
+        Serial.printf("!!! %s: Rolle ist bereits aktiv, ueberspringe erneute Initialisierung !!!\n", name);
+    } else if (mod->begin != nullptr) {
+        Serial.printf("%s: %s\n", name, mod->name);
+        mod->begin(serial, rxPin, txPin, baud);
+    }
+}
+
+static void updatePort(int mode) {
+    const PortBFunctionModule* mod = getPortBModule((PortBMode)mode);
+    if (mod != nullptr && mod->update != nullptr) mod->update();
 }
 
 // ======== Setup ======================================================
@@ -522,26 +563,23 @@ void setup() {
 
     PortB_Mode_boot         = config.PortB_Mode;
     PortB_Baud_boot         = config.PortB_Baud;
-    PortC_GPS_Enabled_boot  = config.PortC_GPS_Enabled;
+    PortC_Mode_boot         = config.PortC_Mode;
+    PortC_Baud_boot         = config.PortC_Baud;
+    // Jede Rolle hat nur einen Zustand (eine CRSF-Zusatzinstanz, ein
+    // S.Port-Master, ein GPS) - doppelt gewaehlt laeuft sie nur auf Port B.
+    if (PortC_Mode_boot != PORTB_OFF && PortC_Mode_boot == PortB_Mode_boot) {
+        Serial.printf("!!! Port C: Rolle %s laeuft schon auf Port B - Port C bleibt aus !!!\n",
+                      portBFunctionName((PortBMode)PortC_Mode_boot));
+        PortC_Mode_boot      = PORTB_OFF;
+        PortC_Duplicate_boot = true;
+    }
     snprintf(versionString, sizeof(versionString), "%d.%02d", Version/100, Version%100);
     saveConfig();
 
-    // Port B: welches Modul fuer die gewaehlte Rolle zustaendig ist, kommt
-    // aus der Port-B-Rollen-Registry (port_function.h/.cpp).
-    {
-        const PortBFunctionModule* portBModule = getPortBModule((PortBMode)PortB_Mode_boot);
-        if (portBModule != nullptr) {
-            if (portBModule->isActive != nullptr && portBModule->isActive()) {
-                Serial.println("!!! Port B: Rolle ist bereits aktiv, ueberspringe erneute Initialisierung !!!");
-            } else if (portBModule->begin != nullptr) {
-                portBModule->begin(PORTB_SERIAL, PIN_PORTB_RX, PIN_PORTB_TX, PortB_Baud_boot);
-            }
-        }
-        // PORTB_OFF -> getPortBModule() liefert nullptr, Port B bleibt aus.
-    }
-
-    // Port C (GPS)
-    if (PortC_GPS_Enabled_boot) gpsSpeedInit();
+    // Port B und Port C: welches Modul fuer die gewaehlte Rolle zustaendig
+    // ist, kommt aus der Rollen-Registry (port_function.h/.cpp).
+    startPort("Port B", PortB_Mode_boot, PORTB_SERIAL, PIN_PORTB_RX, PIN_PORTB_TX, PortB_Baud_boot);
+    startPort("Port C", PortC_Mode_boot, PORTC_SERIAL, PIN_PORTC_RX, PIN_PORTC_TX, PortC_Baud_boot);
 
     Serial.printf("Soundmodul Mini %s (ESP32-S3)\n", versionString);
 }
@@ -578,13 +616,9 @@ void loop() {
     currentTime = millis();
     if (WebServerManager::isApActive()) WebServerManager::Webpage();
 
-    // Port B - Boot-Snapshot verwenden, generischer Registry-Aufruf.
-    {
-        const PortBFunctionModule* portBModule = getPortBModule((PortBMode)PortB_Mode_boot);
-        if (portBModule != nullptr && portBModule->update != nullptr) portBModule->update();
-    }
-    // Port C (GPS) laufend einlesen
-    if (PortC_GPS_Enabled_boot) gpsSpeedUpdate();
+    // Port B/C - Boot-Snapshot verwenden, generischer Registry-Aufruf.
+    updatePort(PortB_Mode_boot);
+    updatePort(PortC_Mode_boot);
 
     // Port A: CRSF
     crsf.read_packets(0);
@@ -601,12 +635,12 @@ void loop() {
         lastTelem = millis();
         // Nur Einzelzellen-Telemetrie (0x0E), kein Batterie-Frame (0x08) -
         // sonst wuerde die vom Empfaenger gemessene RxBt ueberschrieben.
-        if (PortB_Mode_boot == PORTB_SPORT) {
+        if (sportLipoIsActive()) {
             if (lipoSensor[0].online) sportSendCellsTelemetry(0);
             if (lipoSensor[1].online) sportSendCellsTelemetry(1);
         }
         // GPS-Telemetrie (CRSF-GPS-Frame) -> EdgeTX zeigt "GSpd"
-        if (PortC_GPS_Enabled_boot) {
+        if (gpsIsActive()) {
             uint16_t gspd = (uint16_t)(gpsGetSpeedKmh() * 10.0f); // CRSF: km/h * 10
             crsf.send_tele_GPS(gpsGetLatE7(), gpsGetLonE7(), gspd,
                                gpsGetHeadingCdeg(), gpsGetAltMeters(), gpsGetSatellites());

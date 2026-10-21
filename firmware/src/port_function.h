@@ -12,11 +12,10 @@
  * ebenfalls aus dieser einen Tabelle, statt sie an drei Stellen (HTML,
  * JS, CRSF-TEXT_SELECTION-String) von Hand synchron zu halten.
  *
- * Aktuell ist nur Port B generisch waehlbar (Port A ist fest RC-Eingang,
- * Port C ist fest GPS via SoftwareSerial) - die Registry ist trotzdem als
- * eigenstaendiges Modul angelegt, damit sich ein spaeterer zweiter
- * generischer Port oder weitere Port-B-Rollen ergaenzen lassen, ohne
- * setup()/loop()/Web-UI anzufassen.
+ * Port B und Port C nutzen beide diese Tabelle (Port A ist fest der
+ * RC-Eingang). Jede Rolle hat nur einen Zustand (eine CRSF-Zusatzinstanz,
+ * ein S.Port-Master, ein GPS) und darf deshalb nur auf einem Port laufen;
+ * setup() in main.cpp schaltet bei doppelter Wahl Port C ab.
  *
  * Port B braucht zusaetzlich eine (a) waehlbare Baudrate und (b) den von
  * portBFreeSerial() ermittelten freien Hardware-UART als Parameter - begin()
@@ -46,7 +45,7 @@ const PortBFunctionModule* getPortBModule(PortBMode f);
 const char* portBFunctionName(PortBMode f);
 
 // ";"-getrennte Namensliste aller Rollen in Enum-Reihenfolge, z.B.
-// "Aus;CRSF;S.Port;Raw" - fuer CRSF_TEXT_SELECTION und das
+// "Aus;CRSF;S.Port;Raw;GPS" - fuer CRSF_TEXT_SELECTION und das
 // Web-Dropdown identisch nutzbar (Index in der Liste == numerischer
 // PortBMode-Wert). Einmal hier gepflegt statt an mehreren Stellen von Hand.
 const char* portBFunctionOptionsString();

@@ -34,7 +34,7 @@
 #define PIN_CRSF_RX   5
 #define PIN_CRSF_TX   6
 
-// ── Port B: zweiter Hardware-UART (Serial1) ──────────────────────────
+// ── Port B: Hardware-UART1 (Serial1), Rolle waehlbar ─────────────────
 // S.Port-Rolle: TX -[1N4148 Anode->Kathode]-> S.Port-Signal <- RX
 #define PIN_PORTB_RX  7
 #define PIN_PORTB_TX  8
@@ -48,10 +48,11 @@
 #define PIN_SD_CLK    12
 #define PIN_SD_MISO   13
 
-// ── Port C: GPS (vorerst SoftwareSerial wie in V7) ───────────────────
+// ── Port C: Hardware-UART0 (Serial0), Rolle waehlbar wie Port B ──────
 // IO43/44 sind die TX/RX-Pins am Header (UART0 ist frei, die Konsole
-// laeuft ueber USB). Das ROM-Bootlog auf IO43 stoert das GPS nicht.
-#define PIN_GPS_RX    44   // GPS-TX -> ESP32
-#define PIN_GPS_TX    43   // ESP32 -> GPS-RX
+// laeuft ueber USB). Das ROM-Bootlog auf IO43 (nur beim Start) wird von
+// GPS und CRSF-Geraeten verworfen.
+#define PIN_PORTC_RX  44
+#define PIN_PORTC_TX  43
 
 #endif // PINS_H
