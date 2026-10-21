@@ -10,7 +10,9 @@
    Unveraendert uebernommen: Motorlogik (Gasrampe, Standgas-Verzoegerung,
    Tonhoehe folgt Gas), Port B (zweiter UART, Rolle waehlbar), Port C
    (GPS), Weboberflaeche mit Sound-Upload und OTA, CRSF-/Lua-Menue,
-   WLAN-Failsafe.
+   WLAN-Failsafe. Seit v0.03 kommen CRSF, UART-Rollen, S.Port, GPS,
+   Lua-Menue-Tabelle, gemeinsame Einstellungen, WLAN-Failsafe, Status-LED
+   und OTA aus RC_Common (gleiche Basis wie Multiswitch und Soundmodul V7).
 
    ── Quellen (Motor EIN und Sound 1-4) ─────────────────────────────────
    BUS Kanal Low/High (1-16), Einkanal (1-8, Schalter an der eigenen
@@ -25,12 +27,13 @@
    ── Das Port-Modell ───────────────────────────────────────────────────
    Port A = CRSF (Serial2), fest.
    Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART0 (Serial0).
-            Rolle je Port waehlbar in Web UND CRSF/Lua-Menue: Aus, CRSF
-            (zweite Instanz), S.Port-Master (LiPo-Telemetrie), Raw-UART
-            oder GPS (CRSF-GPS-Telemetrie), je mit eigener Baudrate.
-            Welches Modul fuer welche Rolle zustaendig ist, kommt aus der
-            Registry in port_function.h/.cpp. Jede Rolle nur auf einem
-            Port; doppelt gewaehlt laeuft sie auf Port B, Port C bleibt aus.
+            Rolle je Port waehlbar in Web UND CRSF/Lua-Menue (RC_Common,
+            uart_roles.h): Aus, CRSF (Modulkette: der CRSF-Router reicht
+            Frames zwischen Port A und Port B/C weiter), S.Port-Master
+            (LiPo-Telemetrie), GPS (CRSF-GPS-Telemetrie) oder Raw-UART, je
+            mit eigener Baudrate. S.Port, GPS und Raw nur auf einem Port;
+            doppelt gewaehlt laeuft die Rolle auf Port B, Port C bleibt aus.
+            CRSF darf auf beiden Ports laufen.
 
    ── WLAN & Weboberflaeche ─────────────────────────────────────────────
    Der Access Point laesst sich einschalten ueber:
@@ -43,7 +46,7 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   CRSF_PARAM_COUNT Feld-IDs, lueckenlos 1..51, Liste direkt beim
+   52 Feld-IDs, lueckenlos 1..52 (Tabelle in buildLuaMenu()), Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
@@ -52,27 +55,29 @@
    WebServerManager.cpp   Weboberflaeche, REST-API, OTA-Update
    XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
    sound_store.cpp/.h     Sound-Speicher Flash (LittleFS) / SD / Auto
-   CRSF_ESP32/            Gemeinsame CRSF-Bibliothek (identische Kopie
-                          wie im Soundmodul V7 und im Multiswitch)
-   sport_lipo.cpp/.h      S.Port-Telemetrie (Port B)
-   gps_speed.cpp/.h       GPS (Port C)
-   port_function.cpp/.h   Port-B-Rollen-Registry
+   RC_Common/             Gemeinsame Basis aller ESP32-Module (identische
+                          Kopie wie im Soundmodul V7 und im Multiswitch):
+                          CRSF mit Router, UART-Rollen, S.Port, GPS,
+                          Lua-Menue, Einstellungen, WLAN-Failsafe, LED, OTA
    pins.h                 Pinbelegung
 */
 
 #include <Arduino.h>
 #include "XT_I2S_Audio.h"
 #include <WiFi.h>
-#include "CRSF_ESP32/crsf_esp32.h"
+#include "RC_Common/rc_common.h"
+#include "RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "config.h"
 #include "pins.h"
 #include "WebServerManager.h"
-#include "sport_lipo.h"
-#include "gps_speed.h"
-#include "port_function.h"
+#include "RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
+#include "RC_Common/sport_lipo.h"
+#include "RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
+#include "RC_Common/wifi_failsafe.h"
+#include "RC_Common/status_led.h"
 #include "sound_store.h"
 
-uint16_t Version = 2;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (2 -> "0.02")
+uint16_t Version = 3;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (3 -> "0.03")
 // v0.02: Port C ist ein Hardware-UART mit waehlbarer Rolle wie Port B
 //        (Aus/CRSF/S.Port/Raw/GPS), GPS ohne SoftwareSerial.
 char versionString[6];
@@ -97,16 +102,23 @@ volatile uint8_t engine_State = OFF;
 // einmalig in setup() aus config uebernommen. Aendern ueber Web/Lua schreibt
 // sofort in config, wirkt aber erst nach einem Neustart - die UARTs sind
 // dann schon initialisiert und werden im Betrieb nicht umgeschaltet.
-int      PortB_Mode_boot        = PORTB_OFF;
-uint32_t PortB_Baud_boot        = PORTB_BAUD_DEFAULT_CRSF;
-int      PortC_Mode_boot        = PORTB_OFF;
-uint32_t PortC_Baud_boot        = PORTB_BAUD_DEFAULT_GPS;
+uint8_t  PortB_Role_boot        = UROLE_OFF;
+uint32_t PortB_Baud_boot        = 420000;
+uint8_t  PortC_Role_boot        = UROLE_OFF;
+uint32_t PortC_Baud_boot        = 9600;
 bool     PortC_Duplicate_boot   = false;   // Port C hatte dieselbe Rolle wie Port B -> aus
 // Port A (CRSF) belegt Serial2, Port B Serial1, Port C Serial0 (UART0,
 // frei, weil die Konsole ueber USB laeuft).
 static HardwareSerial* const PORTA_SERIAL = &Serial2;
 static HardwareSerial* const PORTB_SERIAL = &Serial1;
 static HardwareSerial* const PORTC_SERIAL = &Serial0;
+// Port B und C fuer RC_Common (uart_ports.h)
+static UartPort uartPorts[2] = {
+    {"Port B", PORTB_SERIAL, PIN_PORTB_RX, PIN_PORTB_TX, UROLE_OFF, 0, UROLE_OFF, false, false},
+    {"Port C", PORTC_SERIAL, PIN_PORTC_RX, PIN_PORTC_TX, UROLE_OFF, 0, UROLE_OFF, false, false},
+};
+// RGB-LED des S3-Zero: Status von Port A (RC_Common, status_led.h)
+static StatusLed statusLed;
 
 uint16_t einkanal_Data = 0;   // 1 Bit/Schalter - Quelltyp "Einkanal" 70-77
 
@@ -127,9 +139,7 @@ unsigned long currentTime = 0;
 bool BUS_OK = false;
 
 // ── CRSF ──────────────────────────────────────────────────────────────
-CRSF crsf;       // Port A - der Haupt-RC-Bus
-// Zweite, unabhaengige CRSF-Instanz fuer Port B (Rolle PORTB_CRSF).
-CRSF crsfPortB;
+CRSF crsf;       // Port A - der Haupt-RC-Bus; mit Port B/C = CRSF zugleich Router der Modulkette
 #define MWset       0x01
 #define MWprop      0x02
 #define MWset4      0x07
@@ -165,8 +175,6 @@ void einkanalFunctionCRSF(); uint8_t compressSwitches(uint16_t state);
 static void updateGroupFromAddress(uint8_t addr, uint8_t bits);
 float ramp_throttle(float t); float floatMap(float x,float a,float b,float c,float d);
 void handleSound(uint8_t idx, XT_Wav_Class* snd);
-static void crsfSendParam(uint8_t idx);
-static void crsfWriteParam(uint8_t idx, uint8_t val);
 
 // ======== CRSF-Parametersystem ==========================================
 //
@@ -182,7 +190,8 @@ static void crsfWriteParam(uint8_t idx, uint8_t val);
 //  39: Folder Einstellungen {40..49}
 //   40:U8 Modul Adresse
 //   41:U8 Gruppenadr.1  42:U8 Gruppenadr.2  (255=aus)
-//   43:Sel Port B Modus  44:Sel Port B Baudrate  45:Sel Port C Modus
+//   43:Sel Port B Rolle  44:Sel Port B Baudrate  45:Sel Port C Rolle
+//      (Rollen aus RC_Common: Aus;CRSF;S.Port;GPS;Raw, bis v0.02 Aus;CRSF;S.Port;Raw;GPS)
 //   52:Sel Port C Baudrate (v0.02, hinten angehaengt, im Ordner nach 45)
 //   46:Sel WLAN jetzt (sofort, nicht persistiert)
 //   47:Sel Auto-WLAN bei Signalverlust  48:U8 Auto-WLAN Timeout (s)
@@ -196,10 +205,9 @@ static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
 static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
 static constexpr uint8_t CRSF_PARAM_COUNT = PORTC_BAUD_FI;
-// Die Folder-Kinderlisten unten sind Literale (std::initializer_list) - bei
-// einer Aenderung der Sound-Anzahl muessen sie von Hand nachgezogen werden.
+// Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
 static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 52,
-              "CRSF-Feld-IDs passen nicht mehr zu den Folder-Listen in crsfSendParam()");
+              "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
 // Adresse = 0xC0 + WM-Adresse, Slot = WM-Adresse * 2. Die Ping-Antwort wird
@@ -253,25 +261,6 @@ static bool spdActive(int c) { return c>=0&&c<=15; }
 
 static bool testSoundActive[RCSOUND_NUM_SLOTS]={};
 
-// ── Port B: Baudraten-Liste fuer das CRSF/Lua-Menue ───────────────────
-// TEXT_SELECTION uebertraegt 1 Byte - eine frei eintippbare Baudrate bis
-// 420000 passt da nicht hinein. Im Lua-Menue daher eine kuratierte Auswahl;
-// im Web-UI bleibt die Baudrate frei eingebbar.
-static const char* PORTB_BAUD_LIST_STR = "9600;19200;38400;57600;115200;230400;420000";
-static const uint32_t portBBaudList[] = {9600,19200,38400,57600,115200,230400,420000};
-static constexpr uint8_t PORTB_BAUD_LIST_COUNT = 7;
-static uint8_t portBBaudToIndex(uint32_t baud) {
-    for (uint8_t i=0;i<PORTB_BAUD_LIST_COUNT;i++) if (portBBaudList[i]==baud) return i;
-    // Frei ueber's Web eingegebener Wert: naechstgelegenen Eintrag ANZEIGEN,
-    // ohne den gespeicherten Wert zu veraendern.
-    uint8_t best=0; uint32_t bestDiff=0xFFFFFFFF;
-    for (uint8_t i=0;i<PORTB_BAUD_LIST_COUNT;i++) {
-        uint32_t diff=(baud>portBBaudList[i])?(baud-portBBaudList[i]):(portBBaudList[i]-baud);
-        if (diff<bestDiff){bestDiff=diff;best=i;}
-    }
-    return best;
-}
-
 // ── CRSF Quelle EIN: Auswahl L/H/EK/MKan/Dauer/Aus ────────────────────
 static const char* EIN_SEL_STR = "L;H;EK;MKan;Dauer;Aus";
 static constexpr uint8_t EIN_SEL_MAX = 5;
@@ -287,239 +276,171 @@ static int einSelWrite(uint8_t val, int oldCfg) {
     return setEin(t, einNr(oldCfg));
 }
 
-// ======== CRSF: Parameter senden =====================================
-static void crsfSendParam(uint8_t idx) {
-    char buf[48];
+// ======== CRSF-/Lua-Parametermenue als Tabelle (RC_Common LuaMenu) =====
+// Seit v0.03 steht jedes Feld genau einmal in buildLuaMenu() (Feld-ID,
+// Ordner, Typ, Name, Grenzen, Lese-/Schreibfunktion); Senden und Schreiben
+// laufen generisch ueber RC_Common/lua_menu.h. Feld-IDs unveraendert (Liste
+// oben). Die Kinderlisten der Ordner ergeben sich aus der Reihenfolge.
+static LuaItem luaItems[53];
+static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
-    if(idx==0) {
-        crsf.send_param_response_CRSF_FOLDER(0,0,"",{1,2,15,21,27,33,39,51});
-    }
-    else if(idx==1) {
-        snprintf(buf,sizeof(buf),"%s Mini S3",versionString);
-        crsf.send_param_response_CRSF_INFO(1,0,"Version",buf);
-    }
-
-    // ── Motor (2..14) ─────────────────────────────────────────────────
-    else if(idx==2) crsf.send_param_response_CRSF_FOLDER(2,0,"Motor",
-        {3,4,5,6,7,8,9,10,11,12,13,14});
-    else if(idx==3) crsf.send_param_response_CRSF_TEXT_SELECTION(3,2,
-        "Motor Mode","Eine Richtung;Zwei Richtungen",
-        (uint8_t)constrain(config.throttle_mode,0,1),0,1);
-    else if(idx==4) crsf.send_param_response_CRSF_TEXT_SELECTION(4,2,
-        "Motor EIN Modus","Normal;Toggle",
-        (uint8_t)constrain(config.engine_on_toggle,0,1),0,1);
-    else if(idx==5) crsf.send_param_response_CRSF_TEXT_SELECTION(5,2,
-        "Quelle Motor", EIN_SEL_STR,
-        einSelVal(config.Source_Start_Sound[0]),0,EIN_SEL_MAX);
-    else if(idx==6) {
-        uint8_t t=einTyp(config.Source_Start_Sound[0]);
-        if(t==7||t==8)
-            crsf.send_param_response_CRSF_INFO(6,2,"Kanal EIN",
-                (t==7)?"Dauerbetrieb":"Deaktiviert");
-        else crsf.send_param_response_CRSF_UINT8(6,2,"Kanal Nr EIN",
-            einNr(config.Source_Start_Sound[0]),1,einMaxNr(t),"");
-    }
-    else if(idx==7) crsf.send_param_response_CRSF_TEXT_SELECTION(7,2,
-        "Quelle Speed","BUS Kanal;Deaktiviert",
-        spdActive(config.Source_Speed_Sound_0)?0:1,0,1);
-    else if(idx==8) {
-        if(!spdActive(config.Source_Speed_Sound_0))
-            crsf.send_param_response_CRSF_INFO(8,2,"Kanal Speed","Deaktiviert");
-        else crsf.send_param_response_CRSF_UINT8(8,2,"Kanal Nr Speed",
-            config.Source_Speed_Sound_0+1,1,16,"");
-    }
-    else if(idx==9)  crsf.send_param_response_CRSF_UINT8(9, 2,"Volumen Motor",
-        (uint8_t)constrain(config.Volumen_Sound[0],0,200),0,200,"");
-    else if(idx==10) crsf.send_param_response_CRSF_UINT8(10,2,"Drehzahl min %",
-        (uint8_t)constrain(config.Min_Speed_Sound_0,0,200),0,200,"%");
-    else if(idx==11) crsf.send_param_response_CRSF_UINT8(11,2,"Drehzahl max /2",
-        (uint8_t)constrain(config.Max_Speed_Sound_0/2,50,255),50,255,"%");
-    else if(idx==12) crsf.send_param_response_CRSF_UINT8(12,2,"Motor aus Standgas",
-        (uint8_t)constrain(config.shutdowndelay,0,60),0,60,"s");
-    else if(idx==13) crsf.send_param_response_CRSF_UINT8(13,2,"Motor Rampe %/s",
-        (uint8_t)constrain(config.throttle_ramp,0,50),0,50,"");
-    else if(idx==14) crsf.send_param_response_CRSF_UINT8(14,2,"Standgas Totband",
-        (uint8_t)constrain(config.throttle_dead_band,0,50),0,50,"%");
-
-    // ── Sound 1-4: fi=15+(s-1)*6 ──────────────────────────────────────
-    else if(idx>=SOUND_FIRST_FI&&idx<=SOUND_LAST_FI) {
-        uint8_t s=(idx-SOUND_FIRST_FI)/FIELDS_PER_SOUND+1, sub=(idx-SOUND_FIRST_FI)%FIELDS_PER_SOUND;
-        uint8_t fi=SOUND_FIRST_FI+(s-1)*FIELDS_PER_SOUND;
-        switch(sub) {
-        case 0:
-            snprintf(buf,sizeof(buf),"Sound %d",s);
-            crsf.send_param_response_CRSF_FOLDER(fi,0,buf,
-                {(uint8_t)(fi+1),(uint8_t)(fi+2),
-                 (uint8_t)(fi+3),(uint8_t)(fi+4),(uint8_t)(fi+5)});
-            break;
-        case 1:
-            crsf.send_param_response_CRSF_TEXT_SELECTION(fi+1,fi,
-                "Quelle",EIN_SEL_STR,
-                einSelVal(config.Source_Start_Sound[s]),0,EIN_SEL_MAX);
-            break;
-        case 2: {
-            uint8_t t=einTyp(config.Source_Start_Sound[s]);
-            if(t==7||t==8)
-                crsf.send_param_response_CRSF_INFO(fi+2,fi,"Kanal Nr",
-                    t==7?"Dauerbetrieb":"Deaktiviert");
-            else crsf.send_param_response_CRSF_UINT8(fi+2,fi,"Kanal Nr",
-                einNr(config.Source_Start_Sound[s]),1,einMaxNr(t),"");
-            break;
-        }
-        case 3: crsf.send_param_response_CRSF_UINT8(fi+3,fi,"Volumen",
-            (uint8_t)constrain(config.Volumen_Sound[s],0,200),0,200,""); break;
-        case 4: crsf.send_param_response_CRSF_TEXT_SELECTION(fi+4,fi,
-            "Wiedergabe Mode","Normal;Loop;Tippbetrieb",
-            (uint8_t)constrain(config.Mode_Sound[s],0,2),0,2); break;
-        case 5: crsf.send_param_response_CRSF_TEXT_SELECTION(fi+5,fi,
-            "Test Sound","Aus;Ein",testSoundActive[s]?1:0,0,1); break;
-        }
-    }
-
-    // ── Einstellungen (39..50) ────────────────────────────────────────
-    else if(idx==39) crsf.send_param_response_CRSF_FOLDER(39,0,"Einstellungen",
-        {40,41,42,43,44,45,52,46,47,48,49,50});
-    else if(idx==40) crsf.send_param_response_CRSF_UINT8(40,39,"Modul Adresse",
-        (uint8_t)constrain(config.modul_adress,0,20),0,20,"");
-    else if(idx==41) crsf.send_param_response_CRSF_UINT8(41,39,"Gruppenadr. 1 (255=aus)",
-        (uint8_t)constrain(config.EK_Gruppen_Adresse[0],0,255),0,255,"");
-    else if(idx==42) crsf.send_param_response_CRSF_UINT8(42,39,"Gruppenadr. 2 (255=aus)",
-        (uint8_t)constrain(config.EK_Gruppen_Adresse[1],0,255),0,255,"");
-    // Optionsliste aus der Port-B-Rollen-Registry (port_function.h/.cpp).
-    else if(idx==43) crsf.send_param_response_CRSF_TEXT_SELECTION(43,39,
-        "Port B Modus",portBFunctionOptionsString(),
-        (uint8_t)constrain(config.PortB_Mode,0,(int)portBFunctionMaxIndex()),0,portBFunctionMaxIndex());
-    else if(idx==44) crsf.send_param_response_CRSF_TEXT_SELECTION(44,39,
-        "Port B Baudrate",PORTB_BAUD_LIST_STR,
-        portBBaudToIndex(config.PortB_Baud),0,PORTB_BAUD_LIST_COUNT-1);
-    else if(idx==45) crsf.send_param_response_CRSF_TEXT_SELECTION(45,39,
-        "Port C Modus",portBFunctionOptionsString(),
-        (uint8_t)constrain(config.PortC_Mode,0,(int)portBFunctionMaxIndex()),0,portBFunctionMaxIndex());
-    else if(idx==PORTC_BAUD_FI) crsf.send_param_response_CRSF_TEXT_SELECTION(PORTC_BAUD_FI,39,
-        "Port C Baudrate",PORTB_BAUD_LIST_STR,
-        portBBaudToIndex(config.PortC_Baud),0,PORTB_BAUD_LIST_COUNT-1);
-    // 46 wirkt SOFORT (siehe crsfWriteParam) und wird bewusst NICHT
-    // persistiert - wie "Test Sound". 47/48/49 sind persistierte Konfiguration.
-    else if(idx==46) crsf.send_param_response_CRSF_TEXT_SELECTION(46,39,
-        "WLAN jetzt","Aus;Ein",
-        WebServerManager::isApActive()?1:0,0,1);
-    else if(idx==47) crsf.send_param_response_CRSF_TEXT_SELECTION(47,39,
-        "Auto-WLAN bei Signalverlust","Aus;Ein",
-        config.WifiAutoEnable?1:0,0,1);
-    else if(idx==48) crsf.send_param_response_CRSF_UINT8(48,39,"Auto-WLAN Timeout (s)",
-        (uint8_t)constrain(config.WifiAutoTimeoutSec,5,240),5,240,"");
-    else if(idx==49) crsf.send_param_response_CRSF_TEXT_SELECTION(49,39,
-        "WLAN dauerhaft an","Aus;Ein",
-        config.WifiAlwaysOn?1:0,0,1);
-    else if(idx==50) crsf.send_param_response_CRSF_TEXT_SELECTION(50,39,
-        "Sound-Speicher",STORAGE_OPTIONS,
-        (uint8_t)constrain(config.Sound_Storage,0,(int)STORAGE_MAX),0,STORAGE_MAX);
-
-    // ── Geraetename (51) ──────────────────────────────────────────────
-    else if(idx==51) {
-        snprintf(buf,sizeof(buf),"%s (Web aendern)",config.Device_Name);
-        crsf.send_param_response_CRSF_INFO(51,0,"Geraetename",buf);
-    }
+static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "%s Mini S3", versionString);
+    v.text = buf;
+}
+static void luaShowDeviceName(uint8_t, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", config.Device_Name);
+    v.text = buf;
+}
+static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "Sound %d", s);
+    v.name = buf;
 }
 
-// ======== CRSF: Parameter schreiben ==================================
-static void crsfWriteParam(uint8_t idx, uint8_t val) {
-    if     (idx==3) {config.throttle_mode=constrain(val,0,1);markDirty();}
-    else if(idx==4) {config.engine_on_toggle=constrain(val,0,1);markDirty();}
-    else if(idx==5) {config.Source_Start_Sound[0]=einSelWrite(val,config.Source_Start_Sound[0]);markDirty();}
-    else if(idx==6) {uint8_t t=einTyp(config.Source_Start_Sound[0]);config.Source_Start_Sound[0]=setEin(t,val);markDirty();}
-    else if(idx==7) {
-        // val 0=BUS-Kanal (bisherige Kanalnummer behalten, sonst Kanal 1), 1=Deaktiviert
-        if(val==0){ if(!spdActive(config.Source_Speed_Sound_0)) config.Source_Speed_Sound_0=0; }
-        else config.Source_Speed_Sound_0=999;
-        markDirty();
-    }
-    else if(idx==8) {if(spdActive(config.Source_Speed_Sound_0)){config.Source_Speed_Sound_0=constrain((int)val-1,0,15);markDirty();}}
-    else if(idx==9) {config.Volumen_Sound[0]=constrain(val,0,200);markDirty();}
-    else if(idx==10){config.Min_Speed_Sound_0=constrain(val,0,200);markDirty();}
-    else if(idx==11){config.Max_Speed_Sound_0=constrain((int)val*2,100,510);markDirty();}
-    else if(idx==12){config.shutdowndelay=constrain(val,0,60);markDirty();}
-    else if(idx==13){config.throttle_ramp=constrain(val,0,50);markDirty();}
-    else if(idx==14){config.throttle_dead_band=constrain(val,0,50);markDirty();}
-    else if(idx>=SOUND_FIRST_FI&&idx<=SOUND_LAST_FI) {
-        uint8_t s=(idx-SOUND_FIRST_FI)/FIELDS_PER_SOUND+1, sub=(idx-SOUND_FIRST_FI)%FIELDS_PER_SOUND;
-        if(s<1||s>RCSOUND_NUM_SOUNDS)return;
-        if     (sub==1){config.Source_Start_Sound[s]=einSelWrite(val,config.Source_Start_Sound[s]);markDirty();}
-        else if(sub==2){config.Source_Start_Sound[s]=setEin(einTyp(config.Source_Start_Sound[s]),val);markDirty();}
-        else if(sub==3){config.Volumen_Sound[s]=constrain(val,0,200);markDirty();}
-        else if(sub==4){config.Mode_Sound[s]=constrain(val,0,2);markDirty();}
-        else if(sub==5){if(val==1)Sound_on_web[s]=true;testSoundActive[s]=(val==1);}
-    }
-    else if(idx==40){config.modul_adress=constrain(val,0,20);crsf.setDeviceAddress(crsfAddrFromWM());markDirty();}
-    else if(idx==41){config.EK_Gruppen_Adresse[0]=constrain(val,0,255);markDirty();}
-    else if(idx==42){config.EK_Gruppen_Adresse[1]=constrain(val,0,255);markDirty();}
-    // ── Port B / Port C - wirken erst nach einem Neustart (siehe
-    // PortB_Mode_boot/PortC_Mode_boot).
-    else if(idx==43){
-        uint8_t m=constrain(val,0,(int)portBFunctionMaxIndex());
-        if (m!=config.PortB_Mode) {
-            // Baudrate beim Wechsel auf den protokolltypischen Standard
-            // vorbelegen (0 = PORTB_OFF -> unveraendert lassen).
-            uint32_t defBaud = portBFunctionDefaultBaud((PortBMode)m);
-            if (defBaud != 0) config.PortB_Baud = defBaud;
-        }
-        config.PortB_Mode=m; markDirty();
-        Serial.printf("!!! Port B Modus -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",m);
-    }
-    else if(idx==44){
-        uint8_t i=constrain(val,0,(int)PORTB_BAUD_LIST_COUNT-1);
-        config.PortB_Baud=portBBaudList[i]; markDirty();
-        Serial.printf("!!! Port B Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",(unsigned)config.PortB_Baud);
-    }
-    else if(idx==45){
-        uint8_t m=constrain(val,0,(int)portBFunctionMaxIndex());
-        if (m!=config.PortC_Mode) {
-            uint32_t defBaud = portBFunctionDefaultBaud((PortBMode)m);
-            if (defBaud != 0) config.PortC_Baud = defBaud;
-        }
-        config.PortC_Mode=m; markDirty();
-        Serial.printf("!!! Port C Modus -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",m);
-    }
-    else if(idx==PORTC_BAUD_FI){
-        uint8_t i=constrain(val,0,(int)PORTB_BAUD_LIST_COUNT-1);
-        config.PortC_Baud=portBBaudList[i]; markDirty();
-        Serial.printf("!!! Port C Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",(unsigned)config.PortC_Baud);
-    }
-    // ── WLAN jetzt (46) - wirkt SOFORT, absichtlich ohne Persistierung:
-    // der naechste Start soll wieder vom Bootpin/"dauerhaft an" abhaengen.
-    else if(idx==46){
-        if (constrain(val,0,1)) WebServerManager::enableAP();
-        else                    WebServerManager::disableAP();
-    }
-    else if(idx==47){config.WifiAutoEnable=constrain(val,0,1);markDirty();}
-    else if(idx==48){config.WifiAutoTimeoutSec=(uint16_t)constrain((int)val,5,240);markDirty();}
-    // 49: persistiert, wirkt erst ab dem naechsten Start (kein enableAP() aus
-    // dem Parameter-Handler heraus - WLAN-Start zur Laufzeit ist die
-    // fehleranfaelligste Operation, siehe V7).
-    else if(idx==49){config.WifiAlwaysOn=constrain(val,0,1);markDirty();}
-    else if(idx==50){
-        config.Sound_Storage=constrain(val,0,(int)STORAGE_MAX);markDirty();
-        Serial.printf("!!! Sound-Speicher -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",config.Sound_Storage);
-    }
+// ── Motor ────────────────────────────────────────────────────────────────
+static uint8_t luaGetThrottleMode(uint8_t)          { return (uint8_t)constrain(config.throttle_mode, 0, 1); }
+static void    luaSetThrottleMode(uint8_t, uint8_t v){ config.throttle_mode = v; markDirty(); }
+static uint8_t luaGetToggle(uint8_t)                { return (uint8_t)constrain(config.engine_on_toggle, 0, 1); }
+static void    luaSetToggle(uint8_t, uint8_t v)     { config.engine_on_toggle = v; markDirty(); }
+static uint8_t luaGetMinSpeed(uint8_t)              { return (uint8_t)constrain(config.Min_Speed_Sound_0, 0, 200); }
+static void    luaSetMinSpeed(uint8_t, uint8_t v)   { config.Min_Speed_Sound_0 = v; markDirty(); }
+static uint8_t luaGetMaxSpeed(uint8_t)              { return (uint8_t)constrain(config.Max_Speed_Sound_0 / 2, 50, 255); }
+static void    luaSetMaxSpeed(uint8_t, uint8_t v)   { config.Max_Speed_Sound_0 = constrain((int)v * 2, 100, 510); markDirty(); }
+static uint8_t luaGetShutdown(uint8_t)              { return (uint8_t)constrain(config.shutdowndelay, 0, 60); }
+static void    luaSetShutdown(uint8_t, uint8_t v)   { config.shutdowndelay = v; markDirty(); }
+static uint8_t luaGetRamp(uint8_t)                  { return (uint8_t)constrain(config.throttle_ramp, 0, 50); }
+static void    luaSetRamp(uint8_t, uint8_t v)       { config.throttle_ramp = v; markDirty(); }
+static uint8_t luaGetDeadBand(uint8_t)              { return (uint8_t)constrain(config.throttle_dead_band, 0, 50); }
+static void    luaSetDeadBand(uint8_t, uint8_t v)   { config.throttle_dead_band = v; markDirty(); }
+
+// Quelle Speed: 0 = BUS Kanal, 1 = Deaktiviert
+static uint8_t luaGetSpdSrc(uint8_t)                { return spdActive(config.Source_Speed_Sound_0) ? 0 : 1; }
+static void    luaSetSpdSrc(uint8_t, uint8_t v) {
+    if (v == 0) { if (!spdActive(config.Source_Speed_Sound_0)) config.Source_Speed_Sound_0 = 0; }
+    else config.Source_Speed_Sound_0 = 999;
+    markDirty();
+}
+static void luaShowSpdChannel(uint8_t, LuaView& v, char*) {
+    if (!spdActive(config.Source_Speed_Sound_0)) { v.type = LUA_INFO; v.name = "Kanal Speed"; v.text = "Deaktiviert"; }
+}
+static uint8_t luaGetSpdChannel(uint8_t)            { return (uint8_t)(config.Source_Speed_Sound_0 + 1); }
+static void    luaSetSpdChannel(uint8_t, uint8_t v) {
+    if (spdActive(config.Source_Speed_Sound_0)) { config.Source_Speed_Sound_0 = constrain((int)v - 1, 0, 15); markDirty(); }
 }
 
-// Startet die Rolle eines Ports (Port B/C). PORTB_OFF -> getPortBModule()
-// liefert nullptr, der Port bleibt aus.
-static void startPort(const char* name, int mode, HardwareSerial* serial,
-                      uint8_t rxPin, uint8_t txPin, uint32_t baud) {
-    const PortBFunctionModule* mod = getPortBModule((PortBMode)mode);
-    if (mod == nullptr) return;
-    if (mod->isActive != nullptr && mod->isActive()) {
-        Serial.printf("!!! %s: Rolle ist bereits aktiv, ueberspringe erneute Initialisierung !!!\n", name);
-    } else if (mod->begin != nullptr) {
-        Serial.printf("%s: %s\n", name, mod->name);
-        mod->begin(serial, rxPin, txPin, baud);
+// ── Motor (arg 0) und Sound 1-4 (arg = Sound-Nr.) ────────────────────────
+static uint8_t luaGetSource(uint8_t s)              { return einSelVal(config.Source_Start_Sound[s]); }
+static void    luaSetSource(uint8_t s, uint8_t v)   { config.Source_Start_Sound[s] = einSelWrite(v, config.Source_Start_Sound[s]); markDirty(); }
+static void luaShowChannel(uint8_t s, LuaView& v, char*) {
+    uint8_t t = einTyp(config.Source_Start_Sound[s]);
+    if (t == 7 || t == 8) {
+        v.type = LUA_INFO;
+        if (s == 0) v.name = "Kanal EIN";
+        v.text = (t == 7) ? "Dauerbetrieb" : "Deaktiviert";
+    } else {
+        v.max = einMaxNr(t);
     }
 }
+static uint8_t luaGetChannel(uint8_t s)             { return einNr(config.Source_Start_Sound[s]); }
+static void    luaSetChannel(uint8_t s, uint8_t v)  { config.Source_Start_Sound[s] = setEin(einTyp(config.Source_Start_Sound[s]), v); markDirty(); }
+static uint8_t luaGetVolume(uint8_t s)              { return (uint8_t)constrain(config.Volumen_Sound[s], 0, 200); }
+static void    luaSetVolume(uint8_t s, uint8_t v)   { config.Volumen_Sound[s] = v; markDirty(); }
+static uint8_t luaGetPlayMode(uint8_t s)            { return (uint8_t)constrain(config.Mode_Sound[s], 0, 2); }
+static void    luaSetPlayMode(uint8_t s, uint8_t v) { config.Mode_Sound[s] = v; markDirty(); }
+// "Test Sound" wirkt sofort und wird nicht gespeichert
+static uint8_t luaGetTest(uint8_t s)                { return testSoundActive[s] ? 1 : 0; }
+static void    luaSetTest(uint8_t s, uint8_t v)     { if (v == 1) Sound_on_web[s] = true; testSoundActive[s] = (v == 1); }
 
-static void updatePort(int mode) {
-    const PortBFunctionModule* mod = getPortBModule((PortBMode)mode);
-    if (mod != nullptr && mod->update != nullptr) mod->update();
+// ── Einstellungen ────────────────────────────────────────────────────────
+static uint8_t luaGetModAdr(uint8_t)                { return (uint8_t)constrain(config.modul_adress, 0, 20); }
+static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
+static uint8_t luaGetGroupAdr(uint8_t a)            { return (uint8_t)constrain(config.EK_Gruppen_Adresse[a], 0, 255); }
+static void    luaSetGroupAdr(uint8_t a, uint8_t v) { config.EK_Gruppen_Adresse[a] = v; markDirty(); }
+// Port B (arg 0) / Port C (arg 1) wirken erst nach einem Neustart
+static uint8_t&  luaPortRole(uint8_t a)             { return a ? config.PortC_Role : config.PortB_Role; }
+static uint32_t& luaPortBaud(uint8_t a)             { return a ? config.PortC_Baud : config.PortB_Baud; }
+static uint8_t luaGetPortRole(uint8_t a)            { return uartRoleClamp(luaPortRole(a)); }
+static void    luaSetPortRole(uint8_t a, uint8_t v) {
+    if (v != luaPortRole(a)) {
+        // Baudrate auf den Standard der Rolle vorbelegen (Aus/Raw: unveraendert)
+        uint32_t def = uartRoleDefaultBaud(v);
+        if (def != 0 && v != UROLE_RAW) luaPortBaud(a) = def;
+    }
+    luaPortRole(a) = v; markDirty();
+    Serial.printf("!!! Port %c Rolle -> %s (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",
+                  a ? 'C' : 'B', uartRoleName(v));
+}
+static uint8_t luaGetPortBaud(uint8_t a)            { return uartBaudToIndex(luaPortBaud(a)); }
+static void    luaSetPortBaud(uint8_t a, uint8_t v) {
+    luaPortBaud(a) = uartBaudFromIndex(v); markDirty();
+    Serial.printf("!!! Port %c Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",
+                  a ? 'C' : 'B', (unsigned)luaPortBaud(a));
+}
+// 46 "WLAN jetzt" wirkt sofort und wird nicht gespeichert: der naechste
+// Start haengt wieder vom Bootpin bzw. "WLAN dauerhaft an" ab.
+static uint8_t luaGetWifiNow(uint8_t)               { return WebServerManager::isApActive() ? 1 : 0; }
+static void    luaSetWifiNow(uint8_t, uint8_t v)    { if (v) WebServerManager::enableAP(); else WebServerManager::disableAP(); }
+static uint8_t luaGetWifiAuto(uint8_t)              { return config.WifiAutoEnable ? 1 : 0; }
+static void    luaSetWifiAuto(uint8_t, uint8_t v)   { config.WifiAutoEnable = v; markDirty(); }
+static uint8_t luaGetWifiTimeout(uint8_t)           { return (uint8_t)constrain(config.WifiAutoTimeoutSec, 5, 240); }
+static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec = v; markDirty(); }
+// 49 wirkt erst ab dem naechsten Start (kein enableAP() aus dem Parameter-
+// Handler heraus - WLAN-Start zur Laufzeit ist die fehleranfaelligste
+// Operation, siehe V7)
+static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
+static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
+static uint8_t luaGetStorage(uint8_t)               { return (uint8_t)constrain(config.Sound_Storage, 0, (int)STORAGE_MAX); }
+static void    luaSetStorage(uint8_t, uint8_t v) {
+    config.Sound_Storage = v; markDirty();
+    Serial.printf("!!! Sound-Speicher -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n", v);
+}
+
+static void buildLuaMenu() {
+    static const char* AUS_EIN = "Aus;Ein";
+    LuaMenu& m = luaMenu;
+    m.clear();
+    m.folder(0, 0, "");
+    m.info(1, 0, "Version", "")->view = luaShowVersion;
+
+    m.folder(2, 0, "Motor");
+    m.select(3, 2, "Motor Mode", "Eine Richtung;Zwei Richtungen", luaGetThrottleMode, luaSetThrottleMode);
+    m.select(4, 2, "Motor EIN Modus", "Normal;Toggle", luaGetToggle, luaSetToggle);
+    m.select(5, 2, "Quelle Motor", EIN_SEL_STR, luaGetSource, luaSetSource, 0);
+    m.u8(6, 2, "Kanal Nr EIN", 1, 16, "", luaGetChannel, luaSetChannel, 0)->view = luaShowChannel;
+    m.select(7, 2, "Quelle Speed", "BUS Kanal;Deaktiviert", luaGetSpdSrc, luaSetSpdSrc);
+    m.u8(8, 2, "Kanal Nr Speed", 1, 16, "", luaGetSpdChannel, luaSetSpdChannel)->view = luaShowSpdChannel;
+    m.u8(9, 2, "Volumen Motor", 0, 200, "", luaGetVolume, luaSetVolume, 0);
+    m.u8(10, 2, "Drehzahl min %", 0, 200, "%", luaGetMinSpeed, luaSetMinSpeed);
+    m.u8(11, 2, "Drehzahl max /2", 50, 255, "%", luaGetMaxSpeed, luaSetMaxSpeed);
+    m.u8(12, 2, "Motor aus Standgas", 0, 60, "s", luaGetShutdown, luaSetShutdown);
+    m.u8(13, 2, "Motor Rampe %/s", 0, 50, "", luaGetRamp, luaSetRamp);
+    m.u8(14, 2, "Standgas Totband", 0, 50, "%", luaGetDeadBand, luaSetDeadBand);
+
+    for (uint8_t s = 1; s <= RCSOUND_NUM_SOUNDS; s++) {
+        uint8_t fi = SOUND_FIRST_FI + (s - 1) * FIELDS_PER_SOUND;
+        LuaItem* f = m.folder(fi, 0, "Sound");
+        f->arg = s; f->view = luaShowSoundFolder;
+        m.select(fi + 1, fi, "Quelle", EIN_SEL_STR, luaGetSource, luaSetSource, s);
+        m.u8(fi + 2, fi, "Kanal Nr", 1, 16, "", luaGetChannel, luaSetChannel, s)->view = luaShowChannel;
+        m.u8(fi + 3, fi, "Volumen", 0, 200, "", luaGetVolume, luaSetVolume, s);
+        m.select(fi + 4, fi, "Wiedergabe Mode", "Normal;Loop;Tippbetrieb", luaGetPlayMode, luaSetPlayMode, s);
+        m.select(fi + 5, fi, "Test Sound", AUS_EIN, luaGetTest, luaSetTest, s);
+    }
+
+    m.folder(SETTINGS_FI, 0, "Einstellungen");
+    m.u8(40, SETTINGS_FI, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
+    m.u8(41, SETTINGS_FI, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
+    m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
+    m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
+    m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0);
+    m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
+    m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1);
+    m.select(46, SETTINGS_FI, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
+    m.select(47, SETTINGS_FI, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
+    m.u8(48, SETTINGS_FI, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
+    m.select(49, SETTINGS_FI, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
+    m.select(50, SETTINGS_FI, "Sound-Speicher", STORAGE_OPTIONS, luaGetStorage, luaSetStorage);
+    m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 }
 
 // ======== Setup ======================================================
@@ -561,26 +482,25 @@ void setup() {
     I2SAudio.StartSdReaderTask();
     AllocateSoundBuffers();
 
-    PortB_Mode_boot         = config.PortB_Mode;
+    PortB_Role_boot         = config.PortB_Role;
     PortB_Baud_boot         = config.PortB_Baud;
-    PortC_Mode_boot         = config.PortC_Mode;
+    PortC_Role_boot         = config.PortC_Role;
     PortC_Baud_boot         = config.PortC_Baud;
-    // Jede Rolle hat nur einen Zustand (eine CRSF-Zusatzinstanz, ein
-    // S.Port-Master, ein GPS) - doppelt gewaehlt laeuft sie nur auf Port B.
-    if (PortC_Mode_boot != PORTB_OFF && PortC_Mode_boot == PortB_Mode_boot) {
-        Serial.printf("!!! Port C: Rolle %s laeuft schon auf Port B - Port C bleibt aus !!!\n",
-                      portBFunctionName((PortBMode)PortC_Mode_boot));
-        PortC_Mode_boot      = PORTB_OFF;
-        PortC_Duplicate_boot = true;
-    }
     snprintf(versionString, sizeof(versionString), "%d.%02d", Version/100, Version%100);
     saveConfig();
 
-    // Port B und Port C: welches Modul fuer die gewaehlte Rolle zustaendig
-    // ist, kommt aus der Rollen-Registry (port_function.h/.cpp).
-    startPort("Port B", PortB_Mode_boot, PORTB_SERIAL, PIN_PORTB_RX, PIN_PORTB_TX, PortB_Baud_boot);
-    startPort("Port C", PortC_Mode_boot, PORTC_SERIAL, PIN_PORTC_RX, PIN_PORTC_TX, PortC_Baud_boot);
+    // Port B und Port C starten ueber RC_Common (uart_ports.h): CRSF =
+    // Router der Modulkette, S.Port = LiPo-Sensoren, GPS, Raw = UART offen.
+    // S.Port/GPS/Raw doppelt gewaehlt -> Port C bleibt aus.
+    sportLipoUsePollIds(config.sport_poll_id);
+    uartPorts[0].role = PortB_Role_boot; uartPorts[0].baud = PortB_Baud_boot;
+    uartPorts[1].role = PortC_Role_boot; uartPorts[1].baud = PortC_Baud_boot;
+    uartPortsBegin(uartPorts, 2, crsf, true);
+    PortC_Duplicate_boot = uartPorts[1].duplicate;
 
+    buildLuaMenu();
+    statusLed.begin(PIN_STATUS_LED, true);
+    Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
     Serial.printf("Soundmodul Mini %s (ESP32-S3)\n", versionString);
 }
 
@@ -590,25 +510,29 @@ void setup() {
 // Konfiguration/ein OTA-Update abbrechen, sobald kurz wieder Signal kommt.
 // Mit "WLAN dauerhaft an" ist der AP schon beim Booten an, dann greift diese
 // Funktion nicht.
-void wifiFailsafeCheck() {
-    static unsigned long busLostSinceMs = 0;
-    static bool          busLostSincePending = false;
+static WifiFailsafe wifiFailsafe;   // RC_Common, gleiche Logik in allen Modulen
 
-    if (config.WifiAlwaysOn || BUS_OK || !config.WifiAutoEnable || WebServerManager::isApActive()) {
-        busLostSincePending = false;
-        return;
-    }
-    if (!busLostSincePending) {
-        busLostSincePending = true;
-        busLostSinceMs = millis();
-        return;
-    }
-    unsigned long timeoutMs = (unsigned long)config.WifiAutoTimeoutSec * 1000UL;
-    if (millis() - busLostSinceMs >= timeoutMs) {
+void wifiFailsafeCheck() {
+    if (wifiFailsafe.check(millis(), config.WifiAlwaysOn, config.WifiAutoEnable,
+                           config.WifiAutoTimeoutSec, BUS_OK, WebServerManager::isApActive())) {
         Serial.printf("Auto-WLAN-Failsafe: %u s ohne gueltiges RC-Signal - schalte WLAN ein.\n",
                       (unsigned)config.WifiAutoTimeoutSec);
         WebServerManager::enableAP();
     }
+}
+
+// Status-LED (RC_Common): langsam = kein CRSF, schnell = Link schwach,
+// aus = alles gut
+static void updateLed() {
+    unsigned long now = millis();
+    const LinkStatistics& ls = crsf.getLinkStatistics();
+    StatusLedInput in = {};
+    in.crsf          = true;
+    in.busOk         = BUS_OK;
+    in.lastRcFrameMs = crsf.getLastRcFrameMs();
+    in.linkStatsMs   = ls.lastUpdate;
+    in.uplinkLQ      = ls.uplinkLQ;
+    statusLed.update(statusLedMode(in, now), now);
 }
 
 // ======== Loop =======================================================
@@ -616,12 +540,12 @@ void loop() {
     currentTime = millis();
     if (WebServerManager::isApActive()) WebServerManager::Webpage();
 
-    // Port B/C - Boot-Snapshot verwenden, generischer Registry-Aufruf.
-    updatePort(PortB_Mode_boot);
-    updatePort(PortC_Mode_boot);
+    // Port B/C: S.Port und GPS einlesen (RC_Common, ohne aktive Rolle ohne Wirkung)
+    uartPortsUpdate();
 
     // Port A: CRSF
     crsf.read_packets(0);
+    crsf.route_packets();   // Modulkette Port A <-> Port B/C (nur bei Rolle CRSF aktiv)
     for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
     // BUS_OK haengt daran, ob gerade ein gueltiger CRSF-Frame geparst wurde
     // (Zaehler validFrames), nicht an einem Kanalwert.
@@ -630,39 +554,28 @@ void loop() {
     if (vf != lastValidFrameCount) { lastValidFrameCount = vf; BUS_OK = true; lastCrsfPacket = millis(); }
     checkCrsfTimeout();
 
-    static unsigned long lastTelem = 0;
-    if (millis() - lastTelem >= 100) {
-        lastTelem = millis();
-        // Nur Einzelzellen-Telemetrie (0x0E), kein Batterie-Frame (0x08) -
-        // sonst wuerde die vom Empfaenger gemessene RxBt ueberschrieben.
-        if (sportLipoIsActive()) {
-            if (lipoSensor[0].online) sportSendCellsTelemetry(0);
-            if (lipoSensor[1].online) sportSendCellsTelemetry(1);
-        }
-        // GPS-Telemetrie (CRSF-GPS-Frame) -> EdgeTX zeigt "GSpd"
-        if (gpsIsActive()) {
-            uint16_t gspd = (uint16_t)(gpsGetSpeedKmh() * 10.0f); // CRSF: km/h * 10
-            crsf.send_tele_GPS(gpsGetLatE7(), gpsGetLonE7(), gspd,
-                               gpsGetHeadingCdeg(), gpsGetAltMeters(), gpsGetSatellites());
-        }
-    }
+    // Alle 100 ms Zellspannungen (S.Port) und GPS als CRSF-Telemetrie, kein
+    // Batterie-Frame (0x08) - sonst wuerde die RxBt des Empfaengers
+    // ueberschrieben.
+    uartPortsTelemetry(crsf);
+    updateLed();
     if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
         // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
         crsf.setDeviceInfoReplyPending(false);
         char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
         // Firmware-Version als "Parameter Version Number", damit Konfiguratoren
         // eine geaenderte Parameterstruktur neu einlesen.
-        crsf.send_device_info(dn,CRSF_PARAM_COUNT,(uint8_t)(Version & 0xFF));
+        crsf.send_device_info(dn,luaMenu.maxId(),(uint8_t)(Version & 0xFF));
     }
     if(crsf.getDeviceReadReplyPending()){
         uint8_t pi=crsf.getParamReadIndex();
         crsf.setDeviceReadReplyPending(false);
-        crsfSendParam(pi);
+        luaMenu.send(crsf,pi);
     }
     if(crsf.getDeviceWriteReplyPending()){
         uint8_t wi=crsf.getParamWriteIndex(),wv=crsf.getParamWriteValue();
         crsf.setDeviceWriteReplyPending(false);
-        crsfWriteParam(wi,wv); crsfSendParam(wi);
+        luaMenu.write(wi,wv); luaMenu.send(crsf,wi);
     }
     if(crsf.getDeviceCommandReplyPending()){
         crsf.setDeviceCommandReplyPending(false);

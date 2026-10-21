@@ -1,11 +1,11 @@
 /*
- * gps_speed.h  –  Soundmodul Mini (Rolle "GPS" auf Port B oder C,
- * siehe Port-Modell in config.h; aus ESP32-RC-Sound v7)
+ * gps_speed.h  –  RC_Common (Rolle "GPS" auf einem Zusatz-UART, siehe
+ * uart_roles.h; urspruenglich aus ESP32-RC-Sound v7)
  *
  * Liest ein NMEA-GPS-Modul (z. B. u-blox NEO-M8N oder ATGM336H) über einen
  * Hardware-UART ein und stellt Ground Speed sowie Positionsdaten bereit.
  *
- * Anschluss an Port B oder Port C (Rolle "GPS", Pins siehe pins.h):
+ * Anschluss an einen Zusatz-UART mit Rolle "GPS" (Pins siehe Projekt):
  *   GPS-TX  -> Port RX  (Empfang der NMEA-Daten)
  *   GPS-RX  <- Port TX  (Senden der Konfiguration an das GPS)
  *
@@ -21,6 +21,8 @@
 #include <Arduino.h>
 
 void     gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud); // GPS am UART starten
+// Bereits geoeffneter Datenstrom, z. B. SoftwareSerial (Soundmodul Basis Port C)
+void     gpsSpeedInitStream(Stream* stream);
 bool     gpsIsActive();        // true, sobald ein Port die Rolle GPS hat
 void     gpsSpeedUpdate();     // NMEA einlesen/auswerten + Konfig nach Boot senden
 
