@@ -62,10 +62,6 @@ struct ConfigData {
     uint8_t  PortC_Role;        // Rolle Port C, gleiche Werte - Default UROLE_OFF
     uint32_t PortC_Baud;        // Baudrate Port C
 
-    // Sound-Speicher 0=Auto, 1=Flash, 2=SD (siehe sound_store.h), wirkt
-    // erst nach einem Neustart.
-    int      Sound_Storage;
-
     uint8_t sport_poll_id[2];    // S.Port Physical Poll-ID Sensor 1+2 (z.B. 0xA1, 0x22)
 
     char WiFi_SSID[32];

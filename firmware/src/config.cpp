@@ -48,7 +48,6 @@ void Reset_all() {
     config.PortB_Baud             = uartRoleDefaultBaud(UROLE_CRSF);
     config.PortC_Role             = UROLE_OFF;
     config.PortC_Baud             = uartRoleDefaultBaud(UROLE_GPS);
-    config.Sound_Storage          = 0;      // Auto
     strncpy(config.WiFi_SSID,     "Sound-Mini",  sizeof(config.WiFi_SSID)     - 1);
     strncpy(config.WiFi_Password, "123456789",   sizeof(config.WiFi_Password) - 1);
     strncpy(config.WiFi_IP,       "192.168.1.1", sizeof(config.WiFi_IP)       - 1);
@@ -133,7 +132,6 @@ void loadConfig() {
     }
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
-    config.Sound_Storage          = constrain(p.getInt("sndstor", 0), 0, 2);
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
     // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
     // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
@@ -180,7 +178,6 @@ void saveConfigForce() {
     }
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
-    p.putInt("sndstor", config.Sound_Storage);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
     RcCommonSettings cs;
     configToCommon(cs);

@@ -12,7 +12,7 @@
 #include "RC_Common/uart_roles.h"
 #include "RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
 #include "RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
-#include "sound_store.h"     // Sound-Speicher Flash/SD/Auto
+#include "sound_store.h"     // Sound-Speicher (Flash)
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -240,7 +240,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <button class="btn btn-g" onclick="testSound()">&#9654; Test Sound</button>
   </div>
   <!-- WAV-Datei fuer den aktuell ausgewaehlten Sound-Slot direkt per WLAN auf
-       den Sound-Speicher (Flash oder SD) hochladen. Nutzt
+       den Sound-Speicher (Flash) hochladen. Nutzt
        den bestehenden SD-Mutex (siehe handleApiSoundUploadData()), damit
        kein Konflikt mit laufender Sound-Wiedergabe entsteht. Zusaetzlich
        Status (vorhanden/Groesse) und Loeschen. -->
@@ -259,7 +259,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <div style="font-size:12px;color:var(--sub)" id="snd-upload-status">-</div>
     </div>
     <div style="font-size:12px;color:var(--sub);margin-top:10px">
-      Ersetzt bzw. l&ouml;scht die WAV-Datei im Sound-Speicher des Moduls (Flash oder SD).
+      Ersetzt bzw. l&ouml;scht die WAV-Datei im Sound-Speicher (Flash) des Moduls.
       Erwartet 16-Bit-PCM-WAV; die &Auml;nderung wirkt sofort, ohne Neustart.
     </div>
   </div>
@@ -283,18 +283,13 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
   </div>
   <hr>
-  <!-- Sound-Speicher: Optionen kommen vom Geraet (s.storage_options),
-       Anzeige des aktiven Speichers und des Platzes aus /api/config. -->
+  <!-- Sound-Speicher: Flash (LittleFS), Platz aus /api/config. Das Mini
+       hat keine SD-Karte (bis v0.03 Auswahl Auto/Flash/SD). -->
   <div class="card" id="c-storage">
-    <div class="card-title">Sound-Speicher</div>
-    <div class="row" style="margin-bottom:10px">
-      <span class="lbl">Speicherort</span>
-      <select id="snd-storage"></select>
-    </div>
+    <div class="card-title">Sound-Speicher (Flash)</div>
     <div style="font-size:12px;color:var(--sub)" id="storage-info">-</div>
-    <div style="color:var(--yellow);font-size:12px;margin-top:8px">
-      &#9888; Ein Wechsel wirkt erst nach einem Neustart. Auto = SD-Karte, wenn
-      eine steckt, sonst Flash. Konfigurations-Backups liegen im Flash (siehe unten).
+    <div style="font-size:12px;color:var(--sub);margin-top:8px">
+      Sounds und Konfigurations-Backups liegen im Flash des Moduls.
     </div>
   </div>
   <hr>
@@ -565,10 +560,9 @@ var toastTmr=0;
 // handleApiSoundUploadData() im C++-Teil).
 function errText(c){
   var m={
-    sd_locked:'Datei ist schreibgeschuetzt oder gesperrt - Schreibschutz auf der SD-Karte aufheben (Windows: attrib -r X:\\*.wav)',
+    sd_locked:'Datei ist schreibgeschuetzt oder gesperrt',
     sd_write :'Schreiben fehlgeschlagen (Speicher voll, schreibgeschuetzt oder defekt)',
     sd_busy  :'Speicher gerade belegt - bitte erneut versuchen',
-    no_sd    :'Keine SD-Karte erkannt',
     bad_name :'Ungueltiger Dateiname',
     aborted  :'Uebertragung abgebrochen'
   };
@@ -756,13 +750,11 @@ function loadConfig(){
     var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_role===0?' hidden':'');
     var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_role===0?' hidden':'');
     var pd=document.getElementById('portc-dup'); if(pd) pd.style.display=s.portc_dup?'block':'none';
-    fillSelFlat('snd-storage', s.storage_options); sv('snd-storage', s.sound_storage);
     var si=document.getElementById('storage-info');
     if(si){
       var mb=function(b){return (b/1048576).toFixed(2)+' MB';};
       si.textContent='Aktiv: '+s.storage_active+(s.storage_ready?'':' (nicht verfuegbar!)')+
-        (s.storage_ready?', frei '+mb(s.storage_total-s.storage_used)+' von '+mb(s.storage_total):'')+
-        ', SD-Karte '+(s.sd_present?'erkannt':'nicht erkannt');
+        (s.storage_ready?', frei '+mb(s.storage_total-s.storage_used)+' von '+mb(s.storage_total):'');
     }
     onPortBMode();
     var w=cfg.wifi;
@@ -1057,8 +1049,7 @@ function saveSettings(){
     modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
     portb_role:gi('portb-mode'), portb_baud:gi('portb-baud'),
-    portc_role:gi('portc-mode'), portc_baud:gi('portc-baud'),
-    sound_storage:gi('snd-storage')
+    portc_role:gi('portc-mode'), portc_baud:gi('portc-baud')
   };
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
@@ -1167,7 +1158,6 @@ function importConfigRun(data){
     portc_role:s.portc_role, portc_mode:(s.portc_role===undefined?s.portc_mode:undefined),
     portc_baud:s.portc_baud,
     portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
-    sound_storage:s.sound_storage,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
   });
@@ -1576,8 +1566,8 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_role, portb_baud, portc_role, portc_baud,
-//               sound_storage }  (portb_mode/portc_mode aus Sicherungen bis
+//               portb_role, portb_baud, portc_role, portc_baud }
+//               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
@@ -1612,8 +1602,6 @@ void WebServerManager::handleApiConfigPost() {
   else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Role = v ? UROLE_GPS : UROLE_OFF;
     config.PortC_Baud = uartRoleDefaultBaud(UROLE_GPS); changed=true; }
   if (jsonGetInt(body, "portc_baud", v)) { config.PortC_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
-  if (jsonGetInt(body, "sound_storage", v)) { config.Sound_Storage = constrain(v,0,(int)STORAGE_MAX); changed=true;
-    Serial.printf("[API] Sound-Speicher -> %d (wirkt erst nach Neustart)\n", config.Sound_Storage); }
 
   // WiFi
   { char tmp[64];
@@ -1708,14 +1696,11 @@ String WebServerManager::buildConfigJson() {
   j += "\"portc_role\":" + String(config.PortC_Role) + ",";
   j += "\"portc_baud\":" + String(config.PortC_Baud) + ",";
   j += "\"portc_dup\":"  + String(PortC_Duplicate_boot ? 1 : 0) + ",";
-  // Sound-Speicher: Einstellung (wirkt nach Neustart) und aktiver Zustand.
-  j += "\"sound_storage\":"   + String(config.Sound_Storage) + ",";
-  j += "\"storage_options\":\"" + String(STORAGE_OPTIONS) + "\",";
+  // Sound-Speicher (Flash): Zustand und Platz.
   j += "\"storage_active\":\""  + String(soundStoreName()) + "\",";
   j += "\"storage_ready\":"   + String(soundStoreReady() ? 1 : 0) + ",";
   j += "\"storage_total\":"   + String((double)soundStoreTotalBytes(), 0) + ",";
   j += "\"storage_used\":"    + String((double)soundStoreUsedBytes(), 0) + ",";
-  j += "\"sd_present\":"      + String(sdCardMounted() ? 1 : 0) + ",";
   j += "\"modul_adr\":"  + String(config.modul_adress)            + ",";
   // Die MKan-Gruppenadressen (auch ueber das CRSF-Parametermenue am Sender
   // einstellbar).

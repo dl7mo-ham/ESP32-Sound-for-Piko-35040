@@ -56,7 +56,7 @@
    config.cpp/.h          Persistente Konfiguration (NVS)
    WebServerManager.cpp   Weboberflaeche, REST-API, OTA-Update
    XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
-   sound_store.cpp/.h     Sound-Speicher Flash (LittleFS) / SD / Auto
+   sound_store.cpp/.h     Sound-Speicher Flash (LittleFS)
    RC_Common/             Gemeinsame Basis aller ESP32-Module (identische
                           Kopie wie im Soundmodul V7 und im Multiswitch):
                           CRSF mit Router, UART-Rollen, S.Port, GPS,
@@ -81,7 +81,8 @@
 
 uint16_t Version = 4;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (4 -> "0.04")
 // v0.04: Einstellungs-Backup im Flash (RC_Common 1.2.0) statt auf SD-Karte,
-//        automatisch vor Import und Firmware-Update.
+//        automatisch vor Import und Firmware-Update. Keine SD-Karte mehr:
+//        Sounds nur im Flash, Lua-Feld 50 (Sound-Speicher) nur noch Anzeige.
 // v0.02: Port C ist ein Hardware-UART mit waehlbarer Rolle wie Port B
 //        (Aus/CRSF/S.Port/Raw/GPS), GPS ohne SoftwareSerial.
 char versionString[6];
@@ -200,7 +201,7 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //   46:Sel WLAN jetzt (sofort, nicht persistiert)
 //   47:Sel Auto-WLAN bei Signalverlust  48:U8 Auto-WLAN Timeout (s)
 //   49:Sel WLAN dauerhaft an
-//   50:Sel Sound-Speicher (Auto/Flash/SD, wirkt nach Neustart)
+//   50:Info Sound-Speicher "Flash" (bis v0.03 Auswahl Auto/Flash/SD)
 //  51: Info Geraetename
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
@@ -393,11 +394,6 @@ static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec 
 // Operation, siehe V7)
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
-static uint8_t luaGetStorage(uint8_t)               { return (uint8_t)constrain(config.Sound_Storage, 0, (int)STORAGE_MAX); }
-static void    luaSetStorage(uint8_t, uint8_t v) {
-    config.Sound_Storage = v; markDirty();
-    Serial.printf("!!! Sound-Speicher -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n", v);
-}
 
 static void buildLuaMenu() {
     static const char* AUS_EIN = "Aus;Ein";
@@ -443,7 +439,9 @@ static void buildLuaMenu() {
     m.select(47, SETTINGS_FI, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
     m.u8(48, SETTINGS_FI, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
     m.select(49, SETTINGS_FI, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
-    m.select(50, SETTINGS_FI, "Sound-Speicher", STORAGE_OPTIONS, luaGetStorage, luaSetStorage);
+    // v0.04: nur noch Anzeige (keine SD-Karte), Feld bleibt, damit die
+    // Feldnummern ohne Luecke bleiben
+    m.info(50, SETTINGS_FI, "Sound-Speicher", "Flash");
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 }
 
@@ -465,7 +463,7 @@ void setup() {
     pinMode(PIN_WIFI, INPUT_PULLUP);
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
-    soundStoreBegin((uint8_t)config.Sound_Storage);
+    soundStoreBegin();
     LoadFiles();
 
     // begin() registriert nur die HTTP-Routen und merkt sich SSID/Passwort.

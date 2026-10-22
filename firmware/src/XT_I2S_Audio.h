@@ -9,7 +9,7 @@
 // signed waves NOT unsigned. Check you settings on your wavs.
 
 #include "driver/i2s.h" // Library of I2S routines, comes with ESP32 standard install
-#include "SD.h" // SD Card library, usually part of the standard install
+#include <FS.h> // File (LittleFS, siehe sound_store.h)
 
 #define SAMPLES_PER_SEC 44100			 // The rate at which samples are sent out. A single sample is fixed at 2 bytes stereo
 										 // So that's 4 bytes (2 x 16bits) per sample, 44100 x 4bytes per second
