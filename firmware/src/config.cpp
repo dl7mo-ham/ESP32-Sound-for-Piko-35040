@@ -191,12 +191,3 @@ void saveConfigForce() {
     Serial.println("Config in NVS gespeichert.");
 }
 
-// Eigener, kleiner Preferences-Zugriff fuer die Backup-Nummer - ein
-// einzelner Int-Key, unabhaengig von der eigentlichen Konfiguration.
-uint32_t nextSdBackupCounter() {
-    Preferences p; p.begin(NVS_NS,false);
-    uint32_t n = p.getUInt("sdbkupn", 0) + 1;
-    p.putUInt("sdbkupn", n);
-    p.end();
-    return n;
-}

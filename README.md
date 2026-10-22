@@ -36,7 +36,7 @@ Sounds ins Flash bringen:
 1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen (geht in den aktiven Speicher)
 2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs`
 
-Konfigurations-Backups liegen immer auf der SD-Karte.
+Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfiguration sichern“: im Modul sichern, wiederherstellen, löschen; automatisch vor jedem Import und Firmware-Update). `pio run -t uploadfs` überschreibt den ganzen Flash-Speicher und damit auch diese Backups.
 
 ## Bauen
 

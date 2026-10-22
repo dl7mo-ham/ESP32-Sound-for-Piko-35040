@@ -11,6 +11,7 @@
 #include "RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "RC_Common/uart_roles.h"
 #include "RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
+#include "RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
 #include "sound_store.h"     // Sound-Speicher Flash/SD/Auto
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
@@ -293,7 +294,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div style="font-size:12px;color:var(--sub)" id="storage-info">-</div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Ein Wechsel wirkt erst nach einem Neustart. Auto = SD-Karte, wenn
-      eine steckt, sonst Flash. Konfigurations-Backups liegen immer auf der SD-Karte.
+      eine steckt, sonst Flash. Konfigurations-Backups liegen im Flash (siehe unten).
     </div>
   </div>
   <hr>
@@ -351,26 +352,30 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       (inkl. WLAN-Zugangsdaten). Aenderungen an Port B/C/Hardware wirken wie
       ueblich erst nach einem Neustart des Moduls.
     </div>
-    <!-- Zusaetzlich direkt auf/von der im Modul eingebauten SD-Karte - zwei
-         eigene, explizite Aktionen (kein automatischer Export bei jedem
-         Speichern), Dateiname mit fortlaufender Nummer statt echtem Datum
-         (das Modul hat weder RTC noch NTP, siehe Kommentar in
-         handleApiSdExport() in WebServerManager.cpp). -->
+    <!-- v0.04: Backup im Flash des Moduls (RC_Common config_backup, Ordner
+         /backup im LittleFS neben den Sounds). Das Mini hat keine SD-Karte.
+         Automatisch zusaetzlich vor jedem Import und Firmware-Update. -->
     <div style="font-size:12px;color:var(--sub);margin-top:14px;margin-bottom:10px">
-      Zusaetzlich direkt auf der SD-Karte im Modul (Ordner /cfgbkup),
-      unabhaengig vom Browser - z.B. um ein Ersatzmodul per Karte zu
-      konfigurieren.
+      Zusaetzlich im Flash des Moduls, unabhaengig vom Browser. Es bleiben
+      die letzten 5 eigenen Sicherungen und 3 automatische (vor jedem
+      Import und Firmware-Update).
     </div>
     <div class="g2">
-      <button class="btn btn-s" onclick="sdExportConfig()">&#8681; Auf SD sichern</button>
-      <button class="btn btn-s" onclick="sdListBackups()">&#8679; Von SD laden</button>
+      <button class="btn btn-s" onclick="flashBackupSave()">&#128190; Im Modul sichern</button>
+      <button class="btn btn-s" onclick="flashBackupList()">&#8679; Aus Modul laden</button>
     </div>
-    <div class="hidden" id="sd-backup-list" style="margin-top:8px">
-      <select id="sd-backup-select" style="width:100%;margin-bottom:6px"></select>
+    <div class="hidden" id="fb-list" style="margin-top:8px">
+      <select id="fb-select" style="width:100%;margin-bottom:6px"></select>
       <div class="g2">
-        <button class="btn btn-s" onclick="sdImportSelected()">Importieren</button>
-        <button class="btn btn-r" onclick="sdDeleteSelected()">L&ouml;schen</button>
+        <button class="btn btn-s" onclick="flashBackupRestore()">Wiederherstellen</button>
+        <button class="btn btn-r" onclick="flashBackupDelete()">L&ouml;schen</button>
       </div>
+    </div>
+    <div style="color:var(--yellow);font-size:12px;margin-top:8px">
+      &#9888; Das Backup uebersteht Flashen und OTA, nicht aber &quot;Erase
+      Flash&quot;, ein anderes Partitionsschema oder <code>pio run -t uploadfs</code>
+      (schreibt den ganzen Flash-Speicher neu, auch die Backups). Vorher als
+      Datei exportieren.
     </div>
   </div>
 
@@ -1092,6 +1097,17 @@ function exportConfig(){
     toast('Konfiguration exportiert');
   });
 }
+// v0.04: dieselben Daten fuer das Backup im Flash, als Promise (null =
+// Modul nicht erreichbar oder Antwort kein JSON)
+function collectConfig(){
+  return new Promise(function(res){
+    var x=new XMLHttpRequest();
+    x.open('GET','/api/config',true);
+    x.onload=function(){ try{ res(JSON.parse(x.responseText)); }catch(e){ res(null); } };
+    x.onerror=function(){ res(null); };
+    x.send();
+  });
+}
 
 // Import: Datei einlesen, grob validieren, bestaetigen lassen (WLAN-Zugangs-
 // daten werden mit ueberschrieben), dann Schritt fuer Schritt einspielen.
@@ -1133,7 +1149,12 @@ function runSteps(steps,done){
 // einmal /api/config fuer die globalen Einstellungen, einmal /api/sound fuer
 // Motor (id 0), dann /api/sound je Sound-Slot, zum Schluss ein einzelnes
 // /save (statt 5x einzeln auf den Flash zu schreiben).
+// v0.04: vorher den bisherigen Stand automatisch im Flash sichern
 function importConfigData(data){
+  toast('Sichere bisherigen Stand...');
+  rcBackupSnapshot(collectConfig).then(function(){ importConfigRun(data); });
+}
+function importConfigRun(data){
   var s=data.settings||{}, w=data.wifi||{}, sp=data.sport||{}, m=data.motor||{};
 
   var settingsPost=stripUndef({
@@ -1184,54 +1205,44 @@ function importConfigData(data){
   });
 }
 
-// ─── Konfiguration Export/Import direkt auf/von der SD-Karte im Modul ─────
-// Eigene, explizite Buttons zusaetzlich zum Browser-Export/-Import oben.
-// Der Import nutzt bewusst dieselbe importConfigData(), die auch der
-// Browser-Import benutzt (Datei liegt bereits im /api/config-Format vor).
-function sdExportConfig(){
-  xpost('/api/sdexport',{},function(r){
-    var p; try{ p=JSON.parse(r); }catch(e){ toast('Fehler beim Sichern auf SD',1); return; }
-    if(p&&p.ok){ toast('Auf SD gesichert: '+p.file); return; }
-    toast('Fehler beim Sichern auf SD'+(p&&p.error?' ('+p.error+')':''),1);
-  });
-}
-function sdListBackups(){
-  xget('/api/sdlist',0,function(r){
-    var p; try{ p=JSON.parse(r); }catch(e){ toast('Fehler beim Lesen der SD-Karte',1); return; }
-    if(!p||!p.ok||!p.files||!p.files.length){ toast('Keine Backups auf der SD-Karte gefunden',1); return; }
-    p.files.sort(function(a,b){ return a.name<b.name?1:(a.name>b.name?-1:0); }); // neuestes (hoechste Nummer) zuerst
-    var sel=document.getElementById('sd-backup-select');
-    sel.innerHTML='';
-    p.files.forEach(function(f){
-      var o=document.createElement('option');
-      o.value=f.name; o.textContent=f.name+' ('+f.size+' Byte)';
-      sel.appendChild(o);
+// ─── Backup im Flash des Moduls (v0.04, RC_Common config_backup) ───────
+// Ersetzt die SD-Backups (das Mini hat keine SD-Karte). Wiederherstellen
+// laeuft ueber dieselbe importConfigData() wie der Import aus einer Datei.
+function flashBackupSave(){
+  collectConfig().then(function(data){
+    if(!data){ toast('Modul nicht erreichbar',1); return; }
+    rcBackupSave(data,false).then(function(r){
+      if(r.ok){ toast('Im Modul gesichert'); if(document.getElementById('fb-list').className!=='hidden') flashBackupList(); }
+      else toast('Sichern fehlgeschlagen: '+rcErrText(r.error),1);
     });
-    document.getElementById('sd-backup-list').className='';
   });
 }
-function sdImportSelected(){
-  var name=document.getElementById('sd-backup-select').value;
-  if(!name) return;
-  xget('/api/sdconfig?file='+encodeURIComponent(name),0,function(r){
-    var data; try{ data=JSON.parse(r); }catch(e){ toast('Ungueltige Datei auf der SD-Karte',1); return; }
+function flashBackupList(){
+  rcBackupList().then(function(r){
+    if(!r.ok){ toast('Fehler: '+rcErrText(r.error),1); return; }
+    var n=rcBackupFill(document.getElementById('fb-select'),r.files);
+    document.getElementById('fb-list').className=n?'':'hidden';
+    if(!n) toast('Keine Backups im Modul',1);
+  });
+}
+function flashBackupRestore(){
+  var sel=document.getElementById('fb-select');
+  if(!sel.value) return;
+  var label=sel.selectedOptions[0].textContent;
+  rcBackupGet(sel.value).then(function(data){
     if(!data||!data.settings||!data.motor||!data.sounds){
-      toast('Datei enthaelt keine gueltige Modul-Konfiguration',1); return;
+      toast('Backup enthaelt keine gueltige Modul-Konfiguration',1); return;
     }
-    if(!confirm('Aktuelle Konfiguration (inkl. WLAN-Zugangsdaten) durch "'+name+'" ersetzen?')) return;
+    if(!confirm('Aktuelle Konfiguration (inkl. WLAN-Zugangsdaten) durch dieses Backup ersetzen?\n'+label)) return;
     importConfigData(data);
   });
 }
-// Ausgewaehltes Config-Backup von der SD-Karte loeschen (Teil der
-// Datei-Verwaltung) - danach Liste neu laden, damit sie aktuell bleibt.
-function sdDeleteSelected(){
-  var name=document.getElementById('sd-backup-select').value;
-  if(!name) return;
-  if(!confirm('Backup "'+name+'" von der SD-Karte loeschen?')) return;
-  xpost('/api/sddelete?file='+encodeURIComponent(name),{},function(r){
-    var d; try{ d=JSON.parse(r); }catch(e){ toast('Fehler',1); return; }
-    if(d.ok){ toast('Backup geloescht'); sdListBackups(); }
-    else{ toast('Loeschen fehlgeschlagen: '+errText(d.error),1); }
+function flashBackupDelete(){
+  var sel=document.getElementById('fb-select');
+  if(!sel.value||!confirm('Backup im Modul loeschen?\n'+sel.selectedOptions[0].textContent)) return;
+  rcBackupDelete(sel.value).then(function(r){
+    if(r.ok){ toast('Backup geloescht'); flashBackupList(); }
+    else toast('Loeschen fehlgeschlagen: '+rcErrText(r.error),1);
   });
 }
 
@@ -1245,7 +1256,7 @@ function uploadOtaFile(file){
   if(prog) prog.className='row';
   rcOtaUpload(file,document.getElementById('ota-status'),document.getElementById('ota-file'),function(ok){
     toast(ok?'Firmware-Update erfolgreich, Modul startet neu':'Update fehlgeschlagen',ok?0:1);
-  });
+  },function(){ return rcBackupSnapshot(collectConfig); });   // v0.04: vorher Backup im Flash
 }
 
 // Graut die Auto-Failsafe-Karte aus, solange "WLAN dauerhaft an" aktiv ist -
@@ -1349,7 +1360,6 @@ extern XT_Wav_Class  Sound_start;
 // siehe main.cpp) - deckt alle RCSOUND_NUM_SLOTS-1 Sounds ab.
 extern XT_Wav_Class* Sounds[RCSOUND_NUM_SLOTS];
 extern char          versionString[6];
-extern uint16_t      Version; // fuer den Dateinamen beim SD-Export, siehe handleApiSdExport()
 extern bool          isValidEinSource(int c); // siehe main.cpp
 extern bool          BUS_OK; // fuer den WLAN-Live-Status in handleApiDebug(), siehe unten
 
@@ -1393,10 +1403,6 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   server.on("/api/config", HTTP_POST, []() { WebServerManager::handleApiConfigPost(); });
   server.on("/api/debug",     []() { WebServerManager::handleApiDebug();  });
   server.on("/api/sound",     []() { WebServerManager::handleApiSound();  });
-  // Konfiguration direkt auf/von der SD-Karte sichern/laden
-  server.on("/api/sdexport", HTTP_POST, []() { WebServerManager::handleApiSdExport(); });
-  server.on("/api/sdlist",   HTTP_GET,  []() { WebServerManager::handleApiSdList();   });
-  server.on("/api/sdconfig", HTTP_GET,  []() { WebServerManager::handleApiSdConfig(); });
   // Sound-WAV per WLAN hochladen - zweiter Handler-Parameter ist der
   // eigentliche Upload-Callback (mehrfach pro Request, siehe HTTPUpload-
   // Status in handleApiSoundUploadData()); der erste wird einmal am Ende
@@ -1405,14 +1411,16 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
             []() { WebServerManager::handleApiSoundUpload(); },
             []() { WebServerManager::handleApiSoundUploadData(); });
   // Datei-Verwaltung - Status aller Sound-Dateien, gezieltes Loeschen einer
-  // Sound-Datei bzw. eines Config-Backups.
+  // Sound-Datei.
   server.on("/api/soundfiles",  HTTP_GET,  []() { WebServerManager::handleApiSoundFiles(); });
   server.on("/api/sounddelete", HTTP_POST, []() { WebServerManager::handleApiSoundDelete(); });
-  server.on("/api/sddelete",    HTTP_POST, []() { WebServerManager::handleApiSdDelete();    });
   // Firmware-Update per WLAN (POST /api/otaupdate), /rc_common.js und
   // /api/uartroles kommen aus RC_Common (web_common.cpp), gleich in allen
   // Modulen. Schreibt in das inaktive OTA-Segment.
   webCommonRegister(server);
+  // v0.04: Einstellungs-Backups im Flash (/api/backup/*, RC_Common), ersetzt
+  // die SD-Backups (das Mini hat keine SD-Karte)
+  cfgBackupRegister(server);
   // Manueller WLAN-Schalter (Web-Tab "WiFi"/Lua-Feld 174).
   server.on("/api/wifi_enable", HTTP_POST, []() { WebServerManager::handleApiWifiEnable(); });
   // Ein fehlgeschlagener AP-Start (z.B. WiFi-Treiber/Heap zum Zeitpunkt des
@@ -1656,9 +1664,7 @@ void WebServerManager::handleApiConfigPost() {
 // Alle Konfigurationswerte als JSON.
 // Felder: motor{}, sounds[], settings{}, sport{}, wifi{}, version
 // Eigene Funktion (nicht Teil von handleApiConfig()), damit derselbe JSON-
-// String auch fuer den SD-Export (siehe handleApiSdExport() weiter unten)
-// genutzt werden kann, statt ihn dort ein zweites Mal von Hand
-// zusammenzubauen (und damit doppelt pflegen zu muessen).
+// String an mehreren Stellen genutzt werden kann.
 String WebServerManager::buildConfigJson() {
   String j = "{";
 
@@ -1742,171 +1748,6 @@ String WebServerManager::buildConfigJson() {
 
 void WebServerManager::handleApiConfig() {
   sendJson(server, buildConfigJson());
-}
-
-// ── SD-Kartenpfad fuer die Konfigurations-Backups ─────────────────────────
-// Eigener Unterordner statt Wurzelverzeichnis, um nicht mit den Sound-Dateien
-// (/sound1.wav ... /sound4.wav, /loop.wav, /shut.wav, /start.wav, siehe
-// main.cpp) zu kollidieren. Kurzer Name ohne Punkt fuer maximale
-// Kompatibilitaet (8.3-sicher), auch wenn aktuelle SD-Bibliotheken lange
-// Dateinamen normalerweise unterstuetzen.
-static constexpr const char* SD_BACKUP_DIR = "/cfgbkup";
-
-// Erlaubt fuer Dateinamen, die per /api/sdconfig?file=... angefragt werden:
-// nur das Muster, das handleApiSdExport() selbst erzeugt. Verhindert Pfad-
-// Traversal (z.B. "../"), ohne dass eine echte Pfad-Bibliothek noetig ist.
-static bool isSafeBackupFileName(const String& name) {
-  if (name.length() == 0 || name.length() > 40) return false;
-  if (name.indexOf('/') >= 0 || name.indexOf("..") >= 0) return false;
-  for (size_t i = 0; i < name.length(); i++) {
-    char c = name[i];
-    bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
-              (c >= 'A' && c <= 'Z') || c == '_' || c == '.' || c == '-';
-    if (!ok) return false;
-  }
-  return true;
-}
-
-// ── POST /api/sdexport ─────────────────────────────────────────────────────
-// Schreibt dieselbe JSON-Konfiguration, die auch /api/config liefert, direkt
-// als neue Datei auf die SD-Karte (explizite Aktion per Button im Webinter-
-// face, kein automatischer Export). Der Dateiname enthaelt eine fortlaufende,
-// in NVS gespeicherte Nummer (siehe nextSdBackupCounter() in config.cpp) statt
-// eines echten Zeitstempels - das Modul hat weder eine batteriegepufferte RTC
-// noch (im reinen AP-Betrieb ohne Internet) eine NTP-Zeitquelle; ein GPS-Datum
-// waere nur verfuegbar, wenn Port C als GPS aktiv ist UND ein Fix vorliegt.
-void WebServerManager::handleApiSdExport() {
-  if (!sdCardMounted()) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
-    return;
-  }
-  if (!sdMutexTake(3000)) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
-    return;
-  }
-  if (!SD.exists(SD_BACKUP_DIR)) SD.mkdir(SD_BACKUP_DIR);
-
-  uint32_t n = nextSdBackupCounter();
-  char fname[48];
-  snprintf(fname, sizeof(fname), "%s/config_%04u_v%u.json", SD_BACKUP_DIR, (unsigned)n, (unsigned)Version);
-
-  String j = buildConfigJson();
-  bool ok = false;
-  File f = SD.open(fname, FILE_WRITE);
-  if (f) {
-    ok = (f.print(j) == (int)j.length());
-    f.close();
-  }
-  sdMutexGive();
-
-  if (ok) {
-    sendJson(server, "{\"ok\":true,\"file\":\"" + String(fname + 1) + "\"}"); // ohne fuehrenden "/"
-  } else {
-    server.send(500, "application/json", "{\"ok\":false,\"error\":\"sd_write\"}");
-  }
-}
-
-// ── GET /api/sdlist ─────────────────────────────────────────────────────────
-// Liste der bisherigen Backup-Dateien im Ordner SD_BACKUP_DIR, fuer die
-// Auswahl im Webinterface vor einem Import.
-void WebServerManager::handleApiSdList() {
-  String j = "{\"ok\":true,\"files\":[";
-  bool first = true;
-
-  if (sdCardMounted() && sdMutexTake(3000)) {
-    if (SD.exists(SD_BACKUP_DIR)) {
-      File dir = SD.open(SD_BACKUP_DIR);
-      if (dir && dir.isDirectory()) {
-        File entry = dir.openNextFile();
-        while (entry) {
-          if (!entry.isDirectory()) {
-            String nm = String(entry.name());
-            int slash = nm.lastIndexOf('/');
-            if (slash >= 0) nm = nm.substring(slash + 1);
-            if (nm.endsWith(".json") && isSafeBackupFileName(nm)) {
-              if (!first) j += ",";
-              j += "{\"name\":\"" + nm + "\",\"size\":" + String(entry.size()) + "}";
-              first = false;
-            }
-          }
-          entry.close();
-          entry = dir.openNextFile();
-        }
-        dir.close();
-      }
-    }
-    sdMutexGive();
-  }
-
-  j += "]}";
-  sendJson(server, j);
-}
-
-// ── GET /api/sdconfig?file=... ──────────────────────────────────────────────
-// Liest eine einzelne Backup-Datei ein und liefert ihren Inhalt unveraendert
-// zurueck - das ist bereits dieselbe JSON-Struktur wie /api/config, damit
-// kann das Webinterface sie direkt an die vorhandene importConfigData()
-// uebergeben (siehe JavaScript unten), ohne die Import-Logik ein zweites Mal
-// zu implementieren.
-void WebServerManager::handleApiSdConfig() {
-  String name = server.arg("file");
-  if (!isSafeBackupFileName(name)) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_name\"}");
-    return;
-  }
-  String path = String(SD_BACKUP_DIR) + "/" + name;
-  if (!sdCardMounted()) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
-    return;
-  }
-
-  if (!sdMutexTake(3000)) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
-    return;
-  }
-  File f = SD.open(path, FILE_READ);
-  if (!f) {
-    sdMutexGive();
-    server.send(404, "application/json", "{\"ok\":false,\"error\":\"not_found\"}");
-    return;
-  }
-  String content = f.readString();
-  f.close();
-  sdMutexGive();
-
-  sendJson(server, content);
-}
-
-// ── POST /api/sddelete?file=... ──────────────────────────────────────────
-// Loescht ein einzelnes Konfigurations-Backup aus SD_BACKUP_DIR (Teil der
-// Datei-Verwaltung im Webinterface, Tab "Einstellungen") - dieselbe
-// Namenspruefung wie /api/sdconfig, verhindert Pfad-Traversal.
-void WebServerManager::handleApiSdDelete() {
-  String name = server.arg("file");
-  if (!isSafeBackupFileName(name)) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_name\"}");
-    return;
-  }
-  String path = String(SD_BACKUP_DIR) + "/" + name;
-  if (!sdCardMounted()) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"no_sd\"}");
-    return;
-  }
-
-  if (!sdMutexTake(3000)) {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
-    return;
-  }
-  bool ok = SD.remove(path);
-  sdMutexGive();
-  // v7.16: siehe Kommentar bei markSdActivity().
-  markSdActivity();
-
-  if (ok) {
-    sendJson(server, "{\"ok\":true,\"file\":\"" + name + "\"}");
-  } else {
-    server.send(500, "application/json", "{\"ok\":false,\"error\":\"sd_delete\"}");
-  }
 }
 
 // ── POST /api/soundupload?name=... ───────────────────────────────────────

@@ -13,6 +13,8 @@
    WLAN-Failsafe. Seit v0.03 kommen CRSF, UART-Rollen, S.Port, GPS,
    Lua-Menue-Tabelle, gemeinsame Einstellungen, WLAN-Failsafe, Status-LED
    und OTA aus RC_Common (gleiche Basis wie Multiswitch und Soundmodul V7).
+   Seit v0.04 liegen Einstellungs-Backups im Flash (RC_Common 1.2.0,
+   config_backup), das Mini hat keine SD-Karte.
 
    ── Quellen (Motor EIN und Sound 1-4) ─────────────────────────────────
    BUS Kanal Low/High (1-16), Einkanal (1-8, Schalter an der eigenen
@@ -77,7 +79,9 @@
 #include "RC_Common/status_led.h"
 #include "sound_store.h"
 
-uint16_t Version = 3;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (3 -> "0.03")
+uint16_t Version = 4;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (4 -> "0.04")
+// v0.04: Einstellungs-Backup im Flash (RC_Common 1.2.0) statt auf SD-Karte,
+//        automatisch vor Import und Firmware-Update.
 // v0.02: Port C ist ein Hardware-UART mit waehlbarer Rolle wie Port B
 //        (Aus/CRSF/S.Port/Raw/GPS), GPS ohne SoftwareSerial.
 char versionString[6];

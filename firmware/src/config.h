@@ -95,8 +95,5 @@ void saveConfig();
 void saveConfigForce();
 void markDirty();
 void Reset_all();
-// Fortlaufende, ueber Neustarts hinweg persistente Nummer fuer
-// "Konfiguration auf SD sichern" (siehe WebServerManager.cpp).
-uint32_t nextSdBackupCounter();
 
 #endif

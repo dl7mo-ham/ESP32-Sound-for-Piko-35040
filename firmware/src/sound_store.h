@@ -11,7 +11,8 @@
  * Abspielen, Upload, Loeschen und Dateistatus laufen ueber soundFS(), die
  * Dateinamen sind auf beiden Speichern gleich (/loop.wav, /sound1.wav ...).
  * Ein Wechsel der Einstellung wirkt erst nach einem Neustart.
- * Konfigurations-Backups bleiben immer auf der SD-Karte (sdCardMounted()).
+ * Konfigurations-Backups liegen seit v0.04 im Flash (RC_Common
+ * config_backup, Ordner /backup in derselben LittleFS-Partition).
  */
 
 #include <Arduino.h>
