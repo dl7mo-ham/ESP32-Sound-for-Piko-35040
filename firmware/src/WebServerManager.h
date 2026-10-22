@@ -43,23 +43,16 @@ private:
   static void      handleApiConfigPost();
   static void      handleApiDebug();
   static void      handleApiSound();
-  // Konfiguration direkt auf/von der bereits vorhandenen SD-Karte
-  // sichern/wiederherstellen (zusaetzlich zum Browser-Download/-Upload,
-  // siehe Kommentare in WebServerManager.cpp).
   static String    buildConfigJson();
-  static void      handleApiSdExport();
-  static void      handleApiSdList();
-  static void      handleApiSdConfig();
   // Sound-WAV-Dateien per WLAN direkt auf die SD-Karte hochladen
   // (multipart/form-data, siehe Kommentare in WebServerManager.cpp).
   static void      handleApiSoundUpload();
   static void      handleApiSoundUploadData();
   // Datei-Verwaltung - Status aller Sound-Dateien abfragen, gezielt eine
-  // Sound-Datei oder ein Config-Backup wieder loeschen (siehe Kommentare
+  // Sound-Datei wieder loeschen (siehe Kommentare
   // in WebServerManager.cpp).
   static void      handleApiSoundFiles();
   static void      handleApiSoundDelete();
-  static void      handleApiSdDelete();
   // Firmware-Update direkt per WLAN (OTA) - .bin-Datei per
   // multipart/form-data hochladen, ueber die Arduino-"Update"-Bibliothek
   // ins jeweils inaktive OTA-Flash-Segment schreiben, dann neu starten

@@ -12,7 +12,6 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-#include "SD.h"
 #include "sound_store.h"
 
 WavHeader_Struct WavHeader; // Used as a place to store the header data from the wav data
@@ -305,7 +304,7 @@ bool XT_Wav_Class::OpenWavFile()
     // gleichzeitig und verbraucht dabei unnoetig einen weiteren der knappen
     // File-Deskriptoren (siehe max_files in sound_store.cpp).
     if (WavFile) WavFile.close();
-    WavFile = soundFS().open(FileName); // Flash oder SD, siehe sound_store.h
+    WavFile = soundFS().open(FileName); // Flash (LittleFS), siehe sound_store.h
     if (WavFile == false)
     {
         Serial.print("Could not open :");

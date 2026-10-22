@@ -5,7 +5,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 
 - **Eingang:** nur CRSF (Port A), busbasiert
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
-- **Speicher:** Flash (LittleFS), SD-Karte optional
+- **Speicher:** Flash (LittleFS), keine SD-Karte
 - **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
 - **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN
@@ -25,18 +25,14 @@ Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.
 
 Dateinamen: `start.wav`, `loop.wav`, `shut.wav`, `sound1.wav` … `sound4.wav` (16 Bit PCM, 22,05 kHz mono empfohlen).
 
-Einstellung **Sound-Speicher** (Web-UI → Einstellungen oder Lua-Menü → Einstellungen), wirkt nach Neustart:
-
-- **Auto** (Standard): SD-Karte, wenn eine steckt, sonst Flash
-- **Flash**: interner Speicher (LittleFS), keine SD-Karte nötig
-- **SD**: nur SD-Karte
+Die Sounds liegen im Flash (LittleFS). Das Mini hat keine SD-Karte, die Auswahl Auto/Flash/SD gibt es seit v0.04 nicht mehr.
 
 Sounds ins Flash bringen:
 
-1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen (geht in den aktiven Speicher)
+1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen
 2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs`
 
-Konfigurations-Backups liegen immer auf der SD-Karte.
+Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfiguration sichern“: im Modul sichern, wiederherstellen, löschen; automatisch vor jedem Import und Firmware-Update). `pio run -t uploadfs` überschreibt den ganzen Flash-Speicher und damit auch diese Backups.
 
 ## Bauen
 
@@ -50,7 +46,7 @@ pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ## Hardware
 
 Bauplan mit Bauteilliste, Pinbelegung und Grafiken: [`docs/Hardware-Bauplan_Mini-S3.docx`](docs/Hardware-Bauplan_Mini-S3.docx).
-Die Pins kommen aus `firmware/src/pins.h` (ein KiCad-Schaltplan fehlt noch). Die SD-Karte ist in diesem Aufbau nicht vorgesehen.
+Die Pins kommen aus `firmware/src/pins.h` (ein KiCad-Schaltplan fehlt noch). Eine SD-Karte gibt es nicht.
 
 Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V, GND-GND, SD-Pin nicht gelötet, 3V3 bleibt frei).
 

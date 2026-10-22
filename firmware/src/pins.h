@@ -13,8 +13,7 @@
  *   - GPIO 0, 45, 46 sind Strapping-Pins (gemieden); GPIO 3 nur JTAG-Auswahl
  *   - GPIO 19/20 sind der native USB-Anschluss (Konsole)
  *   - GPIO 21 ist beim S3-Zero die RGB-LED
- *   - SD-Karte auf den Standard-SPI-Pins des S3 (FSPI: 10-13), damit
- *     SD.begin(SD_CS) ohne eigene SPI-Konfiguration funktioniert
+ *   - keine SD-Karte (Sounds und Backups im Flash), GPIO 10-13 sind frei
  */
 
 // Der MAX98357A-Breakout wird direkt auf die Versorgungsreihe des S3-Zero
@@ -41,12 +40,6 @@
 
 // ── WLAN-Bootpin (LOW beim Einschalten = AP-Modus) ───────────────────
 #define PIN_WIFI      9
-
-// ── SD-Karte (optional, SPI) ─────────────────────────────────────────
-#define PIN_SD_CS     10
-#define PIN_SD_MOSI   11
-#define PIN_SD_CLK    12
-#define PIN_SD_MISO   13
 
 // ── Status-LED: RGB-LED (WS2812) des S3-Zero ─────────────────────────
 // Status von Port A (RC_Common, status_led.h)

@@ -1,6 +1,6 @@
 name: CI
 
-# Gemeinsame CI aller ESP32-Module (RC_Common 1.1.0):
+# Gemeinsame CI aller ESP32-Module (RC_Common 1.2.0):
 #   1. firmware/src/RC_Common/ gegen MANIFEST.sha256 pruefen (Kopie
 #      unveraendert) und die Host-Tests der Basis ausfuehren.
 #   2. Firmware bauen (Arduino-Core 3.0.7) und die Images hochladen.
