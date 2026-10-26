@@ -40,7 +40,8 @@
    ── WLAN & Weboberflaeche ─────────────────────────────────────────────
    Der Access Point laesst sich einschalten ueber:
      - "WLAN dauerhaft an" (Default AN)
-     - PIN_WIFI beim Einschalten auf GND
+     - BOOT-Taste: nach dem Einschalten innerhalb von 3 s kurz druecken
+       (nur wenn "WLAN dauerhaft an" AUS ist, LED blinkt blau)
      - Schalter im Web-Tab "WiFi" bzw. Lua-Feld "WLAN jetzt" (sofort,
        nicht persistiert)
      - Auto-Failsafe: schaltet ein, wenn laenger als die eingestellte Zeit
@@ -79,7 +80,9 @@
 #include "RC_Common/status_led.h"
 #include "sound_store.h"
 
-uint16_t Version = 4;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (4 -> "0.04")
+uint16_t Version = 5;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (5 -> "0.05")
+// v0.05: WLAN-Taste statt WLAN-Bruecke: BOOT-Taste (GPIO0) nach dem
+//        Einschalten innerhalb von 3 s druecken = WLAN an. GPIO9 ist frei.
 // v0.04: Einstellungs-Backup im Flash (RC_Common 1.2.0) statt auf SD-Karte,
 //        automatisch vor Import und Firmware-Update. Keine SD-Karte mehr:
 //        Sounds nur im Flash, Lua-Feld 50 (Sound-Speicher) nur noch Anzeige.
@@ -382,7 +385,7 @@ static void    luaSetPortBaud(uint8_t a, uint8_t v) {
                   a ? 'C' : 'B', (unsigned)luaPortBaud(a));
 }
 // 46 "WLAN jetzt" wirkt sofort und wird nicht gespeichert: der naechste
-// Start haengt wieder vom Bootpin bzw. "WLAN dauerhaft an" ab.
+// Start haengt wieder von "WLAN dauerhaft an" bzw. der BOOT-Taste ab.
 static uint8_t luaGetWifiNow(uint8_t)               { return WebServerManager::isApActive() ? 1 : 0; }
 static void    luaSetWifiNow(uint8_t, uint8_t v)    { if (v) WebServerManager::enableAP(); else WebServerManager::disableAP(); }
 static uint8_t luaGetWifiAuto(uint8_t)              { return config.WifiAutoEnable ? 1 : 0; }
@@ -445,6 +448,28 @@ static void buildLuaMenu() {
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 }
 
+// WLAN-Taste: wartet nach dem Start WIFI_BUTTON_WINDOW_MS auf einen
+// Druck der BOOT-Taste (GPIO0) und laesst dabei die RGB-LED blau blinken.
+// Laeuft nur, wenn "WLAN dauerhaft an" AUS ist, und vor dem Reservieren
+// der Sound-Puffer, damit der AP auf einem freien Heap startet. Wer BOOT
+// schon beim Einschalten haelt, landet im Flash-Modus des ROM.
+static bool waitForWifiButton() {
+    Serial.printf("WLAN-Taste: %u s lang BOOT druecken = WLAN an\n",
+                  (unsigned)(WIFI_BUTTON_WINDOW_MS / 1000));
+    bool pressed = false;
+    unsigned long start = millis();
+    while (millis() - start < WIFI_BUTTON_WINDOW_MS) {
+        if (digitalRead(PIN_BOOT_BUTTON) == LOW) {
+            delay(30);   // entprellen
+            if (digitalRead(PIN_BOOT_BUTTON) == LOW) { pressed = true; break; }
+        }
+        neopixelWrite(PIN_STATUS_LED, 0, 0, ((millis() - start) / 250) % 2 ? 40 : 0);
+        delay(10);
+    }
+    neopixelWrite(PIN_STATUS_LED, 0, 0, 0);
+    return pressed;
+}
+
 // ======== Setup ======================================================
 void setup() {
     Serial.begin(115200);
@@ -460,7 +485,7 @@ void setup() {
                   PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
                   (uint8_t)constrain(config.modul_adress,0,15) * 2);
 
-    pinMode(PIN_WIFI, INPUT_PULLUP);
+    pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
@@ -473,8 +498,8 @@ void setup() {
     if (config.WifiAlwaysOn) {
         Serial.println("WLAN dauerhaft aktiv (config.WifiAlwaysOn) - schalte AP ein...");
         WebServerManager::enableAP();
-    } else if (!digitalRead(PIN_WIFI)) {
-        Serial.println("AP Modus (PIN_WIFI beim Booten auf LOW)...");
+    } else if (waitForWifiButton()) {
+        Serial.println("AP Modus (BOOT-Taste nach dem Start gedrueckt)...");
         WebServerManager::enableAP();
     }
 
