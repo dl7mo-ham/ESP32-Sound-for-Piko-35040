@@ -427,7 +427,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 
   <!-- "WLAN dauerhaft an" - schaltet den AP beim Booten fest ein und haelt
-       ihn dauerhaft an; ueberstimmt WLAN-Bootpin, den manuellen Schalter
+       ihn dauerhaft an; ueberstimmt die BOOT-Taste, den manuellen Schalter
        und den Auto-Failsafe weiter unten komplett (siehe config.WifiAlwaysOn
        in config.h, wifiFailsafeCheck()/setup() in main.cpp).
        Default AN. -->
@@ -440,9 +440,12 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <button class="btn btn-p" onclick="saveWifi()">Speichern</button>
     <div style="font-size:12px;color:var(--sub);margin-top:8px">
       Modul ist nach jedem Einschalten sofort per WLAN erreichbar, ohne
-      WLAN-Bootpin oder manuellen Schalter. Ist diese Option aktiv, wirken
-      "WLAN automatisch bei Signalverlust" weiter unten sowie der WLAN-
-      Bootpin nicht mehr (dort ausgegraut). Eine Aenderung hier wird zwar
+      BOOT-Taste oder manuellen Schalter. Ist diese Option aus, geht das WLAN
+      an, wenn du nach dem Einschalten innerhalb von 3 s die BOOT-Taste kurz
+      drueckst (die LED blinkt dabei blau), ueber "WLAN jetzt" (auch im
+      Lua-Menue) oder automatisch bei Signalverlust. Ist diese Option aktiv,
+      wirkt "WLAN automatisch bei Signalverlust" weiter unten nicht mehr
+      (dort ausgegraut). Eine Aenderung hier wird zwar
       sofort gespeichert, wirkt sich aber wie die anderen Einstellungen auf
       dieser Seite erst ab dem naechsten Neustart des Moduls aus - das WLAN
       bleibt also bis dahin im aktuellen Zustand.
@@ -450,7 +453,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 
   <!-- Manueller WLAN-Schalter - schaltet den AP sofort ein/aus, ohne
-       Neustart und ohne das Boot-Verhalten (WLAN-Pin, siehe pins.h) zu aendern
+       Neustart und ohne das Boot-Verhalten (BOOT-Taste, siehe pins.h) zu aendern
        (siehe handleApiWifiEnable() in WebServerManager.cpp). -->
   <div class="card" id="c-wifi-now" style="margin-top:10px">
     <div class="card-title">WLAN jetzt</div>
@@ -2137,7 +2140,7 @@ void WebServerManager::handleApiSoundDelete() {
 // schaltet enableAP()/disableAP() (siehe weiter oben, kurz nach begin())
 // sofort, OHNE die Konfiguration zu aendern oder das Modul neu zu starten.
 // Bildet nur den aktuellen Laufzeit-Zustand ab - das Boot-Verhalten
-// (WLAN-Pin, siehe pins.h) bleibt unberuehrt.
+// (BOOT-Taste, siehe pins.h) bleibt unberuehrt.
 void WebServerManager::handleApiWifiEnable() {
   bool on = false;
   if (server.hasArg("plain")) {

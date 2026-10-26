@@ -6,11 +6,11 @@
 class WebServerManager {
 public:
   // begin() registriert nur die Routen und merkt sich SSID/Passwort - wird
-  // IMMER in setup() aufgerufen (unabhaengig vom WLAN-Pin-Zustand),
+  // IMMER in setup() aufgerufen (unabhaengig von der BOOT-Taste),
   // damit WLAN auch nachtraeglich gestartet werden kann. Das tatsaechliche
   // Ein-/Ausschalten von AP-Funk + Webserver-Socket uebernehmen
-  // enableAP()/disableAP() - aufrufbar sowohl beim Booten (falls WifiPin
-  // beim Start auf LOW lag) als auch spaeter zur Laufzeit (manueller
+  // enableAP()/disableAP() - aufrufbar sowohl beim Booten (falls die BOOT-
+  // Taste nach dem Start gedrueckt wurde) als auch spaeter zur Laufzeit (manueller
   // Schalter im Web/Lua-Menue oder automatisch bei RC-Signalverlust, siehe
   // wifiFailsafeCheck() in ESP32-RC-Sound.ino). Public, da direkt aus dem
   // .ino aufgerufen.

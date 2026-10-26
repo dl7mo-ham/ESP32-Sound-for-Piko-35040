@@ -10,10 +10,12 @@
  *
  * Auswahlregeln fuer den ESP32-S3:
  *   - GPIO 26-37 sind beim S3FH4R2 durch Flash/PSRAM belegt (tabu)
- *   - GPIO 0, 45, 46 sind Strapping-Pins (gemieden); GPIO 3 nur JTAG-Auswahl
+ *   - GPIO 0, 45, 46 sind Strapping-Pins (gemieden); GPIO 0 ist die BOOT-
+ *     Taste und wird erst nach dem Start als WLAN-Taste gelesen; GPIO 3 nur
+ *     JTAG-Auswahl
  *   - GPIO 19/20 sind der native USB-Anschluss (Konsole)
  *   - GPIO 21 ist beim S3-Zero die RGB-LED
- *   - keine SD-Karte (Sounds und Backups im Flash), GPIO 10-13 sind frei
+ *   - keine SD-Karte (Sounds und Backups im Flash), GPIO 9-13 sind frei
  */
 
 // Der MAX98357A-Breakout wird direkt auf die Versorgungsreihe des S3-Zero
@@ -38,8 +40,13 @@
 #define PIN_PORTB_RX  7
 #define PIN_PORTB_TX  8
 
-// ── WLAN-Bootpin (LOW beim Einschalten = AP-Modus) ───────────────────
-#define PIN_WIFI      9
+// ── BOOT-Taste des S3-Zero (GPIO0, Pull-up auf dem Board) ────────────
+// WLAN-Taste: nach dem Einschalten innerhalb von WIFI_BUTTON_WINDOW_MS
+// kurz druecken = WLAN an (nur wenn "WLAN dauerhaft an" AUS ist). Beim
+// Einschalten NICHT gedrueckt halten, sonst startet der Flash-Modus.
+// Seit v0.05 ersetzt sie die WLAN-Bruecke an GPIO9, GPIO9 ist frei.
+#define PIN_BOOT_BUTTON 0
+#define WIFI_BUTTON_WINDOW_MS 3000
 
 // ── Status-LED: RGB-LED (WS2812) des S3-Zero ─────────────────────────
 // Status von Port A (RC_Common, status_led.h)

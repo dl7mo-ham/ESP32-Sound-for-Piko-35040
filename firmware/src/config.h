@@ -77,7 +77,7 @@ struct ConfigData {
     uint16_t WifiAutoTimeoutSec;   // 5-240s, Default 60
 
     // WLAN dauerhaft aktiv: der AP wird in setup() fest eingeschaltet und
-    // bleibt an; Bootpin, manueller Schalter und Auto-Failsafe werden dann
+    // bleibt an; BOOT-Taste, manueller Schalter und Auto-Failsafe werden dann
     // uebersprungen. Default AN.
     bool     WifiAlwaysOn;
 };
