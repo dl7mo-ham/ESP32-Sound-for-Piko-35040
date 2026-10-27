@@ -13,6 +13,7 @@
 #include "src/RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
 #include "src/RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
 #include "sound_store.h"     // Sound-Speicher (Flash)
+#include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -78,6 +79,8 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 .stabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
 .stab{padding:5px 10px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;background:var(--surf2);color:var(--sub);border:1px solid var(--border);transition:.15s}
 .stab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.mbar{height:8px;border-radius:4px;background:var(--surf2);border:1px solid var(--border);overflow:hidden;margin:2px 0 10px}
+.mbar>div{height:100%;background:var(--accent)}
 .cell-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
 .cell-box{background:var(--surf2);border-radius:var(--r);padding:8px;text-align:center}
 .cell-v{font-size:17px;font-weight:700}
@@ -529,6 +532,11 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
     <div class="dbg-grid" id="dbg-ch"></div>
   </div>
+  <!-- v0.06: Speicherbelegung (Flash und RAM), aus /api/debug "mem" -->
+  <div class="card">
+    <div class="card-title">Speicherbelegung</div>
+    <div id="dbg-mem"></div>
+  </div>
   <div class="card">
     <div class="card-title">WAV Dateien</div>
     <div id="dbg-wav"></div>
@@ -790,6 +798,26 @@ function renderDbg(){
     dbg.channels.forEach(function(v,i){
       ch.innerHTML+='<div class="dbg-item"><div class="dbg-k">K'+(i+1)+'</div><div class="dbg-v">'+v+'</div></div>';
     });
+  }
+  // Speicherbelegung: Balken = belegter Anteil, ab 90 % gelb, ab 98 % rot
+  var me=document.getElementById('dbg-mem');
+  if(me&&dbg.mem){
+    var m=dbg.mem, mb=function(b){return (b/1048576).toFixed(2)+' MB';},
+        kb=function(b){return Math.round(b/1024)+' KB';};
+    var bar=function(lbl,used,size,txt){
+      var p=size?Math.round(used*100/size):0;
+      var c=p>=98?'var(--red)':(p>=90?'var(--yellow)':'var(--accent)');
+      return '<div class="row" style="margin-bottom:0"><span class="lbl">'+lbl+'</span><span style="font-family:var(--mono);font-size:12px">'+txt+' ('+p+' %)</span></div>'+
+        '<div class="mbar"><div style="width:'+p+'%;background:'+c+'"></div></div>';
+    };
+    var h=bar('Firmware',m.app_used,m.app_size,mb(m.app_used)+' von '+mb(m.app_size));
+    h+=m.fs_size?bar('Sounds (Flash)',m.fs_used,m.fs_size,mb(m.fs_used)+' von '+mb(m.fs_size)+', frei '+mb(m.fs_size-m.fs_used))
+                :'<div class="row"><span class="lbl">Sounds (Flash)</span><span class="badge bg-r">nicht verf&uuml;gbar</span></div>';
+    h+=bar('RAM',m.heap_size-m.heap_free,m.heap_size,'frei '+kb(m.heap_free)+' von '+kb(m.heap_size)+', min '+kb(m.heap_min));
+    h+=m.psram_size?bar('PSRAM',m.psram_size-m.psram_free,m.psram_size,'frei '+mb(m.psram_free)+' von '+mb(m.psram_size))
+                   :'<div class="row"><span class="lbl">PSRAM</span><span class="badge bg-s">nicht erkannt</span></div>';
+    h+='<div style="font-size:11px;color:var(--sub)">Firmware: Platz in der App-Partition (OTA). Sounds: Flash-Dateisystem mit Sounds und Backups. RAM: in Prozent belegt, min = kleinster freier Wert seit dem Start.</div>';
+    me.innerHTML=h;
   }
   var wv=document.getElementById('dbg-wav');
   if(wv&&dbg.wav){
@@ -2186,6 +2214,19 @@ void WebServerManager::handleApiDebug() {
     j += String(Sounds[i] ? Sounds[i]->FileOK : 0);
   }
   j += "]},";
+
+  // v0.06: Speicherbelegung (Bytes), Anzeige im Tab Debug
+  MemInfo m = memInfoRead();
+  j += "\"mem\":{";
+  j += "\"app_used\":"   + String(m.appUsed)   + ",";
+  j += "\"app_size\":"   + String(m.appSize)   + ",";
+  j += "\"fs_used\":"    + String(m.fsUsed)    + ",";
+  j += "\"fs_size\":"    + String(m.fsSize)    + ",";
+  j += "\"heap_free\":"  + String(m.heapFree)  + ",";
+  j += "\"heap_min\":"   + String(m.heapMin)   + ",";
+  j += "\"heap_size\":"  + String(m.heapSize)  + ",";
+  j += "\"psram_free\":" + String(m.psramFree) + ",";
+  j += "\"psram_size\":" + String(m.psramSize) + "},";
 
   // S.Port Live-Daten
   // Der AKTIVE (Boot-)Wert, nicht der evtl. schon geaenderte, aber noch
