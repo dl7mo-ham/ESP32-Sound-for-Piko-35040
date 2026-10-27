@@ -13,7 +13,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 
 **Aktuelle Version:** v0.05 (nicht auf Hardware getestet)
 
-Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (PlatformIO über pioarduino).
+Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
 Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.docx) · Projektplan: [`docs/projektplan.md`](docs/projektplan.md)
 
@@ -36,6 +36,24 @@ Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfig
 
 ## Bauen
 
+### Arduino IDE
+
+1. Boardverwalter: „esp32“ von Espressif, Version **3.0.7**
+2. Bibliothek: „TinyGPSPlus“ (Mikal Hart)
+3. `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino` öffnen
+4. Werkzeuge:
+   - Board: **ESP32S3 Dev Module**
+   - USB CDC On Boot: **Enabled**
+   - USB Mode: **Hardware CDC and JTAG**
+   - Flash Size: **4MB (32Mb)**
+   - Partition Scheme: **Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)**
+   - PSRAM: **QSPI PSRAM**
+5. Hochladen
+
+Fertige Images baut die CI (GitHub Actions, Artefakt `sound-mini-s3-firmware`): `*.ino.bin` für das OTA-Update über die Weboberfläche, `*.merged.bin` als Komplett-Image ab Adresse 0x0 (z. B. mit https://espressif.github.io/esptool-js/).
+
+### PlatformIO (alternativ)
+
 ```bash
 cd firmware
 pio run                 # Firmware bauen
@@ -57,7 +75,7 @@ Eine WLAN-Brücke oder ein Jumper ist seit v0.05 nicht mehr nötig, GPIO9 ist fr
 ## Hardware
 
 Bauplan mit Bauteilliste, Pinbelegung und Grafiken: [`docs/Hardware-Bauplan_Mini-S3.docx`](docs/Hardware-Bauplan_Mini-S3.docx).
-Die Pins kommen aus `firmware/src/pins.h` (ein KiCad-Schaltplan fehlt noch). Eine SD-Karte gibt es nicht.
+Die Pins kommen aus `firmware/ESP32_Sound_Mini_S3/pins.h` (ein KiCad-Schaltplan fehlt noch). Eine SD-Karte gibt es nicht.
 
 Der MAX98357A wird direkt auf die Versorgungsreihe des S3-Zero gelötet (VIN-5V, GND-GND, SD-Pin nicht gelötet, 3V3 bleibt frei).
 

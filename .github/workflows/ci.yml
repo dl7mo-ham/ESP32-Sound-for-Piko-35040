@@ -1,15 +1,21 @@
 name: CI
 
 # Gemeinsame CI aller ESP32-Module (RC_Common 1.2.0):
-#   1. firmware/src/RC_Common/ gegen MANIFEST.sha256 pruefen (Kopie
-#      unveraendert) und die Host-Tests der Basis ausfuehren.
-#   2. Firmware bauen (Arduino-Core 3.0.7) und die Images hochladen.
+#   1. RC_Common-Kopie gegen MANIFEST.sha256 pruefen (Kopie unveraendert)
+#      und die Host-Tests der Basis ausfuehren.
+#   2. Arduino-Skizze mit festem Core (esp32:esp32@3.0.7) bauen und die
+#      Images hochladen.
+#   3. Gegenprobe: derselbe Code mit PlatformIO (platformio.ini).
 
 on:
   push:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+
+env:
+  SKETCH: firmware/ESP32_Sound_Mini_S3
+  RC_COMMON: firmware/ESP32_Sound_Mini_S3/src/RC_Common
 
 jobs:
   rc-common:
@@ -18,12 +24,41 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Kopie unveraendert (MANIFEST.sha256)
-        run: cd firmware/src/RC_Common && sha256sum -c --quiet MANIFEST.sha256
+        run: cd "$RC_COMMON" && sha256sum -c --quiet MANIFEST.sha256
       - name: Host-Tests
-        run: sh firmware/src/RC_Common/tests/run_tests.sh
+        run: sh "$RC_COMMON/tests/run_tests.sh"
 
-  build-firmware:
-    name: Build firmware (S3)
+  build-arduino:
+    name: Build firmware (Arduino, S3)
+    needs: rc-common
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: arduino/setup-arduino-cli@v2
+      - name: ESP32-Core und Bibliotheken installieren
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.0.7
+          arduino-cli lib install "TinyGPSPlus@1.1.0"
+      # Gleiche Einstellungen wie in der README (Arduino IDE): 4 MB Flash,
+      # Standard-Partitionen (2 x 1,25 MB OTA + LittleFS), QSPI-PSRAM,
+      # Konsole ueber den nativen USB-Anschluss.
+      - name: Kompilieren
+        run: |
+          arduino-cli compile --warnings default \
+            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,USBMode=hwcdc,FlashSize=4M,PartitionScheme=default,PSRAM=enabled" \
+            --output-dir build "$SKETCH"
+          ls -l build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sound-mini-s3-firmware
+          # *.ino.bin = OTA-Update, *.merged.bin = Komplett-Image ab 0x0 (USB)
+          path: build/*.bin
+
+  build-platformio:
+    name: Build firmware (PlatformIO, S3)
     needs: rc-common
     runs-on: ubuntu-latest
     defaults:
@@ -31,36 +66,10 @@ jobs:
         working-directory: firmware
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-
       - name: Install PlatformIO
         run: pip install --upgrade platformio
-
       - name: Build firmware
         run: pio run
-
-      # Eine einzige Datei zum Flashen ab Adresse 0x0 (Bootloader,
-      # Partitionstabelle, OTA-Startdaten und Firmware zusammengefuegt),
-      # z. B. mit https://espressif.github.io/esptool-js/
-      - name: Merge flash image
-        run: |
-          pip install esptool==4.8.1
-          B=.pio/build/s3
-          esptool.py --chip esp32s3 merge_bin -o $B/sound-mini-s3-komplett.bin \
-            --flash_mode keep --flash_freq keep --flash_size 4MB \
-            0x0 $B/bootloader.bin \
-            0x8000 $B/partitions.bin \
-            0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
-            0x10000 $B/firmware.bin
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: sound-mini-s3-firmware
-          path: |
-            firmware/.pio/build/s3/sound-mini-s3-komplett.bin
-            firmware/.pio/build/s3/firmware.bin

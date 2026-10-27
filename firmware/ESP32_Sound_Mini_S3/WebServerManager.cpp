@@ -6,12 +6,12 @@
 #include "config.h"
 #include <Arduino.h>
 #include "XT_I2S_Audio.h"
-#include "RC_Common/sport_lipo.h"
-#include "RC_Common/gps_speed.h"
-#include "RC_Common/CRSF_ESP32/crsf_esp32.h"
-#include "RC_Common/uart_roles.h"
-#include "RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
-#include "RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
+#include "src/RC_Common/sport_lipo.h"
+#include "src/RC_Common/gps_speed.h"
+#include "src/RC_Common/CRSF_ESP32/crsf_esp32.h"
+#include "src/RC_Common/uart_roles.h"
+#include "src/RC_Common/web_common.h"   // OTA-Update, /rc_common.js (RC_Common)
+#include "src/RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
 #include "sound_store.h"     // Sound-Speicher (Flash)
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
@@ -20,7 +20,7 @@ extern bool gpsPinConflict; // beim Mini immer false (kein SBUS), bleibt fuer da
 // Die tatsaechlich AKTIVEN (seit dem letzten Neustart geladenen) Port B/C-
 // Werte - koennen von config.PortB_Role/PortC_Role abweichen, wenn
 // seitdem ueber Web/Lua etwas geaendert, aber noch nicht neu gestartet
-// wurde (siehe Erklaerung in main.cpp).
+// wurde (siehe Erklaerung in ESP32_Sound_Mini_S3.ino).
 extern uint8_t PortB_Role_boot;
 extern uint8_t PortC_Role_boot;
 extern bool PortC_Duplicate_boot;
@@ -429,7 +429,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <!-- "WLAN dauerhaft an" - schaltet den AP beim Booten fest ein und haelt
        ihn dauerhaft an; ueberstimmt die BOOT-Taste, den manuellen Schalter
        und den Auto-Failsafe weiter unten komplett (siehe config.WifiAlwaysOn
-       in config.h, wifiFailsafeCheck()/setup() in main.cpp).
+       in config.h, wifiFailsafeCheck()/setup() in ESP32_Sound_Mini_S3.ino).
        Default AN. -->
   <div class="card" id="c-wifi-always" style="margin-top:10px">
     <div class="card-title">WLAN dauerhaft aktiv (empfohlen)</div>
@@ -471,7 +471,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 
   <!-- WLAN automatisch aktivieren, wenn ueber die eingestellte Zeit kein
        gueltiges RC-Signal anliegt (siehe wifiFailsafeCheck() in
-       main.cpp) - z.B. wenn kein Sender gebunden ist. -->
+       ESP32_Sound_Mini_S3.ino) - z.B. wenn kein Sender gebunden ist. -->
   <div class="card" id="c-wifi-auto" style="margin-top:10px">
     <div class="card-title">WLAN automatisch bei Signalverlust</div>
     <div id="wifi-auto-overridden-hint" class="hidden" style="font-size:12px;color:var(--yellow);margin-bottom:8px">
@@ -620,7 +620,7 @@ var G_BUS_LOW ={l:'BUS Kanal Low', o:function(){var a=[];for(var i=0;i<16;i++)a.
 var G_BUS_HIGH={l:'BUS Kanal High',o:function(){var a=[];for(var i=0;i<16;i++)a.push([20+i,'BUS Kanal High '+(i<9?'0':'')+(i+1)]);return a;}()};
 var G_EK      ={l:'Einkanal',      o:function(){var a=[];for(var i=0;i<8;i++)a.push([70+i,'Einkanal '+(i<9?'0':'')+(i+1)]);return a;}()};
 // "MKan" 80-95 (2 CRSF-Gruppenadressen x 8 Einzelschalter, siehe
-// main.cpp) - eine der Quellgruppen fuer Sound 1-4.
+// ESP32_Sound_Mini_S3.ino) - eine der Quellgruppen fuer Sound 1-4.
 var G_MKAN    ={l:'Mehrfachkanal (MKan)', o:function(){var a=[];for(var i=0;i<16;i++)a.push([80+i,'MKan '+(i<9?'0':'')+(i+1)]);return a;}()};
 var G_OPT     ={l:'Optionen',      o:[[200,'Dauerbetrieb an'],[999,'Deaktiviert']]};
 var G_OPT_D   ={l:'Optionen',      o:[[999,'Deaktiviert']]};
@@ -1330,7 +1330,7 @@ unsigned long WebServerManager::lastSdActivityMs = 0;
 
 // v7.16: Cooldown-Dauer nach einer SD-Schreiboperation, bevor der naechste
 // blockierende NVS-Flash-Schreibvorgang (saveConfigForce(), siehe loop() in
-// main.cpp) zugelassen wird. Feldbefund: ohne Stuetzkondensator am
+// ESP32_Sound_Mini_S3.ino) zugelassen wird. Feldbefund: ohne Stuetzkondensator am
 // Modul (Versorgung ueber lange, duenne Leitung vom Empfaenger-BEC)
 // reichte ein SD-Upload direkt gefolgt von einem sofortigen Config-Save aus,
 // um einen Brownout-Reset-Loop auszuloesen; ein paar Sekunden Abstand (in
@@ -1350,10 +1350,10 @@ extern XT_Wav_Class  Sound_loop;
 extern XT_Wav_Class  Sound_shut;
 extern XT_Wav_Class  Sound_start;
 // Pointer-Array Sounds[] (Index 0=Motor/ungenutzt, 1..4=Sound1..Sound4,
-// siehe main.cpp) - deckt alle RCSOUND_NUM_SLOTS-1 Sounds ab.
+// siehe ESP32_Sound_Mini_S3.ino) - deckt alle RCSOUND_NUM_SLOTS-1 Sounds ab.
 extern XT_Wav_Class* Sounds[RCSOUND_NUM_SLOTS];
 extern char          versionString[6];
-extern bool          isValidEinSource(int c); // siehe main.cpp
+extern bool          isValidEinSource(int c); // siehe ESP32_Sound_Mini_S3.ino
 extern bool          BUS_OK; // fuer den WLAN-Live-Status in handleApiDebug(), siehe unten
 
 // storedApSsid/-Password merken sich die Zugangsdaten aus begin() fuer
@@ -1425,7 +1425,7 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
 // ── AP tatsaechlich aktivieren (WiFi-Funk + Webserver-Socket) ────────────
 // Aufrufbar sowohl beim Booten als auch zur Laufzeit: manuell (Web-Button/
 // Lua-Feld 174) oder automatisch bei RC-Signalverlust (siehe
-// wifiFailsafeCheck() in main.cpp). Idempotent - ein bereits
+// wifiFailsafeCheck() in ESP32_Sound_Mini_S3.ino). Idempotent - ein bereits
 // aktiver AP wird nicht doppelt gestartet. Der Freie-Heap-Log gilt fuer
 // JEDEN AP-Start, nicht nur den beim Booten: WiFi.softAP() ist in diesem
 // Projekt historisch die stoeranfaelligste Stelle ueberhaupt - ein AP-Start
@@ -1584,13 +1584,13 @@ void WebServerManager::handleApiConfigPost() {
   if (jsonGetInt(body, "modul_adr",  v)) { config.modul_adress               = constrain(v,0,20);   changed=true; }
   // Die unabhaengigen MKan-Gruppenadressen - jede fuer sich auf 0-255
   // begrenzt (255=Gruppe deaktiviert), wie auch im CRSF-Parametermenue
-  // (siehe crsfWriteParam() in main.cpp). Duerfen sich
+  // (siehe crsfWriteParam() in ESP32_Sound_Mini_S3.ino). Duerfen sich
   // unterscheiden oder gleich sein - hier keine Reihenfolge/Eindeutigkeit
   // erzwungen (siehe Kommentar in config.h/EK_Gruppen_Adresse).
   if (jsonGetInt(body, "mkan_adr0", v)) { config.EK_Gruppen_Adresse[0]       = constrain(v,0,255);  changed=true; }
   if (jsonGetInt(body, "mkan_adr1", v)) { config.EK_Gruppen_Adresse[1]       = constrain(v,0,255);  changed=true; }
   // Port B / Port C - wirkt erst nach einem Neustart
-  // (siehe setup() in main.cpp, PortB_Role_boot/
+  // (siehe setup() in ESP32_Sound_Mini_S3.ino, PortB_Role_boot/
   // PortC_Role_boot). Anders als im CRSF/Lua-Menue (1-Byte-
   // Wertebereich, siehe dort) ist die Baudrate hier ueber JSON wirklich
   // frei eingebbar, kein Snapping auf eine feste Liste.
@@ -1623,7 +1623,7 @@ void WebServerManager::handleApiConfigPost() {
   // dem naechsten Bootvorgang, KEIN sofortiges enableAP() hier. Bewusst so
   // (seit v7.15) - ein WLAN-Start zur Laufzeit ist historisch die
   // fehleranfaelligste Operation in diesem Projekt (Heap-Fragmentierung,
-  // siehe SDCardInit()-Kommentar in main.cpp); ein Aufruf aus
+  // siehe SDCardInit()-Kommentar in ESP32_Sound_Mini_S3.ino); ein Aufruf aus
   // diesem HTTP-Handler heraus ist dafuer unnoetiges zusaetzliches Risiko,
   // da der AP durch den Default "an" beim Booten ohnehin schon laeuft.
   if (jsonGetInt(body, "wifi_always_on", v)) {
@@ -1642,7 +1642,7 @@ void WebServerManager::handleApiConfigPost() {
   // v7.16: nur noch markDirty() statt eines sofortigen, blockierenden
   // saveConfigForce() hier im HTTP-Handler - der eigentliche NVS-Schreib-
   // vorgang passiert jetzt ausschliesslich ueber die debounced Pruefung in
-  // loop() (main.cpp), die zusaetzlich einen SD-Aktivitaets-
+  // loop() (ESP32_Sound_Mini_S3.ino), die zusaetzlich einen SD-Aktivitaets-
   // Cooldown beachtet (siehe sdActivityCooldownActive()). Aendert nichts an
   // der Persistenz (spaetestens ~500ms-3.5s spaeter gespeichert), reduziert
   // aber das Risiko eines Brownouts, wenn kurz zuvor auf die SD-Karte
@@ -2275,7 +2275,7 @@ void WebServerManager::handleApiSound() {
 
   if (body.indexOf("\"test\":true") >= 0) Sound_on_web[id] = true;
 
-  // Ein Rohwert, den einTyp() (main.cpp) nicht als gueltig erkennt
+  // Ein Rohwert, den einTyp() (ESP32_Sound_Mini_S3.ino) nicht als gueltig erkennt
   // (z.B. aus einer alten Konfigurationsdatei mit einem inzwischen
   // entfallenen Wertebereich), wird auf 999 (Deaktiviert) zurueckgesetzt -
   // siehe isValidEinSource(). Greift auch bei jedem Konfigurations-Import.
