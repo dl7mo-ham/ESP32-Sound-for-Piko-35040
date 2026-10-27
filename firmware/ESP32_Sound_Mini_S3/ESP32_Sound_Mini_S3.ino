@@ -49,7 +49,7 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   52 Feld-IDs, lueckenlos 1..52 (Tabelle in buildLuaMenu()), Liste direkt beim
+   57 Feld-IDs, lueckenlos 1..57 (Tabelle in buildLuaMenu()), Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
@@ -58,6 +58,7 @@
    WebServerManager.cpp   Weboberflaeche, REST-API, OTA-Update
    XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
    sound_store.cpp/.h     Sound-Speicher Flash (LittleFS)
+   mem_info.cpp/.h        Speicherbelegung Flash/RAM fuer Web und Lua
    RC_Common/             Gemeinsame Basis aller ESP32-Module (identische
                           Kopie wie im Soundmodul V7 und im Multiswitch):
                           CRSF mit Router, UART-Rollen, S.Port, GPS,
@@ -79,8 +80,11 @@
 #include "src/RC_Common/wifi_failsafe.h"
 #include "src/RC_Common/status_led.h"
 #include "sound_store.h"
+#include "mem_info.h"
 
-uint16_t Version = 5;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (5 -> "0.05")
+uint16_t Version = 6;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (6 -> "0.06")
+// v0.06: Speicherbelegung (Firmware, Sounds, RAM, PSRAM) im Web-Tab Debug
+//        und im Lua-Ordner "Speicher" (Felder 53-57).
 // v0.05: WLAN-Taste statt WLAN-Bruecke: BOOT-Taste (GPIO0) nach dem
 //        Einschalten innerhalb von 3 s druecken = WLAN an. GPIO9 ist frei.
 // v0.04: Einstellungs-Backup im Flash (RC_Common 1.2.0) statt auf SD-Karte,
@@ -206,15 +210,18 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //   49:Sel WLAN dauerhaft an
 //   50:Info Sound-Speicher "Flash" (bis v0.03 Auswahl Auto/Flash/SD)
 //  51: Info Geraetename
+//  53: Folder Speicher {54..57} (v0.06, nur Anzeige)
+//   54:Info Firmware  55:Info Sounds  56:Info RAM frei  57:Info PSRAM frei
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
 static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
 static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
-static constexpr uint8_t CRSF_PARAM_COUNT = PORTC_BAUD_FI;
+static constexpr uint8_t MEMORY_FI        = PORTC_BAUD_FI + 1;
+static constexpr uint8_t CRSF_PARAM_COUNT = MEMORY_FI + 4;
 // Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 52,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 57,
               "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -289,7 +296,7 @@ static int einSelWrite(uint8_t val, int oldCfg) {
 // Ordner, Typ, Name, Grenzen, Lese-/Schreibfunktion); Senden und Schreiben
 // laufen generisch ueber RC_Common/lua_menu.h. Feld-IDs unveraendert (Liste
 // oben). Die Kinderlisten der Ordner ergeben sich aus der Reihenfolge.
-static LuaItem luaItems[53];
+static LuaItem luaItems[CRSF_PARAM_COUNT + 1];   // + Root
 static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
 static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
@@ -300,6 +307,29 @@ static void luaShowDeviceName(uint8_t, LuaView& v, char* buf) {
     snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", config.Device_Name);
     v.text = buf;
 }
+// Ordner "Speicher" (v0.06): arg 0 = Firmware, 1 = Sounds, 2 = RAM, 3 = PSRAM.
+// Die Werte werden bei jedem Abruf des Feldes neu gelesen.
+static void luaShowMemory(uint8_t a, LuaView& v, char* buf) {
+    MemInfo m = memInfoRead();
+    const float MB = 1048576.0f;
+    if (a == 0)
+        snprintf(buf, LUA_VIEW_BUF, "%.2f von %.2f MB (%u%%)", m.appUsed / MB, m.appSize / MB,
+                 (unsigned)memPercent(m.appUsed, m.appSize));
+    else if (a == 1 && m.fsSize == 0)
+        snprintf(buf, LUA_VIEW_BUF, "nicht verfuegbar");
+    else if (a == 1)
+        snprintf(buf, LUA_VIEW_BUF, "%.2f von %.2f MB (%u%%)", m.fsUsed / MB, m.fsSize / MB,
+                 (unsigned)memPercent(m.fsUsed, m.fsSize));
+    else if (a == 2)
+        snprintf(buf, LUA_VIEW_BUF, "%u KB (min %u KB)", (unsigned)(m.heapFree / 1024),
+                 (unsigned)(m.heapMin / 1024));
+    else if (m.psramSize == 0)
+        snprintf(buf, LUA_VIEW_BUF, "kein PSRAM");
+    else
+        snprintf(buf, LUA_VIEW_BUF, "%.2f von %.2f MB", m.psramFree / MB, m.psramSize / MB);
+    v.text = buf;
+}
+
 static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
     snprintf(buf, LUA_VIEW_BUF, "Sound %d", s);
     v.name = buf;
@@ -446,6 +476,13 @@ static void buildLuaMenu() {
     // Feldnummern ohne Luecke bleiben
     m.info(50, SETTINGS_FI, "Sound-Speicher", "Flash");
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
+
+    static const char* MEM_NAMES[4] = {"Firmware", "Sounds", "RAM frei", "PSRAM frei"};
+    m.folder(MEMORY_FI, 0, "Speicher");
+    for (uint8_t a = 0; a < 4; a++) {
+        LuaItem* it = m.info(MEMORY_FI + 1 + a, MEMORY_FI, MEM_NAMES[a], "");
+        it->arg = a; it->view = luaShowMemory;
+    }
 }
 
 // WLAN-Taste: wartet nach dem Start WIFI_BUTTON_WINDOW_MS auf einen
