@@ -68,16 +68,16 @@
 #include <Arduino.h>
 #include "XT_I2S_Audio.h"
 #include <WiFi.h>
-#include "RC_Common/rc_common.h"
-#include "RC_Common/CRSF_ESP32/crsf_esp32.h"
+#include "src/RC_Common/rc_common.h"
+#include "src/RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "config.h"
 #include "pins.h"
 #include "WebServerManager.h"
-#include "RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
-#include "RC_Common/sport_lipo.h"
-#include "RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
-#include "RC_Common/wifi_failsafe.h"
-#include "RC_Common/status_led.h"
+#include "src/RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
+#include "src/RC_Common/sport_lipo.h"
+#include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
+#include "src/RC_Common/wifi_failsafe.h"
+#include "src/RC_Common/status_led.h"
 #include "sound_store.h"
 
 uint16_t Version = 5;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (5 -> "0.05")

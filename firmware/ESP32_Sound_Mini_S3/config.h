@@ -24,7 +24,7 @@
 // uart_roles.h, gleiche Nummern in allen Modulen): UROLE_OFF, UROLE_CRSF,
 // UROLE_SPORT, UROLE_GPS, UROLE_RAW. Alte NVS-Werte (bis v0.02: 3 = Raw,
 // 4 = GPS) werden beim ersten Start einmalig umgerechnet.
-#include "RC_Common/uart_roles.h"
+#include "src/RC_Common/uart_roles.h"
 
 // Motor(0) + 4 Zusatzsounds = 5 Slots.
 static constexpr int RCSOUND_NUM_SOUNDS = 4;
@@ -70,7 +70,7 @@ struct ConfigData {
     char Device_Name[24];
 
     // WLAN automatisch aktivieren, wenn ueber die eingestellte Zeit kein
-    // gueltiges RC-Signal anliegt (siehe wifiFailsafeCheck() in main.cpp).
+    // gueltiges RC-Signal anliegt (siehe wifiFailsafeCheck() in ESP32_Sound_Mini_S3.ino).
     // Default AUS. Der manuelle "WLAN jetzt"-Schalter (Web/Lua) wird
     // bewusst nicht persistiert, siehe WebServerManager::enableAP().
     bool     WifiAutoEnable;

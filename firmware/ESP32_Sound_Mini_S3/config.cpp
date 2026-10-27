@@ -8,7 +8,7 @@
 
 #include "config.h"
 #include <Preferences.h>
-#include "RC_Common/settings_common.h"
+#include "src/RC_Common/settings_common.h"
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -16,7 +16,7 @@ unsigned long configDirtyMs = 0;
 
 static constexpr const char* NVS_NS = "soundmini";
 
-// Siehe isValidEinSource() in main.cpp (Definition dort, damit dieselbe
+// Siehe isValidEinSource() in ESP32_Sound_Mini_S3.ino (Definition dort, damit dieselbe
 // Bereichspruefung wie einTyp() verwendet wird).
 extern bool isValidEinSource(int c);
 
