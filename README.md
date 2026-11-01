@@ -139,6 +139,8 @@ Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
 | Port C RX / TX | 44 / 43 |
 | Status-LED (WS2812 auf dem S3-Zero) | 21 |
 
+![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
+
 ## Versionen
 
 | Version | Änderung |
