@@ -81,6 +81,7 @@
 #include "src/RC_Common/status_led.h"
 #include "sound_store.h"
 #include "mem_info.h"
+#include "reed_trigger.h"  // Reed-Kontakte auf IO5/IO6 (optional, siehe reed_trigger.h)
 
 uint16_t Version = 8;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (8 -> "0.08")
 // v0.08: Belegung des Sound-Speichers selbst aus den Dateien berechnet
@@ -522,16 +523,24 @@ void setup() {
     strncpy(password,config.WiFi_Password,sizeof(password)-1); password[sizeof(password)-1]='\0';
 
     // Port A: CRSF
+    // HINWEIS: Wenn REED_TRIGGER_ENABLED aktiv ist, belegen IO5 und IO6 die
+    // Reed-Eingaenge. In diesem Fall den crsf.init_crsf()-Aufruf auskommentieren
+    // und das Modul ohne RC-Bus betreiben (nur Web-/Reed-Trigger).
+#ifndef REED_TRIGGER_ENABLED
     crsf.init_crsf(PORTA_SERIAL, PIN_CRSF_RX, PIN_CRSF_TX);
     crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
     Serial.printf("CRSF (RX=%d, TX=%d)  Geraeteadresse 0x%02X  Slot %d\n",
                   PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
                   (uint8_t)constrain(config.modul_adress,0,15) * 2);
+#endif
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
+#ifdef REED_TRIGGER_ENABLED
+    reedTriggerBegin();   // IO5 + IO6 als Reed-Eingaenge (ersetzt CRSF)
+#endif
     LoadFiles();
 
     // begin() registriert nur die HTTP-Routen und merkt sich SSID/Passwort.
@@ -614,6 +623,7 @@ void loop() {
     uartPortsUpdate();
 
     // Port A: CRSF
+#ifndef REED_TRIGGER_ENABLED
     crsf.read_packets(0);
     crsf.route_packets();   // Modulkette Port A <-> Port B/C (nur bei Rolle CRSF aktiv)
     for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
@@ -651,6 +661,10 @@ void loop() {
         crsf.setDeviceCommandReplyPending(false);
         einkanalFunctionCRSF();
     }
+#else
+    // Reed-Modus: IO5/IO6 als GPIO-Eingaenge, kein CRSF
+    reedTriggerUpdate(Sound_on_web, RCSOUND_NUM_SLOTS);
+#endif
 
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
     // waehrend des Cooldowns nach einer SD-Schreibaktivitaet (Brownout-Schutz,
