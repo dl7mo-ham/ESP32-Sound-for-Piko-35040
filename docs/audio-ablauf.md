@@ -157,3 +157,58 @@ loop()
   ├─ handleSound(1..4)                 ← One-Shot / Dauerbetrieb auswerten
   └─ Motor-State-Machine + Throttle-Rampe
 ```
+
+---
+
+## 6. Arduino-Loop und FreeRTOS-Tasks
+
+Der Arduino-Framework auf dem ESP32 **ist selbst ein FreeRTOS-Task** – `loop()` läuft als
+normaler Task im selben Scheduler wie die Audio-Tasks.
+
+```
+FreeRTOS-Scheduler (läuft immer)
+│
+├─ Task "loopTask"    (Core 1, Prio 1)  ← setup() + loop()
+├─ Task "I2SProducer" (Core 1, Prio 2)  ← Audio-Mischer (FillBuffer/MixSamples)
+├─ Task "I2SConsumer" (Core 1, Prio 2)  ← i2s_write() → DMA → MAX98357A
+└─ Task "SDReader"    (Core 1, Prio 1)  ← LittleFS-Nachladen in BackSamples[]
+```
+
+### Warum funktioniert das?
+
+| Eigenschaft | Erklärung |
+|---|---|
+| **Präemptives Scheduling** | FreeRTOS unterbricht Tasks nach Zeitscheibe oder wenn ein höherpriorer Task bereit ist |
+| **Prioritäten** | I2SProducer/Consumer (Prio 2) laufen vor `loop()` (Prio 1) – das sichert gleichmäßiges Audio |
+| **Synchronisation** | Geteilte Daten sind mit Mutexen/Semaphoren geschützt |
+
+### Synchronisations-Mittel im Projekt
+
+| Schutzmechanismus | Schützt |
+|---|---|
+| `PlaylistLockGuard` (rekursiver Mutex) | Playlist-Zeiger (`FirstPlayListItem`, `NextItem` …) |
+| `sdMutex` | LittleFS-Zugriffe (`WavFile.read()`, `.seek()`, `.close()`) |
+| `volatile BackReady`, `BackRequested` | Handshake zwischen SDReader und I2SProducer |
+| `ringMutex` + Semaphoren | Ringbuffer zwischen I2SProducer und I2SConsumer |
+
+### Was man beachten muss
+
+> [!WARNING]
+> Variablen, die sowohl aus `loop()` als auch aus einem Task heraus gelesen/geschrieben werden,
+> müssen durch einen der obigen Mechanismen geschützt sein. Ungeschützte Zugriffe können je nach
+> Timing stille Datenverfälschungen oder Knackser im Audio verursachen.
+
+> [!CAUTION]
+> Blockierende Aufrufe in `loop()` (z.B. `delay()`, langes Warten auf SD) verzögern zwar den
+> Loop, **nicht aber die Audio-Tasks** – die laufen durch ihren eigenen Stack weiter. Umgekehrt
+> dürfen High-Prio-Tasks keine Arduino-APIs aufrufen, die selbst Locks halten.
+
+### Kurzfassung
+
+```
+loop()           ── steuert Logik, setzt Trigger-Flags, ruft I2SAudio.Play() auf
+FreeRTOS-Tasks   ── liefern Audio kontinuierlich und unterbrechungsfrei
+```
+
+Das ist beim ESP32 das übliche Pattern für zeitkritische Ausgaben (Audio, PWM, Kommunikation)
+neben normaler Anwendungslogik.
