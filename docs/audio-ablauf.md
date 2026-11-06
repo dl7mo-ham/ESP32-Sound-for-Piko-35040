@@ -48,6 +48,8 @@ handleSound(i, &SoundX)
 
 ## 3. Motor-State-Machine (Sound 0)
 
+### Ablauf & Phasen
+
 ```
          Sound_play[0] = true
          (Motor-EIN-Signal oder Throttle > 0)
@@ -74,9 +76,53 @@ handleSound(i, &SoundX)
                   └──────► OFF
 ```
 
-> [!TIP]
-> Throttle-Rampe (`ramp_throttle`) begrenzt die Gasänderungsrate auf `config.throttle_ramp` %/s,
-> damit der Motor-Loop-Sound gleichmäßig in der Tonhöhe folgt.
+Der Motorsound besteht aus drei Phasen:
+* **`start.wav`**: Anlassergeräusch beim Einschalten.
+* **`loop.wav`**: Dauerloop für das Fahr- und Standgasgeräusch (`RepeatForever = true`). **Nur diese Datei wird dynamisch in Drehzahl und Tonhöhe moduliert.**
+* **`shut.wav`**: Abstellgeräusch beim Ausschalten.
+
+### Drehzahl- und Tonhöhenvariation (Pitch & Speed)
+
+Im Zustand `RUNNING` passt das Modul die Wiedergabe kontinuierlich an den aktuellen Gaswert an:
+
+1. **Gas-Auswertung & Totband:**  
+   Aus dem konfigurierten CRSF-Gaskanal (`Source_Speed_Sound_0`) wird ein Prozentwert (`throttle`, 0–100 %) ermittelt. Je nach `throttle_mode` geschieht dies für einen Einweg-Hebel oder für Mittelstellung (Vorwärts/Rückwärts). Ein konfigurierbares Totband (`throttle_dead_band`) hält den Motor um den Nullpunkt stabil im Standgas.
+
+2. **Trägheitssimulation via Gas-Rampe (`ramp_throttle`):**  
+   Damit die Drehzahl bei abrupten Knüppelbewegungen nicht digital springt, begrenzt `ramp_throttle()` die Änderungsrate auf maximal `throttle_ramp` %/s (Standard: 20 %/s). Der Motor dreht dadurch wie ein schweres Aggregat mit Massenträgheit hoch und tourt sanft wieder ab.
+
+3. **Skalierung auf Wiedergabegeschwindigkeit (`Sound_loop.Speed`):**  
+   Der geglättete Gaswert wird linear zwischen der minimalen und maximalen Geschwindigkeit interpoliert:
+   ```cpp
+   if (config.Min_Speed_Sound_0 != config.Max_Speed_Sound_0)
+       Sound_loop.Speed = floatMap(throttle, 0, 100, config.Min_Speed_Sound_0, config.Max_Speed_Sound_0) / 100.0f;
+   ```
+
+4. **Resampling in der Audio-Engine (`XT_I2S_Audio`):**  
+   Beim Berechnen des nächsten Audio-Samples multipliziert die Audio-Klasse den Leseschritt mit dem Speed-Faktor:
+   ```cpp
+   float step = IncreaseBy * Speed;
+   Count += step;
+   ```
+   Ein höherer `Speed`-Wert führt dazu, dass die Samples der `loop.wav` schneller durchlaufen werden. Dadurch steigen sowohl die **Tonhöhe (Pitch)** als auch die **Taktfrequenz der Motorgeräusche** proportional an.
+
+### Einstellbare Parameter (Web-UI & Lua-Menü)
+
+Die Parameter können über die Weboberfläche (Tab *Motor*) oder das Lua-Menü am Fernsteuersender angepasst werden:
+
+| Parameter | NVS-Key | Standard | Beschreibung |
+|---|---|---|---|
+| **Drehzahl min** | `minsp` | `100 %` | Abspielgeschwindigkeit bei Standgas (100 % = Originaltempo der WAV) |
+| **Drehzahl max** | `maxsp` | `300 %` | Abspielgeschwindigkeit bei Vollgas (z.B. 300 % = 3-fache Geschwindigkeit/Tonhöhe) |
+| **Motor Rampe** | `thrr` | `20 %/s` | Maximale Gasänderungsrate pro Sekunde für sanftes Beschleunigen/Abtouren |
+| **Standgas Totband** | `thrdb` | `10 %` | Nullbereich um die Ruhestellung, in dem der Motor im Standgas bleibt |
+| **Motor Mode** | `thrm` | `0` | `0` = Eine Richtung (0–100 %); `1` = Zwei Richtungen (Mitte 0 %, Ausschlag vor/zurück 0–100 %) |
+| **Quelle Speed** | `spd` | *deaktiviert* | CRSF-Kanal für den Gashebel (0–15) |
+| **Motor aus Standgas** | `shdly` | `0 s` | Abschalt-Timer nach Inaktivität im Standgas (0 = dauerhaft an) |
+| **Motor EIN Modus** | `entog` | `0` | `0` = Taster/Schalter direkt; `1` = Toggle (Schalterimpuls schaltet ein/aus) |
+
+> [!NOTE]
+> Die Drehzahl-Variation erfordert das dynamische Gas-Signal eines RC-Empfängers (CRSF). Wird das Modul mit Reed-Kontakten betrieben (`REED_TRIGGER_ENABLED`), sind die UART-Pins für Reed-Eingänge belegt; der Motor läuft mangels Gaskanal dauerhaft mit der Mindestdrehzahl (`Drehzahl min`).
 
 ---
 
