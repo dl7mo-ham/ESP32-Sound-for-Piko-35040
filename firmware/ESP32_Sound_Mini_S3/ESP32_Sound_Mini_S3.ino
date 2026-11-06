@@ -690,10 +690,10 @@ void loop() {
     if(config.shutdowndelay>0&&Sound_play[0]&&(millis()-shutdown_timer)>((unsigned long)config.shutdowndelay*1000UL)){Sound_play[0]=false;engine_break=true;}
 
     switch(engine_State){
-        case OFF:    if(Sound_play[0]){Sound_start.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_start);engine_State=STARTING;} break;
-        case STARTING: if(!Sound_start.Playing){throttle=0;last_throttle=0;Sound_loop.RepeatForever=true;Sound_loop.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_loop);engine_State=RUNNING;} break;
+        case OFF:    if(Sound_play[0]){Sound_start.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_start,true,config.Volumen_Sound[0]);engine_State=STARTING;} break;
+        case STARTING: if(!Sound_start.Playing){throttle=0;last_throttle=0;Sound_loop.RepeatForever=true;Sound_loop.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_loop,true,config.Volumen_Sound[0]);engine_State=RUNNING;} break;
         case RUNNING:  Sound_loop.Volume=config.Volumen_Sound[0]; if(!Sound_play[0]){throttle=0;if(last_throttle==0){Sound_loop.RepeatForever=false;I2SAudio.Stop(&Sound_loop);engine_State=STOPPING;}} break;
-        case STOPPING: if(!Sound_loop.Playing){Sound_shut.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_shut);engine_State=OFF;} break;
+        case STOPPING: if(!Sound_loop.Playing){Sound_shut.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_shut,true,config.Volumen_Sound[0]);engine_State=OFF;} break;
     }
     throttle=ramp_throttle(throttle);
     if(config.Min_Speed_Sound_0!=config.Max_Speed_Sound_0)
@@ -704,8 +704,16 @@ void loop() {
 void handleSound(uint8_t idx, XT_Wav_Class* snd) {
     if(!snd)return;
     if(Sound_on[idx]||Sound_on_web[idx]){
-        snd->Volume=config.Volumen_Sound[idx];
-        if(!Sound_play[idx]){Sound_play[idx]=true;snd->LoadWavFile();if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;I2SAudio.Play(snd);Sound_on_web[idx]=false;}
+        if(!Sound_play[idx]){
+            Sound_play[idx]=true;
+            snd->LoadWavFile();
+            snd->Volume=config.Volumen_Sound[idx];
+            if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;
+            I2SAudio.Play(snd,true,config.Volumen_Sound[idx]);
+            Sound_on_web[idx]=false;
+        }else{
+            snd->Volume=config.Volumen_Sound[idx];
+        }
     }else{
         snd->RepeatForever=false;
         // Lautstaerke auch waehrend des Nachspielens aktualisieren (z.B.

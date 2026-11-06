@@ -433,7 +433,7 @@ void XT_Wav_Class::LoadWavFile()
         BackRequested = false;
 
         Speed = 1.0;
-        Volume = 100;
+        // Volume wird nicht überschrieben, damit die konfigurierte Lautstärke erhalten bleibt
     }
 }
 
@@ -612,7 +612,7 @@ void XT_Wav_Class::NextSample(int16_t *Left, int16_t *Right)
         *Right = *Left;
     }
 
-    SetVolume(Left, Right, Volume);
+    // Lautstärke wird zentral in XT_I2S_Class::MixSamples() angewendet (verhindert doppelte Skalierung)
 
     if (TotalBytesRead >= DataSize && BackNumBytesRead == 0 && !BackReady && SamplesDataIdx + BytesPerSample >= LastNumBytesRead)
     {
@@ -1026,7 +1026,7 @@ uint32_t XT_I2S_Class::MixSamples()
    	RightMix = ApplyCompressor(RightMix);
 
 
-    MixedSample = (LeftMix << 16) | (RightMix);
+    MixedSample = ((uint32_t)(uint16_t)LeftMix << 16) | (uint16_t)RightMix;
     return MixedSample;
 }
 
