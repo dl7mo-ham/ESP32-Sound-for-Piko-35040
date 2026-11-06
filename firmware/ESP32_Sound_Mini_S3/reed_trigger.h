@@ -27,7 +27,7 @@
 
 // ── Aktivierung ──────────────────────────────────────────────────────────
 // Zeile auskommentieren = Reed-Trigger deaktiviert (normaler CRSF-Betrieb)
-// #define REED_TRIGGER_ENABLED
+#define REED_TRIGGER_ENABLED
 
 #ifdef REED_TRIGGER_ENABLED
 

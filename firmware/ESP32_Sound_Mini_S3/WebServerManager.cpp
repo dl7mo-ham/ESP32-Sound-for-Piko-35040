@@ -14,6 +14,7 @@
 #include "src/RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
 #include "sound_store.h"     // Sound-Speicher (Flash)
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
+#include "reed_trigger.h"    // Reed-Kontakte IO5/IO6 (optional)
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -558,6 +559,10 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div class="card-title">CRSF Diagnose</div>
     <div id="dbg-crsf-diag"></div>
   </div>
+  <div class="card" id="dbg-reed-card">
+    <div class="card-title">Reed-Kontakte</div>
+    <div id="dbg-reed"></div>
+  </div>
   <div class="card">
     <div class="card-title">Konfiguration</div>
     <div id="dbg-cfg" class="mono" style="line-height:1.9;color:var(--sub)"></div>
@@ -889,6 +894,25 @@ function renderDbg(){
     else if(c.device_pings==0) hint2='Es kommen Bytes/Frames an, aber noch kein Device-Ping vom Sender - "Sensoren entdecken"/Geraeteliste am Sender einmal ausloesen.';
     if(hint2) h2+='<div style="font-size:11px;color:var(--sub);margin-top:8px">'+hint2+'</div>';
     cd.innerHTML=h2;
+  }
+  var rd=document.getElementById('dbg-reed');
+  var rcCard=document.getElementById('dbg-reed-card');
+  if(rd&&dbg.reed){
+    if(!dbg.reed.enabled){
+      if(rcCard) rcCard.className='card hidden';
+    }else{
+      if(rcCard) rcCard.className='card';
+      var rh='<div class="row"><span class="lbl">Modus</span><span class="badge bg-g">Aktiv (CRSF ersetzt)</span></div>';
+      if(dbg.reed.pins){
+        dbg.reed.pins.forEach(function(p){
+          var st = p.closed ? 'Geschlossen (LOW)' : 'Offen (HIGH)';
+          var badgeCls = p.closed ? 'bg-g' : 'bg-s';
+          rh += '<div class="row"><span class="lbl">IO' + p.pin + ' &rarr; ' + p.label + '</span><span class="badge ' + badgeCls + '">' + st + '</span></div>';
+        });
+      }
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">Schaltet bei LOW (Flanke) sofort sound1 bzw. sound2. Live-Aktualisierung alle 2 s.</div>';
+      rd.innerHTML=rh;
+    }
   }
   var dc=document.getElementById('dbg-cfg');
   if(dc&&cfg.motor&&cfg.settings){
@@ -2347,6 +2371,16 @@ void WebServerManager::handleApiDebug() {
   j += "\"active\":" + String(WebServerManager::isApActive() ? "true" : "false") + ",";
   j += "\"bus_ok\":" + String(BUS_OK ? "true" : "false");
   j += "}";
+
+  // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
+#ifdef REED_TRIGGER_ENABLED
+  j += ",\"reed\":{\"enabled\":true,\"pins\":[";
+  j += "{\"pin\":" + String(REED_PIN_SOUND1) + ",\"label\":\"sound1\",\"closed\":" + String(digitalRead(REED_PIN_SOUND1) == LOW ? "true" : "false") + "}";
+  j += ",{\"pin\":" + String(REED_PIN_SOUND2) + ",\"label\":\"sound2\",\"closed\":" + String(digitalRead(REED_PIN_SOUND2) == LOW ? "true" : "false") + "}";
+  j += "]}";
+#else
+  j += ",\"reed\":{\"enabled\":false}";
+#endif
 
   j += "}";
   sendJson(server, j);
