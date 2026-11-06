@@ -663,7 +663,7 @@ void loop() {
     }
 #else
     // Reed-Modus: IO5/IO6 als GPIO-Eingaenge, kein CRSF
-    reedTriggerUpdate(Sound_on_web, RCSOUND_NUM_SLOTS);
+    reedTriggerUpdate(Sound_on_web, RCSOUND_NUM_SLOTS, Sound_on_Motor);
 #endif
 
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
@@ -679,10 +679,12 @@ void loop() {
     if(currentTime<5000) return;
     for(uint8_t i=1;i<=RCSOUND_NUM_SOUNDS;i++) handleSound(i,Sounds[i]);
 
-    // Motor Toggle
+    // Motor Toggle (nur im CRSF-Modus; im Reed-Modus steuert IO6 Sound_on_Motor direkt)
+#ifndef REED_TRIGGER_ENABLED
     if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
     else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;
     else if(!config.engine_on_toggle) Sound_on_Motor=Sound_on[0];
+#endif
 
     bool mw=Sound_on_Motor||Sound_on_web[0];
     if((mw&&!engine_break&&!Sound_play[0])||(throttle>0&&engine_break&&!Sound_play[0])||(throttle>0&&Sound_play[0])){Sound_play[0]=true;shutdown_timer=millis();}

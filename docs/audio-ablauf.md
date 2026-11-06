@@ -3,12 +3,12 @@
 ## 1. Trigger-Quellen
 
 ```
-CRSF-Bus (Port A)          Reed-Kontakt (IO5/IO6)       Web / Lua-Menü
+CRSF-Bus (Port A)          Reed-Trigger (IO5/IO6)       Web / Lua-Menü
        │                          │                            │
   Config()                reedTriggerUpdate()           Sound_on_web[i]=true
-  wertet Kanäle aus        erkennt LOW-Flanke              (einmaliger Trigger)
-       │                          │                            │
-  Sound_on[i] = true/false   Sound_on_web[i] = true          │
+  wertet Kanäle aus        IO6: Motor Toggle              (einmaliger Trigger)
+       │                   IO5: Kurz sound1 / Lang sound2      │
+  Sound_on[i] = true/false        │                            │
        └──────────────────────────┴────────────────────────────┘
                                   │
                              handleSound(i)
@@ -194,7 +194,7 @@ loop()
   ├─ crsf.read_packets()               (Port A – entfällt bei REED_TRIGGER_ENABLED)
   │    └─► BUS_OK, channel_output[]
   ├─ reedTriggerUpdate()               (nur bei REED_TRIGGER_ENABLED)
-  │    └─► Sound_on_web[1/2] = true
+  │    └─► IO6: Sound_on_Motor Toggle, IO5: Sound_on_web[1/2] (kurz/lang)
   ├─ uartPortsTelemetry() / updateLed()
   ├─ CRSF Lua-Menü (Read/Write/Command)
   ├─ saveConfigForce()                 (500ms nach letzter Änderung)

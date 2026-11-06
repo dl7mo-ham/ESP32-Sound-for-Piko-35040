@@ -910,7 +910,7 @@ function renderDbg(){
           rh += '<div class="row"><span class="lbl">IO' + p.pin + ' &rarr; ' + p.label + '</span><span class="badge ' + badgeCls + '">' + st + '</span></div>';
         });
       }
-      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">Schaltet bei LOW (Flanke) sofort sound1 bzw. sound2. Live-Aktualisierung alle 2 s.</div>';
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO6: Motorsound (Toggle bei Impuls). IO5: Kurzer Puls = sound1, langer Puls (&gt; 800 ms) = sound2. Live-Aktualisierung alle 2 s.</div>';
       rd.innerHTML=rh;
     }
   }
@@ -2386,8 +2386,8 @@ void WebServerManager::handleApiDebug() {
   // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
 #ifdef REED_TRIGGER_ENABLED
   j += ",\"reed\":{\"enabled\":true,\"pins\":[";
-  j += "{\"pin\":" + String(REED_PIN_SOUND1) + ",\"label\":\"sound1\",\"closed\":" + String(digitalRead(REED_PIN_SOUND1) == LOW ? "true" : "false") + "}";
-  j += ",{\"pin\":" + String(REED_PIN_SOUND2) + ",\"label\":\"sound2\",\"closed\":" + String(digitalRead(REED_PIN_SOUND2) == LOW ? "true" : "false") + "}";
+  j += "{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Motorsound (Toggle)\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
+  j += ",{\"pin\":" + String(REED_PIN_SOUNDS) + ",\"label\":\"sound1/sound2 (kurz/lang)\",\"closed\":" + String(digitalRead(REED_PIN_SOUNDS) == LOW ? "true" : "false") + "}";
   j += "]}";
 #else
   j += ",\"reed\":{\"enabled\":false}";

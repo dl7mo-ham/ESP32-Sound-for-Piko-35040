@@ -1,75 +1,137 @@
 /*
  * reed_trigger.cpp  -  Soundmodul Mini
  *
- * Reed-Kontakt-Eingänge auf IO5 (sound2) und IO6 (sound1).
+ * Reed-Kontakt-Eingänge:
+ *   IO6: Motorsound (start/loop/shut) an- bzw. ausschalten (Toggle per Impuls)
+ *   IO5: Zusatzsound:
+ *          - Kurzer Impuls (< 800 ms)   -> sound1.wav
+ *          - Langer Impuls (>= 800 ms)  -> sound2.wav
+ *
  * Nur aktiv wenn REED_TRIGGER_ENABLED in reed_trigger.h definiert ist.
- * Keinerlei Abhängigkeit von CRSF oder anderen Modulen.
  */
 
 #include "reed_trigger.h"
 
 #ifdef REED_TRIGGER_ENABLED
 
-// ── Interner Zustand (je Kanal) ──────────────────────────────────────────
-struct ReedChannel {
+// ── Interner Zustand IO6 (Motorsound Toggle) ──────────────────────────────
+struct ReedMotorChannel {
     uint8_t  pin;
-    uint8_t  soundIdx;       // Index in Sound_on_web[] (1 oder 2)
-    bool     lastState;      // letzter entprellter Pegel
-    bool     rawLast;        // vorheriger Rohpegel (für Flankendetekt)
-    uint32_t lastChangeMs;   // Zeitpunkt des letzten Pegelwechsels (Entprellung)
-    uint32_t lastTriggerMs;  // Zeitpunkt des letzten Triggers (Retrigger-Schutz)
+    bool     stableState;
+    bool     rawLast;
+    uint32_t lastChangeMs;
+    uint32_t lastTriggerMs;
 };
 
-static ReedChannel channels[2] = {
-    { REED_PIN_SOUND1, 1, HIGH, HIGH, 0, 0 },
-    { REED_PIN_SOUND2, 2, HIGH, HIGH, 0, 0 },
+// ── Interner Zustand IO5 (Sound 1 kurz / Sound 2 lang) ────────────────────
+struct ReedSoundsChannel {
+    uint8_t  pin;
+    bool     stableState;
+    bool     rawLast;
+    uint32_t lastChangeMs;
+    uint32_t pressStartMs;
+    bool     isPressed;
+    bool     longTriggered;
+    uint32_t lastTriggerMs;
 };
+
+static ReedMotorChannel  motorCh  = { REED_PIN_MOTOR,  HIGH, HIGH, 0, 0 };
+static ReedSoundsChannel soundsCh = { REED_PIN_SOUNDS, HIGH, HIGH, 0, 0, false, false, 0 };
 
 // ── reedTriggerBegin() ───────────────────────────────────────────────────
 void reedTriggerBegin() {
-    for (auto& ch : channels) {
-        pinMode(ch.pin, INPUT_PULLUP);
-        ch.lastState    = HIGH;
-        ch.rawLast      = HIGH;
-        ch.lastChangeMs = millis();
-        ch.lastTriggerMs = 0;
-        Serial.printf("[Reed] IO%d -> sound%d.wav (INPUT_PULLUP)\n",
-                      ch.pin, ch.soundIdx);
-    }
+    pinMode(motorCh.pin, INPUT_PULLUP);
+    motorCh.stableState   = HIGH;
+    motorCh.rawLast       = HIGH;
+    motorCh.lastChangeMs  = millis();
+    motorCh.lastTriggerMs = 0;
+
+    pinMode(soundsCh.pin, INPUT_PULLUP);
+    soundsCh.stableState   = HIGH;
+    soundsCh.rawLast       = HIGH;
+    soundsCh.lastChangeMs  = millis();
+    soundsCh.pressStartMs  = 0;
+    soundsCh.isPressed     = false;
+    soundsCh.longTriggered = false;
+    soundsCh.lastTriggerMs = 0;
+
+    Serial.printf("[Reed] IO%d -> Motorsound Toggle (INPUT_PULLUP)\n", motorCh.pin);
+    Serial.printf("[Reed] IO%d -> Kurz=sound1 / Lang(>=%u ms)=sound2 (INPUT_PULLUP)\n",
+                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
 }
 
 // ── reedTriggerUpdate() ──────────────────────────────────────────────────
-// Flankenbasierte Entprellung: ein Trigger wird ausgelöst, wenn der Pegel
-// nach REED_DEBOUNCE_MS stabil LOW ist (fallende Flanke nach Entprellzeit).
-void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size) {
+void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_motor) {
     uint32_t now = millis();
 
-    for (auto& ch : channels) {
-        if (ch.soundIdx >= array_size) continue;   // Sicherheitscheck
+    // ── 1. IO6: Motorsound Toggle ─────────────────────────────────────────
+    bool rawM = (bool)digitalRead(motorCh.pin);
+    if (rawM != motorCh.rawLast) {
+        motorCh.lastChangeMs = now;
+        motorCh.rawLast = rawM;
+    }
 
-        bool raw = (bool)digitalRead(ch.pin);      // HIGH = offen, LOW = Kontakt
-
-        // Flankendetekt: nur bei Pegelwechsel den Entprell-Timer neu starten
-        if (raw != ch.rawLast) {
-            ch.lastChangeMs = now;
-            ch.rawLast = raw;
-        }
-
-        // Entprellzeit abgewartet?
-        if ((now - ch.lastChangeMs) >= REED_DEBOUNCE_MS) {
-            bool stable = raw;
-
-            // Fallende Flanke (HIGH -> LOW) nach Entprellung = Reed-Impuls
-            if (stable == LOW && ch.lastState == HIGH) {
-                // Retrigger-Schutz: nicht schneller als REED_RETRIGGER_MS
-                if ((now - ch.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                    sound_on_web[ch.soundIdx] = true;
-                    ch.lastTriggerMs = now;
-                    Serial.printf("[Reed] IO%d ausgeloest -> sound%d\n",
-                                  ch.pin, ch.soundIdx);
+    if ((now - motorCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
+        if (rawM != motorCh.stableState) {
+            motorCh.stableState = rawM;
+            // Fallende Flanke (HIGH -> LOW): Reed-Kontakt geschlossen / Impuls
+            if (motorCh.stableState == LOW) {
+                if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                    sound_on_motor = !sound_on_motor;
+                    motorCh.lastTriggerMs = now;
+                    Serial.printf("[Reed] IO%d Impuls -> Motorsound %s\n",
+                                  motorCh.pin, sound_on_motor ? "EIN (Start->Loop)" : "AUS (Shut)");
                 }
             }
-            ch.lastState = stable;
+        }
+    }
+
+    // ── 2. IO5: sound1 (kurzer Puls) bzw. sound2 (langer Puls >= 800 ms) ──
+    if (array_size >= 3) {
+        bool rawS = (bool)digitalRead(soundsCh.pin);
+        if (rawS != soundsCh.rawLast) {
+            soundsCh.lastChangeMs = now;
+            soundsCh.rawLast = rawS;
+        }
+
+        if ((now - soundsCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
+            if (rawS != soundsCh.stableState) {
+                soundsCh.stableState = rawS;
+                if (soundsCh.stableState == LOW) {
+                    // Flanke HIGH -> LOW (Kontakt schließt)
+                    soundsCh.isPressed = true;
+                    soundsCh.pressStartMs = soundsCh.lastChangeMs;
+                    soundsCh.longTriggered = false;
+                } else {
+                    // Flanke LOW -> HIGH (Kontakt öffnet wieder)
+                    if (soundsCh.isPressed) {
+                        soundsCh.isPressed = false;
+                        if (!soundsCh.longTriggered) {
+                            // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> Kurzer Puls!
+                            uint32_t pressDuration = soundsCh.lastChangeMs - soundsCh.pressStartMs;
+                            if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                                sound_on_web[1] = true;
+                                soundsCh.lastTriggerMs = now;
+                                Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> sound1.wav\n",
+                                              soundsCh.pin, (unsigned)pressDuration);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Während Kontakt gehalten wird: Prüfung auf langen Puls (>= 800 ms)
+        if (soundsCh.isPressed && !soundsCh.longTriggered) {
+            if ((now - soundsCh.pressStartMs) >= REED_LONG_PRESS_MS) {
+                if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                    sound_on_web[2] = true;
+                    soundsCh.lastTriggerMs = now;
+                    soundsCh.longTriggered = true;
+                    Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> sound2.wav\n",
+                                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
+                }
+            }
         }
     }
 }
