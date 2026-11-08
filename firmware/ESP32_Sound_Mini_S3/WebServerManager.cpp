@@ -2386,7 +2386,7 @@ void WebServerManager::handleApiDebug() {
   // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
 #ifdef REED_TRIGGER_ENABLED
   j += ",\"reed\":{\"enabled\":true,\"pins\":[";
-  j += "{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Motorsound (Toggle)\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
+  j += "{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Motorsound (kurz) / LED (lang)\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
   j += ",{\"pin\":" + String(REED_PIN_SOUNDS) + ",\"label\":\"sound1/sound2 (kurz/lang)\",\"closed\":" + String(digitalRead(REED_PIN_SOUNDS) == LOW ? "true" : "false") + "}";
   j += "]}";
 #else

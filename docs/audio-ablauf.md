@@ -6,7 +6,7 @@
 CRSF-Bus (Port A)          Reed-Trigger (IO5/IO6)       Web / Lua-Menü
        │                          │                            │
   Config()                reedTriggerUpdate()           Sound_on_web[i]=true
-  wertet Kanäle aus        IO6: Motor Toggle              (einmaliger Trigger)
+  wertet Kanäle aus        IO6: Kurz Motor / Lang LED      (einmaliger Trigger)
        │                   IO5: Kurz sound1 / Lang sound2      │
   Sound_on[i] = true/false        │                            │
        └──────────────────────────┴────────────────────────────┘
@@ -194,7 +194,8 @@ loop()
   ├─ crsf.read_packets()               (Port A – entfällt bei REED_TRIGGER_ENABLED)
   │    └─► BUS_OK, channel_output[]
   ├─ reedTriggerUpdate()               (nur bei REED_TRIGGER_ENABLED)
-  │    └─► IO6: Sound_on_Motor Toggle, IO5: Sound_on_web[1/2] (kurz/lang)
+  │    └─► IO6: kurz Sound_on_Motor Toggle / lang LED Toggle,
+  │         IO5: Sound_on_web[1/2] (kurz/lang)
   ├─ uartPortsTelemetry() / updateLed()
   ├─ CRSF Lua-Menü (Read/Write/Command)
   ├─ saveConfigForce()                 (500ms nach letzter Änderung)

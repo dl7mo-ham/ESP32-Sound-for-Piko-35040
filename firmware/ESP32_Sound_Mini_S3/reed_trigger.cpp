@@ -2,7 +2,8 @@
  * reed_trigger.cpp  -  Soundmodul Mini
  *
  * Reed-Kontakt-Eingänge:
- *   IO6: Motorsound (start/loop/shut) an- bzw. ausschalten (Toggle per Impuls)
+ *   IO6: - Kurzer Impuls (< 800 ms)   -> Motorsound (start/loop/shut) togglen
+ *        - Langer Impuls (>= 800 ms)  -> Status-LED an- bzw. ausschalten
  *   IO5: Zusatzsound:
  *          - Kurzer Impuls (< 800 ms)   -> sound1.wav
  *          - Langer Impuls (>= 800 ms)  -> sound2.wav
@@ -14,12 +15,15 @@
 
 #ifdef REED_TRIGGER_ENABLED
 
-// ── Interner Zustand IO6 (Motorsound Toggle) ──────────────────────────────
+// ── Interner Zustand IO6 (kurz: Motor Toggle / lang: LED Toggle) ──────────
 struct ReedMotorChannel {
     uint8_t  pin;
     bool     stableState;
     bool     rawLast;
     uint32_t lastChangeMs;
+    uint32_t pressStartMs;
+    bool     isPressed;
+    bool     longTriggered;
     uint32_t lastTriggerMs;
 };
 
@@ -35,8 +39,15 @@ struct ReedSoundsChannel {
     uint32_t lastTriggerMs;
 };
 
-static ReedMotorChannel  motorCh  = { REED_PIN_MOTOR,  HIGH, HIGH, 0, 0 };
+static ReedMotorChannel  motorCh  = { REED_PIN_MOTOR,  HIGH, HIGH, 0, 0, false, false, 0 };
 static ReedSoundsChannel soundsCh = { REED_PIN_SOUNDS, HIGH, HIGH, 0, 0, false, false, 0 };
+
+// LED-Zustand im Reed-Modus (wird per langem IO6-Impuls getoggelt)
+static bool ledOn = false;
+
+static void writeLed() {
+    neopixelWrite(REED_PIN_LED, 0, ledOn ? REED_LED_BRIGHTNESS : 0, 0);   // gruen
+}
 
 // ── reedTriggerBegin() ───────────────────────────────────────────────────
 void reedTriggerBegin() {
@@ -44,7 +55,13 @@ void reedTriggerBegin() {
     motorCh.stableState   = HIGH;
     motorCh.rawLast       = HIGH;
     motorCh.lastChangeMs  = millis();
+    motorCh.pressStartMs  = 0;
+    motorCh.isPressed     = false;
+    motorCh.longTriggered = false;
     motorCh.lastTriggerMs = 0;
+
+    ledOn = false;
+    writeLed();
 
     pinMode(soundsCh.pin, INPUT_PULLUP);
     soundsCh.stableState   = HIGH;
@@ -55,7 +72,8 @@ void reedTriggerBegin() {
     soundsCh.longTriggered = false;
     soundsCh.lastTriggerMs = 0;
 
-    Serial.printf("[Reed] IO%d -> Motorsound Toggle (INPUT_PULLUP)\n", motorCh.pin);
+    Serial.printf("[Reed] IO%d -> Kurz=Motor Toggle / Lang(>=%u ms)=LED Toggle (INPUT_PULLUP)\n",
+                  motorCh.pin, (unsigned)REED_LONG_PRESS_MS);
     Serial.printf("[Reed] IO%d -> Kurz=sound1 / Lang(>=%u ms)=sound2 (INPUT_PULLUP)\n",
                   soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
 }
@@ -64,7 +82,7 @@ void reedTriggerBegin() {
 void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_motor) {
     uint32_t now = millis();
 
-    // ── 1. IO6: Motorsound Toggle ─────────────────────────────────────────
+    // ── 1. IO6: kurz = Motorsound Toggle, lang = LED Toggle ───────────────
     bool rawM = (bool)digitalRead(motorCh.pin);
     if (rawM != motorCh.rawLast) {
         motorCh.lastChangeMs = now;
@@ -74,14 +92,42 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
     if ((now - motorCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
         if (rawM != motorCh.stableState) {
             motorCh.stableState = rawM;
-            // Fallende Flanke (HIGH -> LOW): Reed-Kontakt geschlossen / Impuls
             if (motorCh.stableState == LOW) {
-                if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                    sound_on_motor = !sound_on_motor;
-                    motorCh.lastTriggerMs = now;
-                    Serial.printf("[Reed] IO%d Impuls -> Motorsound %s\n",
-                                  motorCh.pin, sound_on_motor ? "EIN (Start->Loop)" : "AUS (Shut)");
+                // Flanke HIGH -> LOW (Kontakt schliesst): Impuls beginnt
+                motorCh.isPressed     = true;
+                motorCh.pressStartMs  = motorCh.lastChangeMs;
+                motorCh.longTriggered = false;
+            } else {
+                // Flanke LOW -> HIGH (Kontakt oeffnet wieder)
+                if (motorCh.isPressed) {
+                    motorCh.isPressed = false;
+                    if (!motorCh.longTriggered) {
+                        // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> kurzer Puls!
+                        uint32_t pressDuration = motorCh.lastChangeMs - motorCh.pressStartMs;
+                        if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                            sound_on_motor = !sound_on_motor;
+                            motorCh.lastTriggerMs = now;
+                            Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> Motorsound %s\n",
+                                          motorCh.pin, (unsigned)pressDuration,
+                                          sound_on_motor ? "EIN (Start->Loop)" : "AUS (Shut)");
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    // Waehrend der Kontakt gehalten wird: langer Puls -> LED togglen
+    if (motorCh.isPressed && !motorCh.longTriggered) {
+        if ((now - motorCh.pressStartMs) >= REED_LONG_PRESS_MS) {
+            if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                ledOn = !ledOn;
+                writeLed();
+                motorCh.lastTriggerMs = now;
+                motorCh.longTriggered = true;
+                Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> LED %s\n",
+                              motorCh.pin, (unsigned)REED_LONG_PRESS_MS,
+                              ledOn ? "EIN" : "AUS");
             }
         }
     }
