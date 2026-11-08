@@ -1,5 +1,8 @@
 # Soundmodul Mini (S3)
 
+Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3 Mini (ESP32-S3FH4R2) und Verstärker MAX98357A,
+steuerbar via R/C Empfänger Piko 35040 und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3:
+
 Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM).
 Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-Sound-bidirectional_code), reduziert auf:
 
