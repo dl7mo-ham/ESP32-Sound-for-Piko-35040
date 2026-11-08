@@ -3,7 +3,7 @@
  *
  * Reed-Kontakt-Eingänge:
  *   IO6: - Kurzer Impuls (< 800 ms)   -> Motorsound (start/loop/shut) togglen
- *        - Langer Impuls (>= 800 ms)  -> Status-LED an- bzw. ausschalten
+ *        - Langer Impuls (>= 800 ms)  -> Flammen-LED an- bzw. ausschalten
  *   IO5: Zusatzsound:
  *          - Kurzer Impuls (< 800 ms)   -> sound1.wav
  *          - Langer Impuls (>= 800 ms)  -> sound2.wav
@@ -42,11 +42,41 @@ struct ReedSoundsChannel {
 static ReedMotorChannel  motorCh  = { REED_PIN_MOTOR,  HIGH, HIGH, 0, 0, false, false, 0 };
 static ReedSoundsChannel soundsCh = { REED_PIN_SOUNDS, HIGH, HIGH, 0, 0, false, false, 0 };
 
-// LED-Zustand im Reed-Modus (wird per langem IO6-Impuls getoggelt)
-static bool ledOn = false;
+// LED-Zustand im Reed-Modus (wird per langem IO6-Impuls getoggelt).
+// Statt statischem Gruen wird eine nicht-blockierende Flamme gerendert.
+static bool     ledOn       = false;
+static uint8_t  flameLevel  = 0;      // zuletzt geschriebene Helligkeit, 0 = aus
+static uint32_t flameLastMs = 0;
+static uint32_t flameRng    = 0x1D2C3B4Au;
 
-static void writeLed() {
-    neopixelWrite(REED_PIN_LED, 0, ledOn ? REED_LED_BRIGHTNESS : 0, 0);   // gruen
+static void updateFlame(uint32_t now) {
+    if (!ledOn) {
+        if (flameLevel) {
+            neopixelWrite(REED_PIN_LED, 0, 0, 0);
+            flameLevel = 0;
+        }
+        return;
+    }
+
+    if (flameLastMs && (now - flameLastMs) < REED_FLAME_INTERVAL_MS) return;
+    flameLastMs = now;
+
+    // Billiger xorshift-PRNG, kein random()/Seed noetig.
+    flameRng ^= flameRng << 13;
+    flameRng ^= flameRng >> 17;
+    flameRng ^= flameRng << 5;
+
+    uint8_t target = REED_FLAME_MIN_BRIGHTNESS +
+        (uint16_t)(uint8_t)flameRng *
+        (REED_LED_BRIGHTNESS - REED_FLAME_MIN_BRIGHTNESS) / 255;
+
+    // Traegheit: 2/3 alt + 1/3 neu -> organisches Flackern statt Stroboskop.
+    flameLevel = (uint8_t)(((uint16_t)flameLevel * 2u + target) / 3u);
+    if (flameLevel < REED_FLAME_MIN_BRIGHTNESS)
+        flameLevel = REED_FLAME_MIN_BRIGHTNESS;
+
+    uint8_t g = (uint16_t)flameLevel * REED_FLAME_GREEN_PCT / 100;
+    neopixelWrite(REED_PIN_LED, flameLevel, g, 0);   // warmes Orange
 }
 
 // ── reedTriggerBegin() ───────────────────────────────────────────────────
@@ -60,8 +90,10 @@ void reedTriggerBegin() {
     motorCh.longTriggered = false;
     motorCh.lastTriggerMs = 0;
 
-    ledOn = false;
-    writeLed();
+    ledOn       = false;
+    flameLevel  = 0;
+    flameLastMs = 0;
+    neopixelWrite(REED_PIN_LED, 0, 0, 0);
 
     pinMode(soundsCh.pin, INPUT_PULLUP);
     soundsCh.stableState   = HIGH;
@@ -81,6 +113,9 @@ void reedTriggerBegin() {
 // ── reedTriggerUpdate() ──────────────────────────────────────────────────
 void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_motor) {
     uint32_t now = millis();
+
+    // Flammen-Animation der Status-LED (laeuft unabhaengig von den Eingaengen)
+    updateFlame(now);
 
     // ── 1. IO6: kurz = Motorsound Toggle, lang = LED Toggle ───────────────
     bool rawM = (bool)digitalRead(motorCh.pin);
@@ -122,7 +157,6 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
         if ((now - motorCh.pressStartMs) >= REED_LONG_PRESS_MS) {
             if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
                 ledOn = !ledOn;
-                writeLed();
                 motorCh.lastTriggerMs = now;
                 motorCh.longTriggered = true;
                 Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> LED %s\n",

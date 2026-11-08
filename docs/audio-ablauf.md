@@ -194,7 +194,7 @@ loop()
   ├─ crsf.read_packets()               (Port A – entfällt bei REED_TRIGGER_ENABLED)
   │    └─► BUS_OK, channel_output[]
   ├─ reedTriggerUpdate()               (nur bei REED_TRIGGER_ENABLED)
-  │    └─► IO6: kurz Sound_on_Motor Toggle / lang LED Toggle,
+  │    └─► IO6: kurz Sound_on_Motor Toggle / lang LED-Toggle (Flammen-Effekt),
   │         IO5: Sound_on_web[1/2] (kurz/lang)
   ├─ uartPortsTelemetry() / updateLed()
   ├─ CRSF Lua-Menü (Read/Write/Command)

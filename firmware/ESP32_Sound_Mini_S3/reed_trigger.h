@@ -10,7 +10,7 @@
  * INPUT_PULLUP konfiguriert:
  *   IO6  -> Motorsound und LED:
  *             - kurzer Impuls (< 800 ms)   -> Motorsound (start, loop, shut) togglen
- *             - langer Impuls (>= 800 ms)  -> Status-LED an- bzw. ausschalten
+ *             - langer Impuls (>= 800 ms)  -> Flammen-LED an- bzw. ausschalten
  *   IO5  -> Zusatzsounds:
  *             - kurzer Impuls (< 800 ms)   -> sound1.wav
  *             - langer Impuls (>= 800 ms)  -> sound2.wav
@@ -47,7 +47,12 @@ static constexpr uint8_t  REED_PIN_SOUND2     = REED_PIN_SOUNDS; // Kompatibilit
 static constexpr uint32_t REED_DEBOUNCE_MS    = 50;   // Entprellzeit
 static constexpr uint32_t REED_LONG_PRESS_MS  = 800;  // Schwelle langer Impuls (ms)
 static constexpr uint32_t REED_RETRIGGER_MS   = 200;  // Mindestpause Retrigger
-static constexpr uint8_t  REED_LED_BRIGHTNESS = 40;   // Helligkeit der LED im Reed-Modus
+
+// Flammen-Effekt der Status-LED im Reed-Modus (per langem IO6-Impuls ein/aus)
+static constexpr uint8_t  REED_LED_BRIGHTNESS       = 40;  // Maximalhelligkeit
+static constexpr uint32_t REED_FLAME_INTERVAL_MS    = 33;  // ~30 fps
+static constexpr uint8_t  REED_FLAME_MIN_BRIGHTNESS = 10;  // Mindesthelligkeit
+static constexpr uint8_t  REED_FLAME_GREEN_PCT      = 25;  // 0=rot, 100=gruen -> 25 = warmes Orange
 
 // ── Schnittstelle ────────────────────────────────────────────────────────
 
