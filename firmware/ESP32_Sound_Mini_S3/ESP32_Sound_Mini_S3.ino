@@ -679,7 +679,8 @@ void loop() {
     if(currentTime<5000) return;
     for(uint8_t i=1;i<=RCSOUND_NUM_SOUNDS;i++) handleSound(i,Sounds[i]);
 
-    // Motor Toggle (nur im CRSF-Modus; im Reed-Modus steuert IO6 Sound_on_Motor direkt)
+    // Motor Toggle (nur im CRSF-Modus; im Reed-Modus toggelt ein doppelter
+    // IO6-Druck Sound_on_Motor direkt)
 #ifndef REED_TRIGGER_ENABLED
     if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
     else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;

@@ -80,6 +80,12 @@ struct ConfigData {
     // bleibt an; BOOT-Taste, manueller Schalter und Auto-Failsafe werden dann
     // uebersprungen. Default AN.
     bool     WifiAlwaysOn;
+
+    // Doppeldruck-Fenster der Reed-Kontakte IO5/IO6 in ms (Web-UI:
+    // Einstellungen -> Reed-Kontakte). Bestimmt, wie viel Zeit zwischen zwei
+    // Drucksignalen liegen darf, damit sie als Doppeldruck gelten.
+    // Default 600 ms, gueltig 100-2000 ms.
+    uint16_t ReedDoublePressMs;
 };
 
 extern ConfigData    config;

@@ -286,6 +286,21 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <select id="mkan-adr1"></select>
     </div>
   </div>
+  <!-- Reed-Kontakte IO5/IO6: Doppeldruck-Fenster. Nur sichtbar, wenn die
+       Firmware mit REED_TRIGGER_ENABLED gebaut wurde (cfg.reed.enabled,
+       siehe loadConfig()). Wirkt ohne Neustart. -->
+  <div class="card hidden" id="c-reed">
+    <div class="card-title">Reed-Kontakte (IO5 / IO6)</div>
+    <div class="row">
+      <span class="lbl">Doppeldruck-Fenster (ms)</span>
+      <input type="number" id="reed-dbl" min="100" max="2000" step="50" style="width:110px">
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-top:8px">
+      Zeit zwischen zwei Drucksignalen, damit sie als Doppeldruck gelten.
+      Groesser = mehr Zeit fuer den zweiten Druck, aber laengere Verzoegerung
+      beim Einzeldruck. Standard: 600 ms.
+    </div>
+  </div>
   <hr>
   <!-- Sound-Speicher: Flash (LittleFS), Platz aus /api/config. Das Mini
        hat keine SD-Karte (bis v0.03 Auswahl Auto/Flash/SD). -->
@@ -760,6 +775,12 @@ function loadConfig(){
     var s=cfg.settings;
     sv('mod-adr',s.modul_adr);
     sv('mkan-adr0',s.mkan_adr0); sv('mkan-adr1',s.mkan_adr1);
+    // Reed-Kontakte: Karte nur zeigen, wenn die Firmware den Reed-Modus
+    // enthaelt; das Doppeldruck-Fenster ist dort einstellbar.
+    var rd=cfg.reed;
+    var cr=document.getElementById('c-reed');
+    if(cr) cr.className='card'+((rd&&rd.enabled)?'':' hidden');
+    if(rd&&rd.double_press_ms!==undefined) sv('reed-dbl',rd.double_press_ms);
     // Port B/C laden: Options-Liste und Baudraten-Standardwerte kommen vom
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
@@ -910,7 +931,8 @@ function renderDbg(){
           rh += '<div class="row"><span class="lbl">IO' + p.pin + ' &rarr; ' + p.label + '</span><span class="badge ' + badgeCls + '">' + st + '</span></div>';
         });
       }
-      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO5: kurzer Puls (&lt; 800 ms) spielt Sound 1, langer Puls (&gt;= 800 ms) spielt Sound 2. IO6: kurzer Puls (&lt; 800 ms) schaltet den Motorsound ein bzw. aus, langer Puls (&gt;= 800 ms) schaltet die LED ein bzw. aus. Live-Aktualisierung alle 2 s.</div>';
+      var dbl=(dbg.reed.double_press_ms!==undefined)?dbg.reed.double_press_ms:(cfg.reed?cfg.reed.double_press_ms:'?');
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO6: kurzer Druck spielt Sound 1, Doppeldruck (innerhalb '+dbl+' ms) schaltet den Motorsound ein bzw. aus. IO5: kurzer Druck spielt Sound 2, Doppeldruck schaltet die LED ein bzw. aus. Live-Aktualisierung alle 2 s.</div>';
       rd.innerHTML=rh;
     }
   }
@@ -1134,6 +1156,9 @@ function saveSettings(){
     portb_role:gi('portb-mode'), portb_baud:gi('portb-baud'),
     portc_role:gi('portc-mode'), portc_baud:gi('portc-baud')
   };
+  // Nur senden, wenn der Reed-Modus aktiv ist - sonst wuerde das leere Feld
+  // bei jedem Speichern einen ungewollten Wert setzen.
+  if(cfg.reed&&cfg.reed.enabled) d.reed_double_press_ms=gi('reed-dbl');
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
     // Konfiguration serverseitig als "dirty", der eigentliche NVS-Schreib-
@@ -1242,7 +1267,10 @@ function importConfigRun(data){
     portc_baud:s.portc_baud,
     portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
-    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
+    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1,
+    // Reed-Doppeldruck-Fenster (Sicherungen vor dieser Version haben kein
+    // reed-Objekt - dann bleibt der gespeicherte Wert unveraendert).
+    reed_double_press_ms:(data.reed?data.reed.double_press_ms:undefined)
   });
 
   // Feldname-Stolperfalle: /api/config liefert Motor-throttle_mode als
@@ -1649,7 +1677,8 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_role, portb_baud, portc_role, portc_baud }
+//               portb_role, portb_baud, portc_role, portc_baud,
+//               reed_double_press_ms }
 //               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
@@ -1717,6 +1746,13 @@ void WebServerManager::handleApiConfigPost() {
       { config.sport_poll_id[0]=(uint8_t)strtol(tmp,nullptr,16); changed=true; }
     if (jsonGetStr(body, "poll_id1", tmp, sizeof(tmp)))
       { config.sport_poll_id[1]=(uint8_t)strtol(tmp,nullptr,16); changed=true; }
+  }
+
+  // Reed-Kontakte: Doppeldruck-Fenster (100-2000 ms). Wirkt ohne Neustart,
+  // da reed_trigger.cpp den Wert bei jeder Auswertung aus config liest.
+  if (jsonGetInt(body, "reed_double_press_ms", v)) {
+    config.ReedDoublePressMs = (uint16_t)constrain(v,100,2000);
+    changed = true;
   }
 
   // v7.16: nur noch markDirty() statt eines sofortigen, blockierenden
@@ -1795,6 +1831,15 @@ String WebServerManager::buildConfigJson() {
   snprintf(p0, sizeof(p0), "%02X", config.sport_poll_id[0]);
   snprintf(p1, sizeof(p1), "%02X", config.sport_poll_id[1]);
   j += "\"sport\":{\"poll_id0\":\"" + String(p0) + "\",\"poll_id1\":\"" + String(p1) + "\"},";
+
+  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und das
+  // Doppeldruck-Fenster (einstellbar in der Web-UI unter "Einstellungen").
+#ifdef REED_TRIGGER_ENABLED
+  j += "\"reed\":{\"enabled\":true,";
+#else
+  j += "\"reed\":{\"enabled\":false,";
+#endif
+  j += "\"double_press_ms\":" + String(config.ReedDoublePressMs) + "},";
 
   // WiFi
   j += "\"wifi\":{";
@@ -2385,9 +2430,9 @@ void WebServerManager::handleApiDebug() {
 
   // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
 #ifdef REED_TRIGGER_ENABLED
-  j += ",\"reed\":{\"enabled\":true,\"pins\":[";
-  j += "{\"pin\":" + String(REED_PIN_SOUNDS) + ",\"label\":\"Kurz: Sound 1 / Lang: Sound 2\",\"closed\":" + String(digitalRead(REED_PIN_SOUNDS) == LOW ? "true" : "false") + "}";
-  j += ",{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Kurz: Motorsound ein-/ausschalten / Lang: LED ein-/ausschalten\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
+  j += ",\"reed\":{\"enabled\":true,\"double_press_ms\":" + String(config.ReedDoublePressMs) + ",\"pins\":[";
+  j += "{\"pin\":" + String(REED_PIN_IO6) + ",\"label\":\"Kurz: Sound 1 / Doppelt: Motorsound ein-/ausschalten\",\"closed\":" + String(digitalRead(REED_PIN_IO6) == LOW ? "true" : "false") + "}";
+  j += ",{\"pin\":" + String(REED_PIN_IO5) + ",\"label\":\"Kurz: Sound 2 / Doppelt: LED ein-/ausschalten\",\"closed\":" + String(digitalRead(REED_PIN_IO5) == LOW ? "true" : "false") + "}";
   j += "]}";
 #else
   j += ",\"reed\":{\"enabled\":false}";

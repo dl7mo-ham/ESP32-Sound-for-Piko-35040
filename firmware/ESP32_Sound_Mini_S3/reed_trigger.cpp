@@ -1,48 +1,56 @@
 /*
  * reed_trigger.cpp  -  Soundmodul Mini
  *
- * Reed-Kontakt-Eingänge:
- *   IO6: - Kurzer Impuls (< 800 ms)   -> Motorsound (start/loop/shut) togglen
- *        - Langer Impuls (>= 800 ms)  -> Flammen-LED an- bzw. ausschalten
- *   IO5: Zusatzsound:
- *          - Kurzer Impuls (< 800 ms)   -> sound1.wav
- *          - Langer Impuls (>= 800 ms)  -> sound2.wav
+ * Reed-Kontakt-Eingänge (Piko 35040 sendet nur kurze Pulse):
+ *   IO6: - kurzer Druck      -> sound1.wav
+ *        - doppelter Druck   -> Motorsound (start/loop/shut) togglen
+ *   IO5: - kurzer Druck      -> sound2.wav
+ *        - doppelter Druck   -> Flammen-LED an- bzw. ausschalten
+ *
+ * Ein Einzeldruck wird erst nach Ablauf des Doppeldruck-Fensters
+ * (config.ReedDoublePressMs) ausgelöst, damit ein unmittelbar folgender
+ * zweiter Puls als Doppeldruck erkannt wird.
  *
  * Nur aktiv wenn REED_TRIGGER_ENABLED in reed_trigger.h definiert ist.
  */
 
 #include "reed_trigger.h"
+#include "config.h"
 
 #ifdef REED_TRIGGER_ENABLED
 
-// ── Interner Zustand IO6 (kurz: Motor Toggle / lang: LED Toggle) ──────────
-struct ReedMotorChannel {
-    uint8_t  pin;
-    bool     stableState;
-    bool     rawLast;
-    uint32_t lastChangeMs;
-    uint32_t pressStartMs;
-    bool     isPressed;
-    bool     longTriggered;
-    uint32_t lastTriggerMs;
+// Aktives Doppeldruck-Fenster. Der Wert ist in der Web-UI einstellbar und
+// wird ohne Neustart wirksam; bei ungueltigem/fehlendem Wert gilt die
+// Werkseinstellung.
+static uint32_t reedDoublePressMs() {
+    return config.ReedDoublePressMs >= 100
+        ? (uint32_t)config.ReedDoublePressMs
+        : REED_DOUBLE_PRESS_DEFAULT_MS;
+}
+
+// ── Ereignis eines Reed-Kanals ────────────────────────────────────────────
+enum ReedEvent : uint8_t {
+    REED_EVENT_NONE,
+    REED_EVENT_SINGLE,
+    REED_EVENT_DOUBLE
 };
 
-// ── Interner Zustand IO5 (Sound 1 kurz / Sound 2 lang) ────────────────────
-struct ReedSoundsChannel {
+// ── Interner Zustand eines Reed-Kanals ────────────────────────────────────
+struct ReedChannel {
     uint8_t  pin;
-    bool     stableState;
-    bool     rawLast;
-    uint32_t lastChangeMs;
-    uint32_t pressStartMs;
-    bool     isPressed;
-    bool     longTriggered;
-    uint32_t lastTriggerMs;
+    bool     stableState;     // entprellter Pegel
+    bool     rawLast;         // letzter Rohpegel
+    uint32_t lastChangeMs;    // letzte Rohpegel-Aenderung (Entprellung)
+    bool     isPressed;       // Kontakt aktuell geschlossen
+    bool     pressConsumed;   // aktueller Druck bereits als Doppeldruck verarbeitet
+    uint8_t  pressCount;      // 0 = nichts offen, 1 = wartet auf Doppeldruck
+    uint32_t firstPressMs;    // Loslassen des ersten Drucks im Fenster
 };
 
-static ReedMotorChannel  motorCh  = { REED_PIN_MOTOR,  HIGH, HIGH, 0, 0, false, false, 0 };
-static ReedSoundsChannel soundsCh = { REED_PIN_SOUNDS, HIGH, HIGH, 0, 0, false, false, 0 };
+static ReedChannel io6Ch = { REED_PIN_IO6, HIGH, HIGH, 0, false, false, 0, 0 };
+static ReedChannel io5Ch = { REED_PIN_IO5, HIGH, HIGH, 0, false, false, 0, 0 };
 
-// LED-Zustand im Reed-Modus (wird per langem IO6-Impuls getoggelt).
+// LED-Zustand im Reed-Modus (wird per doppeltem IO5-Druck getoggelt).
 // Statt statischem Gruen wird eine nicht-blockierende Flamme gerendert.
 static bool     ledOn       = false;
 static uint8_t  flameLevel  = 0;      // zuletzt geschriebene Helligkeit, 0 = aus
@@ -79,35 +87,89 @@ static void updateFlame(uint32_t now) {
     neopixelWrite(REED_PIN_LED, flameLevel, g, 0);   // warmes Orange
 }
 
+// ── Kanal entprellen und Einzel-/Doppeldruck erkennen ─────────────────────
+static ReedEvent updateChannel(ReedChannel& ch, uint32_t now) {
+    const uint32_t doublePressMs = reedDoublePressMs();
+    bool raw = (bool)digitalRead(ch.pin);
+    if (raw != ch.rawLast) {
+        ch.lastChangeMs = now;
+        ch.rawLast = raw;
+    }
+
+    ReedEvent event = REED_EVENT_NONE;
+
+    // Entprellte Flankenerkennung. Der Doppeldruck wird an der Flanke des
+    // zweiten Drucks erkannt; die Pulsdauer selbst spielt keine Rolle.
+    if ((now - ch.lastChangeMs) >= REED_DEBOUNCE_MS) {
+        if (raw != ch.stableState) {
+            ch.stableState = raw;
+            if (ch.stableState == LOW) {
+                // Kontakt schliesst.
+                ch.isPressed = true;
+                ch.pressConsumed = false;
+                if (ch.pressCount == 1) {
+                    if ((now - ch.firstPressMs) <= doublePressMs) {
+                        // Zweiter Druck innerhalb des Fensters -> Doppeldruck.
+                        ch.pressCount = 0;
+                        ch.pressConsumed = true;
+                        event = REED_EVENT_DOUBLE;
+                    } else {
+                        // Fenster war abgelaufen, der Einzeldruck wurde noch
+                        // nicht ausgeloest: jetzt nachholen und diesen Druck
+                        // als neuen Einzeldruck vormerken.
+                        ch.firstPressMs = now;
+                        event = REED_EVENT_SINGLE;
+                    }
+                }
+            } else {
+                // Kontakt oeffnet wieder.
+                ch.isPressed = false;
+                if (ch.pressConsumed) {
+                    ch.pressConsumed = false;   // Doppeldruck war schon erledigt
+                } else if (ch.pressCount == 0) {
+                    // Erster Druck: Fenster fuer einen moeglichen zweiten startet.
+                    ch.pressCount  = 1;
+                    ch.firstPressMs = now;
+                }
+            }
+        }
+    }
+
+    // Kein zweiter Druck innerhalb des Fensters -> Einzeldruck ausloesen.
+    if (event == REED_EVENT_NONE && ch.pressCount == 1 && !ch.isPressed &&
+        (now - ch.firstPressMs) >= doublePressMs) {
+        ch.pressCount = 0;
+        event = REED_EVENT_SINGLE;
+    }
+
+    return event;
+}
+
+static void channelBegin(ReedChannel& ch) {
+    pinMode(ch.pin, INPUT_PULLUP);
+    ch.stableState   = HIGH;
+    ch.rawLast       = HIGH;
+    ch.lastChangeMs  = millis();
+    ch.isPressed     = false;
+    ch.pressConsumed = false;
+    ch.pressCount    = 0;
+    ch.firstPressMs  = 0;
+}
+
 // ── reedTriggerBegin() ───────────────────────────────────────────────────
 void reedTriggerBegin() {
-    pinMode(motorCh.pin, INPUT_PULLUP);
-    motorCh.stableState   = HIGH;
-    motorCh.rawLast       = HIGH;
-    motorCh.lastChangeMs  = millis();
-    motorCh.pressStartMs  = 0;
-    motorCh.isPressed     = false;
-    motorCh.longTriggered = false;
-    motorCh.lastTriggerMs = 0;
+    channelBegin(io6Ch);
+    channelBegin(io5Ch);
 
     ledOn       = false;
     flameLevel  = 0;
     flameLastMs = 0;
     neopixelWrite(REED_PIN_LED, 0, 0, 0);
 
-    pinMode(soundsCh.pin, INPUT_PULLUP);
-    soundsCh.stableState   = HIGH;
-    soundsCh.rawLast       = HIGH;
-    soundsCh.lastChangeMs  = millis();
-    soundsCh.pressStartMs  = 0;
-    soundsCh.isPressed     = false;
-    soundsCh.longTriggered = false;
-    soundsCh.lastTriggerMs = 0;
-
-    Serial.printf("[Reed] IO%d -> Kurz=Motor Toggle / Lang(>=%u ms)=LED Toggle (INPUT_PULLUP)\n",
-                  motorCh.pin, (unsigned)REED_LONG_PRESS_MS);
-    Serial.printf("[Reed] IO%d -> Kurz=sound1 / Lang(>=%u ms)=sound2 (INPUT_PULLUP)\n",
-                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
+    Serial.printf("[Reed] IO%d -> kurz=sound1 / doppelt=Motorsound (INPUT_PULLUP)\n",
+                  io6Ch.pin);
+    Serial.printf("[Reed] IO%d -> kurz=sound2 / doppelt=LED (INPUT_PULLUP, Doppeldruck <= %u ms)\n",
+                  io5Ch.pin, (unsigned)reedDoublePressMs());
 }
 
 // ── reedTriggerUpdate() ──────────────────────────────────────────────────
@@ -117,102 +179,39 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
     // Flammen-Animation der Status-LED (laeuft unabhaengig von den Eingaengen)
     updateFlame(now);
 
-    // ── 1. IO6: kurz = Motorsound Toggle, lang = LED Toggle ───────────────
-    bool rawM = (bool)digitalRead(motorCh.pin);
-    if (rawM != motorCh.rawLast) {
-        motorCh.lastChangeMs = now;
-        motorCh.rawLast = rawM;
+    // ── 1. IO6: kurz = sound1, doppelt = Motorsound Toggle ────────────────
+    switch (updateChannel(io6Ch, now)) {
+        case REED_EVENT_SINGLE:
+            if (array_size >= 2) {
+                sound_on_web[1] = true;
+                Serial.printf("[Reed] IO%d Einzeldruck -> sound1.wav\n", io6Ch.pin);
+            }
+            break;
+        case REED_EVENT_DOUBLE:
+            sound_on_motor = !sound_on_motor;
+            Serial.printf("[Reed] IO%d Doppeldruck -> Motorsound %s\n",
+                          io6Ch.pin,
+                          sound_on_motor ? "EIN (Start->Loop)" : "AUS (Shut)");
+            break;
+        default:
+            break;
     }
 
-    if ((now - motorCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
-        if (rawM != motorCh.stableState) {
-            motorCh.stableState = rawM;
-            if (motorCh.stableState == LOW) {
-                // Flanke HIGH -> LOW (Kontakt schliesst): Impuls beginnt
-                motorCh.isPressed     = true;
-                motorCh.pressStartMs  = motorCh.lastChangeMs;
-                motorCh.longTriggered = false;
-            } else {
-                // Flanke LOW -> HIGH (Kontakt oeffnet wieder)
-                if (motorCh.isPressed) {
-                    motorCh.isPressed = false;
-                    if (!motorCh.longTriggered) {
-                        // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> kurzer Puls!
-                        uint32_t pressDuration = motorCh.lastChangeMs - motorCh.pressStartMs;
-                        if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                            sound_on_motor = !sound_on_motor;
-                            motorCh.lastTriggerMs = now;
-                            Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> Motorsound %s\n",
-                                          motorCh.pin, (unsigned)pressDuration,
-                                          sound_on_motor ? "EIN (Start->Loop)" : "AUS (Shut)");
-                        }
-                    }
-                }
+    // ── 2. IO5: kurz = sound2, doppelt = LED Toggle ───────────────────────
+    switch (updateChannel(io5Ch, now)) {
+        case REED_EVENT_SINGLE:
+            if (array_size >= 3) {
+                sound_on_web[2] = true;
+                Serial.printf("[Reed] IO%d Einzeldruck -> sound2.wav\n", io5Ch.pin);
             }
-        }
-    }
-
-    // Waehrend der Kontakt gehalten wird: langer Puls -> LED togglen
-    if (motorCh.isPressed && !motorCh.longTriggered) {
-        if ((now - motorCh.pressStartMs) >= REED_LONG_PRESS_MS) {
-            if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                ledOn = !ledOn;
-                motorCh.lastTriggerMs = now;
-                motorCh.longTriggered = true;
-                Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> LED %s\n",
-                              motorCh.pin, (unsigned)REED_LONG_PRESS_MS,
-                              ledOn ? "EIN" : "AUS");
-            }
-        }
-    }
-
-    // ── 2. IO5: sound1 (kurzer Puls) bzw. sound2 (langer Puls >= 800 ms) ──
-    if (array_size >= 3) {
-        bool rawS = (bool)digitalRead(soundsCh.pin);
-        if (rawS != soundsCh.rawLast) {
-            soundsCh.lastChangeMs = now;
-            soundsCh.rawLast = rawS;
-        }
-
-        if ((now - soundsCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
-            if (rawS != soundsCh.stableState) {
-                soundsCh.stableState = rawS;
-                if (soundsCh.stableState == LOW) {
-                    // Flanke HIGH -> LOW (Kontakt schließt)
-                    soundsCh.isPressed = true;
-                    soundsCh.pressStartMs = soundsCh.lastChangeMs;
-                    soundsCh.longTriggered = false;
-                } else {
-                    // Flanke LOW -> HIGH (Kontakt öffnet wieder)
-                    if (soundsCh.isPressed) {
-                        soundsCh.isPressed = false;
-                        if (!soundsCh.longTriggered) {
-                            // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> Kurzer Puls!
-                            uint32_t pressDuration = soundsCh.lastChangeMs - soundsCh.pressStartMs;
-                            if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                                sound_on_web[1] = true;
-                                soundsCh.lastTriggerMs = now;
-                                Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> sound1.wav\n",
-                                              soundsCh.pin, (unsigned)pressDuration);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Während Kontakt gehalten wird: Prüfung auf langen Puls (>= 800 ms)
-        if (soundsCh.isPressed && !soundsCh.longTriggered) {
-            if ((now - soundsCh.pressStartMs) >= REED_LONG_PRESS_MS) {
-                if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
-                    sound_on_web[2] = true;
-                    soundsCh.lastTriggerMs = now;
-                    soundsCh.longTriggered = true;
-                    Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> sound2.wav\n",
-                                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
-                }
-            }
-        }
+            break;
+        case REED_EVENT_DOUBLE:
+            ledOn = !ledOn;
+            Serial.printf("[Reed] IO%d Doppeldruck -> LED %s\n",
+                          io5Ch.pin, ledOn ? "EIN" : "AUS");
+            break;
+        default:
+            break;
     }
 }
 
