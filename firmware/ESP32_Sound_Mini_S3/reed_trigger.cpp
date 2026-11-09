@@ -1,19 +1,38 @@
 /*
  * reed_trigger.cpp  -  Soundmodul Mini
  *
- * Reed-Kontakt-Eingänge:
- *   IO6: - Kurzer Impuls (< 800 ms)   -> Motorsound (start/loop/shut) togglen
- *        - Langer Impuls (>= 800 ms)  -> Flammen-LED an- bzw. ausschalten
+ * Reed-Kontakt-Eingänge (Schwelle kurz/lang = config.ReedLongPressMs):
+ *   IO6: - Kurzer Impuls   -> Motorsound (start/loop/shut) togglen
+ *        - Langer Impuls  -> Flammen-LED an- bzw. ausschalten
  *   IO5: Zusatzsound:
- *          - Kurzer Impuls (< 800 ms)   -> sound1.wav
- *          - Langer Impuls (>= 800 ms)  -> sound2.wav
+ *          - Kurzer Impuls   -> sound1.wav
+ *          - Langer Impuls  -> sound2.wav
  *
  * Nur aktiv wenn REED_TRIGGER_ENABLED in reed_trigger.h definiert ist.
  */
 
 #include "reed_trigger.h"
+#include "config.h"
 
 #ifdef REED_TRIGGER_ENABLED
+
+// Aktive Zeitparameter aus der Konfiguration (Web-UI). Bei ungueltigen
+// Werten gilt die jeweilige Werkseinstellung.
+static uint32_t reedDebounceMs() {
+    return config.ReedDebounceMs >= 5
+        ? (uint32_t)config.ReedDebounceMs
+        : REED_DEBOUNCE_DEFAULT_MS;
+}
+static uint32_t reedLongPressMs() {
+    return config.ReedLongPressMs >= 100
+        ? (uint32_t)config.ReedLongPressMs
+        : REED_LONG_PRESS_DEFAULT_MS;
+}
+static uint32_t reedRetriggerMs() {
+    return config.ReedRetriggerMs <= 5000
+        ? (uint32_t)config.ReedRetriggerMs
+        : REED_RETRIGGER_DEFAULT_MS;
+}
 
 // ── Interner Zustand IO6 (kurz: Motor Toggle / lang: LED Toggle) ──────────
 struct ReedMotorChannel {
@@ -105,14 +124,17 @@ void reedTriggerBegin() {
     soundsCh.lastTriggerMs = 0;
 
     Serial.printf("[Reed] IO%d -> Kurz=Motor Toggle / Lang(>=%u ms)=LED Toggle (INPUT_PULLUP)\n",
-                  motorCh.pin, (unsigned)REED_LONG_PRESS_MS);
+                  motorCh.pin, (unsigned)reedLongPressMs());
     Serial.printf("[Reed] IO%d -> Kurz=sound1 / Lang(>=%u ms)=sound2 (INPUT_PULLUP)\n",
-                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
+                  soundsCh.pin, (unsigned)reedLongPressMs());
 }
 
 // ── reedTriggerUpdate() ──────────────────────────────────────────────────
 void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_motor) {
     uint32_t now = millis();
+    const uint32_t debounceMs  = reedDebounceMs();
+    const uint32_t longPressMs = reedLongPressMs();
+    const uint32_t retriggerMs = reedRetriggerMs();
 
     // Flammen-Animation der Status-LED (laeuft unabhaengig von den Eingaengen)
     updateFlame(now);
@@ -124,7 +146,7 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
         motorCh.rawLast = rawM;
     }
 
-    if ((now - motorCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
+    if ((now - motorCh.lastChangeMs) >= debounceMs) {
         if (rawM != motorCh.stableState) {
             motorCh.stableState = rawM;
             if (motorCh.stableState == LOW) {
@@ -137,9 +159,9 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
                 if (motorCh.isPressed) {
                     motorCh.isPressed = false;
                     if (!motorCh.longTriggered) {
-                        // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> kurzer Puls!
+                        // Losgelassen vor Ablauf von longPressMs -> kurzer Puls!
                         uint32_t pressDuration = motorCh.lastChangeMs - motorCh.pressStartMs;
-                        if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                        if ((now - motorCh.lastTriggerMs) >= retriggerMs) {
                             sound_on_motor = !sound_on_motor;
                             motorCh.lastTriggerMs = now;
                             Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> Motorsound %s\n",
@@ -154,13 +176,13 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
 
     // Waehrend der Kontakt gehalten wird: langer Puls -> LED togglen
     if (motorCh.isPressed && !motorCh.longTriggered) {
-        if ((now - motorCh.pressStartMs) >= REED_LONG_PRESS_MS) {
-            if ((now - motorCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+        if ((now - motorCh.pressStartMs) >= longPressMs) {
+            if ((now - motorCh.lastTriggerMs) >= retriggerMs) {
                 ledOn = !ledOn;
                 motorCh.lastTriggerMs = now;
                 motorCh.longTriggered = true;
                 Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> LED %s\n",
-                              motorCh.pin, (unsigned)REED_LONG_PRESS_MS,
+                              motorCh.pin, (unsigned)longPressMs,
                               ledOn ? "EIN" : "AUS");
             }
         }
@@ -174,7 +196,7 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
             soundsCh.rawLast = rawS;
         }
 
-        if ((now - soundsCh.lastChangeMs) >= REED_DEBOUNCE_MS) {
+        if ((now - soundsCh.lastChangeMs) >= debounceMs) {
             if (rawS != soundsCh.stableState) {
                 soundsCh.stableState = rawS;
                 if (soundsCh.stableState == LOW) {
@@ -187,9 +209,9 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
                     if (soundsCh.isPressed) {
                         soundsCh.isPressed = false;
                         if (!soundsCh.longTriggered) {
-                            // Losgelassen vor Ablauf von REED_LONG_PRESS_MS -> Kurzer Puls!
+                            // Losgelassen vor Ablauf von longPressMs -> Kurzer Puls!
                             uint32_t pressDuration = soundsCh.lastChangeMs - soundsCh.pressStartMs;
-                            if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+                            if ((now - soundsCh.lastTriggerMs) >= retriggerMs) {
                                 sound_on_web[1] = true;
                                 soundsCh.lastTriggerMs = now;
                                 Serial.printf("[Reed] IO%d kurzer Puls (%u ms) -> sound1.wav\n",
@@ -203,13 +225,13 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size, bool& sound_on_mo
 
         // Während Kontakt gehalten wird: Prüfung auf langen Puls (>= 800 ms)
         if (soundsCh.isPressed && !soundsCh.longTriggered) {
-            if ((now - soundsCh.pressStartMs) >= REED_LONG_PRESS_MS) {
-                if ((now - soundsCh.lastTriggerMs) >= REED_RETRIGGER_MS) {
+            if ((now - soundsCh.pressStartMs) >= longPressMs) {
+                if ((now - soundsCh.lastTriggerMs) >= retriggerMs) {
                     sound_on_web[2] = true;
                     soundsCh.lastTriggerMs = now;
                     soundsCh.longTriggered = true;
                     Serial.printf("[Reed] IO%d langer Puls (>= %u ms) -> sound2.wav\n",
-                                  soundsCh.pin, (unsigned)REED_LONG_PRESS_MS);
+                                  soundsCh.pin, (unsigned)longPressMs);
                 }
             }
         }

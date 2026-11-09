@@ -59,6 +59,9 @@ void Reset_all() {
     config.WifiAutoEnable      = false;
     config.WifiAutoTimeoutSec  = 60;
     config.WifiAlwaysOn        = true;
+    config.ReedDebounceMs      = 50;
+    config.ReedLongPressMs     = 800;
+    config.ReedRetriggerMs     = 200;
     configDirty = true;
 }
 
@@ -132,6 +135,9 @@ void loadConfig() {
     }
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
+    config.ReedDebounceMs         = (uint16_t)constrain(p.getInt("rddbt", 50),   5, 500);
+    config.ReedLongPressMs        = (uint16_t)constrain(p.getInt("rdlng", 800), 100, 5000);
+    config.ReedRetriggerMs        = (uint16_t)constrain(p.getInt("rdrtg", 200),   0, 5000);
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
     // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
     // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
@@ -178,6 +184,9 @@ void saveConfigForce() {
     }
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
+    p.putInt("rddbt",(int)config.ReedDebounceMs);
+    p.putInt("rdlng",(int)config.ReedLongPressMs);
+    p.putInt("rdrtg",(int)config.ReedRetriggerMs);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
     RcCommonSettings cs;
     configToCommon(cs);

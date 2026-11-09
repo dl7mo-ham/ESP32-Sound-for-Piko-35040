@@ -80,6 +80,12 @@ struct ConfigData {
     // bleibt an; BOOT-Taste, manueller Schalter und Auto-Failsafe werden dann
     // uebersprungen. Default AN.
     bool     WifiAlwaysOn;
+
+    // Zeitparameter der Reed-Kontakte IO5/IO6 (Web-UI: Einstellungen ->
+    // Reed-Kontakte). Werden ohne Neustart wirksam.
+    uint16_t ReedDebounceMs;    // Entprellzeit, Default 50 ms (5-500)
+    uint16_t ReedLongPressMs;   // Schwelle kurz/lang, Default 800 ms (100-5000)
+    uint16_t ReedRetriggerMs;   // Mindestpause zwischen Triggern, Default 200 ms (0-5000)
 };
 
 extern ConfigData    config;

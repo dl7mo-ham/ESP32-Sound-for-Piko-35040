@@ -286,6 +286,29 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <select id="mkan-adr1"></select>
     </div>
   </div>
+  <!-- Reed-Kontakte IO5/IO6: Zeitparameter. Nur sichtbar, wenn die Firmware
+       mit REED_TRIGGER_ENABLED gebaut wurde (cfg.reed.enabled, siehe
+       loadConfig()). Wirken ohne Neustart. -->
+  <div class="card hidden" id="c-reed">
+    <div class="card-title">Reed-Kontakte (IO5 / IO6)</div>
+    <div class="row">
+      <span class="lbl">Entprellzeit (ms)</span>
+      <input type="number" id="reed-dbt" min="5" max="500" step="5" style="width:110px">
+    </div>
+    <div class="row">
+      <span class="lbl">Lang-Puls ab (ms)</span>
+      <input type="number" id="reed-long" min="100" max="5000" step="50" style="width:110px">
+    </div>
+    <div class="row">
+      <span class="lbl">Retrigger-Pause (ms)</span>
+      <input type="number" id="reed-rtg" min="0" max="5000" step="50" style="width:110px">
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-top:8px">
+      Entprellzeit: kuerzere Pulse werden ignoriert. Lang-Puls ab: ab dieser
+      Dauer gilt der Kontakt als lang. Retrigger-Pause: Mindestabstand
+      zwischen zwei ausgeloesten Aktionen.
+    </div>
+  </div>
   <hr>
   <!-- Sound-Speicher: Flash (LittleFS), Platz aus /api/config. Das Mini
        hat keine SD-Karte (bis v0.03 Auswahl Auto/Flash/SD). -->
@@ -760,6 +783,16 @@ function loadConfig(){
     var s=cfg.settings;
     sv('mod-adr',s.modul_adr);
     sv('mkan-adr0',s.mkan_adr0); sv('mkan-adr1',s.mkan_adr1);
+    // Reed-Kontakte: Karte nur zeigen, wenn die Firmware den Reed-Modus
+    // enthaelt; die drei Zeitparameter sind dort einstellbar.
+    var rd=cfg.reed;
+    var cr=document.getElementById('c-reed');
+    if(cr) cr.className='card'+((rd&&rd.enabled)?'':' hidden');
+    if(rd&&rd.enabled){
+      sv('reed-dbt',rd.debounce_ms);
+      sv('reed-long',rd.long_press_ms);
+      sv('reed-rtg',rd.retrigger_ms);
+    }
     // Port B/C laden: Options-Liste und Baudraten-Standardwerte kommen vom
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
@@ -910,7 +943,10 @@ function renderDbg(){
           rh += '<div class="row"><span class="lbl">IO' + p.pin + ' &rarr; ' + p.label + '</span><span class="badge ' + badgeCls + '">' + st + '</span></div>';
         });
       }
-      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO5: kurzer Puls (&lt; 800 ms) spielt Sound 1, langer Puls (&gt;= 800 ms) spielt Sound 2. IO6: kurzer Puls (&lt; 800 ms) schaltet den Motorsound ein bzw. aus, langer Puls (&gt;= 800 ms) schaltet die LED ein bzw. aus. Live-Aktualisierung alle 2 s.</div>';
+      var lp=(dbg.reed.long_press_ms!==undefined)?dbg.reed.long_press_ms:'?';
+      var db=(dbg.reed.debounce_ms!==undefined)?dbg.reed.debounce_ms:'?';
+      var rt=(dbg.reed.retrigger_ms!==undefined)?dbg.reed.retrigger_ms:'?';
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO5: kurzer Puls (&lt; '+lp+' ms) spielt Sound 1, langer Puls (&gt;= '+lp+' ms) spielt Sound 2. IO6: kurzer Puls (&lt; '+lp+' ms) schaltet den Motorsound ein bzw. aus, langer Puls (&gt;= '+lp+' ms) schaltet die LED ein bzw. aus. Entprellung '+db+' ms, Retrigger-Pause '+rt+' ms. Live-Aktualisierung alle 2 s.</div>';
       rd.innerHTML=rh;
     }
   }
@@ -1134,6 +1170,13 @@ function saveSettings(){
     portb_role:gi('portb-mode'), portb_baud:gi('portb-baud'),
     portc_role:gi('portc-mode'), portc_baud:gi('portc-baud')
   };
+  // Nur senden, wenn der Reed-Modus aktiv ist - sonst wuerden die leeren
+  // Felder bei jedem Speichern ungewollte Werte setzen.
+  if(cfg.reed&&cfg.reed.enabled){
+    d.reed_debounce_ms=gi('reed-dbt');
+    d.reed_long_press_ms=gi('reed-long');
+    d.reed_retrigger_ms=gi('reed-rtg');
+  }
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
     // Konfiguration serverseitig als "dirty", der eigentliche NVS-Schreib-
@@ -1242,7 +1285,12 @@ function importConfigRun(data){
     portc_baud:s.portc_baud,
     portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
-    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
+    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1,
+    // Reed-Zeitparameter (Sicherungen vor dieser Version haben kein
+    // reed-Objekt - dann bleiben die gespeicherten Werte unveraendert).
+    reed_debounce_ms:(data.reed?data.reed.debounce_ms:undefined),
+    reed_long_press_ms:(data.reed?data.reed.long_press_ms:undefined),
+    reed_retrigger_ms:(data.reed?data.reed.retrigger_ms:undefined)
   });
 
   // Feldname-Stolperfalle: /api/config liefert Motor-throttle_mode als
@@ -1649,7 +1697,8 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_role, portb_baud, portc_role, portc_baud }
+//               portb_role, portb_baud, portc_role, portc_baud,
+//               reed_debounce_ms, reed_long_press_ms, reed_retrigger_ms }
 //               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
@@ -1717,6 +1766,21 @@ void WebServerManager::handleApiConfigPost() {
       { config.sport_poll_id[0]=(uint8_t)strtol(tmp,nullptr,16); changed=true; }
     if (jsonGetStr(body, "poll_id1", tmp, sizeof(tmp)))
       { config.sport_poll_id[1]=(uint8_t)strtol(tmp,nullptr,16); changed=true; }
+  }
+
+  // Reed-Kontakte: Zeitparameter (Web-UI unter "Einstellungen"). Wirken
+  // ohne Neustart, da reed_trigger.cpp sie bei jeder Auswertung aus config liest.
+  if (jsonGetInt(body, "reed_debounce_ms", v)) {
+    config.ReedDebounceMs = (uint16_t)constrain(v,5,500);
+    changed = true;
+  }
+  if (jsonGetInt(body, "reed_long_press_ms", v)) {
+    config.ReedLongPressMs = (uint16_t)constrain(v,100,5000);
+    changed = true;
+  }
+  if (jsonGetInt(body, "reed_retrigger_ms", v)) {
+    config.ReedRetriggerMs = (uint16_t)constrain(v,0,5000);
+    changed = true;
   }
 
   // v7.16: nur noch markDirty() statt eines sofortigen, blockierenden
@@ -1795,6 +1859,17 @@ String WebServerManager::buildConfigJson() {
   snprintf(p0, sizeof(p0), "%02X", config.sport_poll_id[0]);
   snprintf(p1, sizeof(p1), "%02X", config.sport_poll_id[1]);
   j += "\"sport\":{\"poll_id0\":\"" + String(p0) + "\",\"poll_id1\":\"" + String(p1) + "\"},";
+
+  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und die drei
+  // Zeitparameter (einstellbar in der Web-UI unter "Einstellungen").
+#ifdef REED_TRIGGER_ENABLED
+  j += "\"reed\":{\"enabled\":true,";
+#else
+  j += "\"reed\":{\"enabled\":false,";
+#endif
+  j += "\"debounce_ms\":"    + String(config.ReedDebounceMs)  + ",";
+  j += "\"long_press_ms\":"  + String(config.ReedLongPressMs) + ",";
+  j += "\"retrigger_ms\":"   + String(config.ReedRetriggerMs) + "},";
 
   // WiFi
   j += "\"wifi\":{";
@@ -2385,7 +2460,11 @@ void WebServerManager::handleApiDebug() {
 
   // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
 #ifdef REED_TRIGGER_ENABLED
-  j += ",\"reed\":{\"enabled\":true,\"pins\":[";
+  j += ",\"reed\":{\"enabled\":true,";
+  j += "\"debounce_ms\":"   + String(config.ReedDebounceMs)  + ",";
+  j += "\"long_press_ms\":" + String(config.ReedLongPressMs) + ",";
+  j += "\"retrigger_ms\":"  + String(config.ReedRetriggerMs) + ",";
+  j += "\"pins\":[";
   j += "{\"pin\":" + String(REED_PIN_SOUNDS) + ",\"label\":\"Kurz: Sound 1 / Lang: Sound 2\",\"closed\":" + String(digitalRead(REED_PIN_SOUNDS) == LOW ? "true" : "false") + "}";
   j += ",{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Kurz: Motorsound ein-/ausschalten / Lang: LED ein-/ausschalten\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
   j += "]}";

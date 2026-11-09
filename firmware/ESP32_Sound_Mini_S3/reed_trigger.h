@@ -23,9 +23,11 @@
  *   IO6  -> Motorsound (war PIN_CRSF_TX)
  *   IO5  -> sound1 / sound2 (war PIN_CRSF_RX)
  *
- * Entprellzeit: REED_DEBOUNCE_MS (Standard 50 ms)
- * Schwellwert langer Impuls: REED_LONG_PRESS_MS (Standard 800 ms)
- * Mindestpause zwischen Triggern: REED_RETRIGGER_MS (Standard 200 ms)
+ * Die drei Zeitparameter sind in der Web-UI unter "Einstellungen ->
+ * Reed-Kontakte" einstellbar und werden in config.Reed*Ms gespeichert:
+ *   Entprellzeit:                config.ReedDebounceMs    (Standard 50 ms)
+ *   Schwellwert langer Impuls:   config.ReedLongPressMs   (Standard 800 ms)
+ *   Mindestpause zwischen Triggern: config.ReedRetriggerMs (Standard 200 ms)
  */
 
 // ── Aktivierung ──────────────────────────────────────────────────────────
@@ -44,9 +46,11 @@ static constexpr uint8_t  REED_PIN_LED        = PIN_STATUS_LED;  // RGB-LED (WS2
 static constexpr uint8_t  REED_PIN_SOUND1     = REED_PIN_MOTOR;  // Kompatibilitaet
 static constexpr uint8_t  REED_PIN_SOUND2     = REED_PIN_SOUNDS; // Kompatibilitaet
 
-static constexpr uint32_t REED_DEBOUNCE_MS    = 50;   // Entprellzeit
-static constexpr uint32_t REED_LONG_PRESS_MS  = 800;  // Schwelle langer Impuls (ms)
-static constexpr uint32_t REED_RETRIGGER_MS   = 200;  // Mindestpause Retrigger
+// Werkseinstellungen; die aktiven Werte kommen aus config.Reed*Ms und sind
+// in der Web-UI unter "Einstellungen -> Reed-Kontakte" einstellbar.
+static constexpr uint32_t REED_DEBOUNCE_DEFAULT_MS   = 50;   // Entprellzeit
+static constexpr uint32_t REED_LONG_PRESS_DEFAULT_MS = 800;  // Schwelle langer Impuls (ms)
+static constexpr uint32_t REED_RETRIGGER_DEFAULT_MS  = 200;  // Mindestpause Retrigger
 
 // Flammen-Effekt der Status-LED im Reed-Modus (per langem IO6-Impuls ein/aus)
 static constexpr uint8_t  REED_LED_BRIGHTNESS       = 40;  // Maximalhelligkeit
