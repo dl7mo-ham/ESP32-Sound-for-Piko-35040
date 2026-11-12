@@ -29,9 +29,21 @@ jobs:
         run: sh "$RC_COMMON/tests/run_tests.sh"
 
   build-arduino:
-    name: Build firmware (Arduino, S3)
+    name: Build firmware (Arduino, ${{ matrix.board }})
     needs: rc-common
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ESP32-S3-Zero: 4 MB Flash, QSPI-PSRAM, Konsole ueber nativen USB
+          - board: S3
+            artifact: sound-mini-s3-firmware
+            fqbn: "esp32:esp32:esp32s3:CDCOnBoot=cdc,USBMode=hwcdc,FlashSize=4M,PartitionScheme=default,PSRAM=enabled"
+          # ESP32-C3 Pro Mini (v0.09): 4 MB Flash, kein PSRAM, Konsole ueber USB
+          - board: C3
+            artifact: sound-mini-c3-firmware
+            fqbn: "esp32:esp32:esp32c3:CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=default"
     steps:
       - uses: actions/checkout@v5
       - uses: arduino/setup-arduino-cli@v2
@@ -49,17 +61,17 @@ jobs:
       - name: Kompilieren
         run: |
           arduino-cli compile --warnings default \
-            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,USBMode=hwcdc,FlashSize=4M,PartitionScheme=default,PSRAM=enabled" \
+            --fqbn "${{ matrix.fqbn }}" \
             --output-dir build "$SKETCH"
           ls -l build
       - uses: actions/upload-artifact@v4
         with:
-          name: sound-mini-s3-firmware
+          name: ${{ matrix.artifact }}
           # *.ino.bin = OTA-Update, *.merged.bin = Komplett-Image ab 0x0 (USB)
           path: build/*.bin
 
   build-platformio:
-    name: Build firmware (PlatformIO, S3)
+    name: Build firmware (PlatformIO, S3 + C3)
     needs: rc-common
     runs-on: ubuntu-latest
     defaults:
@@ -73,4 +85,4 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
       - name: Build firmware
-        run: pio run
+        run: pio run -e s3 -e c3

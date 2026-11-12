@@ -1,6 +1,6 @@
-# Soundmodul Mini (S3)
+# Soundmodul Mini (S3 und C3)
 
-Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM).
+Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM). Seit v0.09 läuft derselbe Code auch auf dem **ESP32-C3 Pro Mini** (4 MB Flash, kein PSRAM), siehe [ESP32-C3 Pro Mini](#esp32-c3-pro-mini).
 Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-Sound-bidirectional_code), reduziert auf:
 
 - **Eingang:** nur CRSF (Port A), busbasiert
@@ -11,7 +11,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.08 (noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.09 (C3-Variante, noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -66,13 +66,16 @@ Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfig
    - PSRAM: **QSPI PSRAM**
 5. Hochladen
 
-Fertige Images baut die CI (GitHub Actions, Artefakt `sound-mini-s3-firmware`): `*.ino.bin` für das OTA-Update über die Weboberfläche, `*.merged.bin` als Komplett-Image ab Adresse 0x0 (z. B. mit https://espressif.github.io/esptool-js/).
+Für den **ESP32-C3 Pro Mini** dieselbe Skizze öffnen, nur andere Werkzeuge-Einstellungen: Board **ESP32C3 Dev Module**, USB CDC On Boot **Enabled**, Flash Size **4MB (32Mb)**, Partition Scheme wie oben. Die Pins wählt `pins.h` automatisch nach dem Board.
+
+Fertige Images baut die CI (GitHub Actions, Artefakte `sound-mini-s3-firmware` und `sound-mini-c3-firmware`): `*.ino.bin` für das OTA-Update über die Weboberfläche, `*.merged.bin` als Komplett-Image ab Adresse 0x0 (z. B. mit https://espressif.github.io/esptool-js/).
 
 ### PlatformIO (alternativ)
 
 ```bash
 cd firmware
-pio run                 # Firmware bauen
+pio run                 # Firmware bauen (S3)
+pio run -e c3           # Firmware für den ESP32-C3 Pro Mini
 pio run -t upload       # flashen
 pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ```
@@ -139,10 +142,28 @@ Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
 | Port C RX / TX | 44 / 43 |
 | Status-LED (WS2812 auf dem S3-Zero) | 21 |
 
+### ESP32-C3 Pro Mini
+
+Der MAX98357A wird **umgedreht** (Bauteilseite zum ESP) direkt auf die Versorgungsreihe gelötet. Header von hinten gesehen, USB oben: links 5V, GND, 3V3, IO4, IO3, IO2, IO1, IO0, rechts IO5, IO6, IO7, IO8, IO9, IO10, IO20, IO21. IO0 bleibt frei.
+
+| Funktion | GPIO |
+|---|---|
+| MAX98357A direkt auf 5V, GND, 3V3 (SD offen), IO4..IO1 | GAIN 4, DIN 3, BCLK 2, LRC 1 |
+| Port A CRSF RX / TX | 20 / 21 |
+| Port B RX / TX | 5 / 6 |
+| WLAN-Taste = BOOT-Taste | 9 |
+| Status-LED (vorläufig WS2812, am Board prüfen) | 8 |
+
+Unterschiede zum S3:
+- **Kein Port C**: Der C3 hat nur zwei Hardware-UARTs (Port A und Port B). Port B bleibt frei wählbar (CRSF, S.Port, GPS, Raw). Web-UI blendet Port C aus, im Lua-Menü steht „nicht vorhanden“.
+- **IO2 (BCLK)** ist ein Strapping-Pin und muss beim Start HIGH sein. Sicher ist ein 10k-Widerstand von IO2 nach 3V3.
+- Kein PSRAM, ein CPU-Kern. Sound-Speicher wie beim S3 (ca. 1,3 MB, rund 30 s bei 22050 Hz mono).
+
 ## Versionen
 
 | Version | Änderung |
 |---|---|
+| 0.09 | Zweites Board **ESP32-C3 Pro Mini** im selben Code (`pins.h` wählt nach dem Board in der Arduino IDE). C3: Port A auf UART0 (IO20/21), Port B auf IO5/6, kein Port C, Audio-Tasks ohne festen CPU-Kern, CI baut S3 und C3. Für den S3 ändert sich nichts. |
 | 0.08 | Sound-Speicher-Belegung wird aus den Dateien berechnet (4-KB-Blöcke plus Verwaltung) statt mit `LittleFS.usedBytes()`. Diese Bibliotheksfunktion ist nur eine obere Schätzung und zeigte im Web dauerhaft „100 %, frei 0,00 MB“, obwohl noch Platz frei war. Web und Lua zeigen jetzt denselben Wert. Der alte Bibliothekswert steht nur noch im seriellen Monitor. |
 | 0.07 | Web-Tab „Debug“: „WAV Dateien“ zeigt jetzt, ob die Datei im Flash liegt (mit Größe). Vorher stand bei Sound 1–4 „fehlt“, solange der Sound nicht gerade gespielt wurde. RAM-Zeile eindeutig (belegt, frei, min frei). Neue Karte „Dateien im Flash“ mit allen Dateien und Summe. |
 | 0.06 | Speicherbelegung: Firmware, Sounds (Flash), RAM und PSRAM im Web-Tab „Debug“ (Karte „Speicherbelegung“) und im Lua-Ordner „Speicher“ (Felder 53–57, nur Anzeige). Auf Hardware getestet (28.10.2026). |

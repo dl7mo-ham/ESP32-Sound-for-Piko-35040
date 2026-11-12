@@ -96,6 +96,14 @@ static SemaphoreHandle_t slotCountSem = nullptr;  // gefüllte Slots
 static SemaphoreHandle_t freeSlotSem = nullptr;   // freie Slots
 static TaskHandle_t i2sConsumerTaskHandle = nullptr;
 static TaskHandle_t i2sProducerTaskHandle = nullptr;
+// v0.09: Kern fuer die Audio-Tasks. S3 = Kern 1 (wie bisher), ESP32-C3 hat
+// nur einen Kern (0), Kern 1 wuerde dort beim Anlegen scheitern.
+#if CONFIG_FREERTOS_UNICORE || (portNUM_PROCESSORS < 2)
+#define AUDIO_TASK_CORE 0
+#else
+#define AUDIO_TASK_CORE 1
+#endif
+
 static volatile XT_I2S_Class *s_pI2SAudioInstance = nullptr;  // Pointer zur Instanz für Producer Task
 
 /**********************************************************************************************************************/
@@ -737,7 +745,7 @@ XT_I2S_Class::XT_I2S_Class(uint8_t LRCLKPin, uint8_t BCLKPin, uint8_t I2SOutPin,
             nullptr,
             2,
             &i2sConsumerTaskHandle,
-            1);
+            AUDIO_TASK_CORE);
     }
 
     // Producer Task: Füllt kontinuierlich den Ringbuffer
@@ -762,7 +770,7 @@ XT_I2S_Class::XT_I2S_Class(uint8_t LRCLKPin, uint8_t BCLKPin, uint8_t I2SOutPin,
             nullptr,
             2,
             &i2sProducerTaskHandle,
-            1);
+            AUDIO_TASK_CORE);
     }
 }
 
@@ -939,7 +947,7 @@ void XT_I2S_Class::StartSdReaderTask()
 {
     if (sdReaderTaskHandle == nullptr)
     {
-        xTaskCreatePinnedToCore(sdReaderTaskFn, "SDReader", 4096, nullptr, 1, &sdReaderTaskHandle, 1);
+        xTaskCreatePinnedToCore(sdReaderTaskFn, "SDReader", 4096, nullptr, 1, &sdReaderTaskHandle, AUDIO_TASK_CORE);
     }
 }
 

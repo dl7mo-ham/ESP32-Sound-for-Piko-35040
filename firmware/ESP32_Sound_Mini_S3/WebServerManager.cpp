@@ -4,6 +4,7 @@
 // String-Allokation pro Request.
 #include "WebServerManager.h"
 #include "config.h"
+#include "pins.h"          // v0.09: HAS_PORT_C
 #include <Arduino.h>
 #include "XT_I2S_Audio.h"
 #include "src/RC_Common/sport_lipo.h"
@@ -766,6 +767,8 @@ function loadConfig(){
     var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_role===0?' hidden':'');
     var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_role===0?' hidden':'');
     var pd=document.getElementById('portc-dup'); if(pd) pd.style.display=s.portc_dup?'block':'none';
+    // v0.09: ESP32-C3 hat keinen Port C -> Zeilen ausblenden
+    if(s.portc_present===0){ ['portc-mode','portc-baud'].forEach(function(id){var e=document.getElementById(id); if(e&&e.parentNode) e.parentNode.style.display='none';}); if(pd) pd.style.display='none'; }
     var si=document.getElementById('storage-info');
     if(si){
       var mb=function(b){return (b/1048576).toFixed(2)+' MB';};
@@ -1744,6 +1747,7 @@ String WebServerManager::buildConfigJson() {
   j += "\"portc_role\":" + String(config.PortC_Role) + ",";
   j += "\"portc_baud\":" + String(config.PortC_Baud) + ",";
   j += "\"portc_dup\":"  + String(PortC_Duplicate_boot ? 1 : 0) + ",";
+  j += "\"portc_present\":" + String(HAS_PORT_C ? 1 : 0) + ",";   // v0.09: C3 ohne Port C
   // Sound-Speicher (Flash): Zustand und Platz.
   j += "\"storage_active\":\""  + String(soundStoreName()) + "\",";
   j += "\"storage_ready\":"   + String(soundStoreReady() ? 1 : 0) + ",";
