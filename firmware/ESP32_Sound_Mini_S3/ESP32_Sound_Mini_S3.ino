@@ -82,7 +82,11 @@
 #include "sound_store.h"
 #include "mem_info.h"
 
-uint16_t Version = 9;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (9 -> "0.09")
+uint16_t Version = 10; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (10 -> "0.10")
+// v0.10: Lua: "Kanal Nr" (Motor, Sounds) und "Kanal Nr Speed" bleiben immer
+//        Zahlenfelder (bei Aus/Dauer gesperrt). Vorher wurden sie zum
+//        Info-Feld "Deaktiviert" und liessen sich nach Wechsel der Quelle
+//        (z. B. auf EK) erst nach Verlassen des Menues aendern.
 // v0.09: zweites Board ESP32-C3 Pro Mini (pins.h, Auswahl automatisch
 //        ueber das Board in der Arduino IDE). C3: Port A auf UART0,
 //        kein Port C (nur zwei UARTs), Audio-Tasks ohne festen Kern.
@@ -374,8 +378,16 @@ static void    luaSetSpdSrc(uint8_t, uint8_t v) {
     else config.Source_Speed_Sound_0 = 999;
     markDirty();
 }
+// Gesperrtes Kanal-Feld: bleibt ein Zahlenfeld mit festem Wert (min = max).
+// Wuerde es zum Info-Feld ("Deaktiviert"), laedt das ELRS-Lua-Skript es nach
+// einer Aenderung der Quelle nicht neu (es laedt nur Zahlen-/Auswahlfelder
+// nach) - der Kanal liess sich dann erst nach Verlassen des Menues aendern.
+static void luaLockChannel(LuaView& v) {
+    if (v.value < 1 || v.value > 16) v.value = 1;
+    v.min = v.max = v.value;
+}
 static void luaShowSpdChannel(uint8_t, LuaView& v, char*) {
-    if (!spdActive(config.Source_Speed_Sound_0)) { v.type = LUA_INFO; v.name = "Kanal Speed"; v.text = "Deaktiviert"; }
+    if (!spdActive(config.Source_Speed_Sound_0)) luaLockChannel(v);
 }
 static uint8_t luaGetSpdChannel(uint8_t)            { return (uint8_t)(config.Source_Speed_Sound_0 + 1); }
 static void    luaSetSpdChannel(uint8_t, uint8_t v) {
@@ -388,9 +400,7 @@ static void    luaSetSource(uint8_t s, uint8_t v)   { config.Source_Start_Sound[
 static void luaShowChannel(uint8_t s, LuaView& v, char*) {
     uint8_t t = einTyp(config.Source_Start_Sound[s]);
     if (t == 7 || t == 8) {
-        v.type = LUA_INFO;
-        if (s == 0) v.name = "Kanal EIN";
-        v.text = (t == 7) ? "Dauerbetrieb" : "Deaktiviert";
+        luaLockChannel(v);   // Dauerbetrieb/Aus: kein Kanal noetig
     } else {
         v.max = einMaxNr(t);
     }
