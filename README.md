@@ -159,6 +159,10 @@ Unterschiede zum S3:
 - **IO2 (BCLK)** ist ein Strapping-Pin und muss beim Start HIGH sein. Sicher ist ein 10k-Widerstand von IO2 nach 3V3.
 - Kein PSRAM, ein CPU-Kern. Sound-Speicher wie beim S3 (ca. 1,3 MB, rund 30 s bei 22050 Hz mono).
 
+Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führungsrohre im Deckel): STL, STEP und Quelle in [`hardware/gehaeuse-c3/`](hardware/gehaeuse-c3/README.md).
+
+![Gehäuse C3](hardware/gehaeuse-c3/gehaeuse_zu.png)
+
 ## Versionen
 
 | Version | Änderung |
@@ -175,7 +179,8 @@ Unterschiede zum S3:
 ## Ordner
 
 - `firmware/` PlatformIO-Projekt
-- `hardware/gehaeuse/` 3D-Druck-Gehäuse (STL, STEP, Quelle)
+- `hardware/gehaeuse/` 3D-Druck-Gehäuse S3 (STL, STEP, Quelle)
+- `hardware/gehaeuse-c3/` 3D-Druck-Gehäuse C3 (STL, STEP, Quelle)
 - `docs/` Projektbeschreibung, Projektplan, später Pinout und Changelog
 - `backups/` funktionierende Stände (nur lokal, nicht im Repo)
 
