@@ -1,5 +1,5 @@
 /*
-   Soundmodul Mini (ESP32-S3) - Soundmodul-Firmware fuer RC-Modelle
+   Soundmodul Mini (ESP32-S3 / ESP32-C3) - Soundmodul-Firmware fuer RC-Modelle
    PiperPilot
 
    Abgeleitet von ESP32-RC-Sound v7.19 (github.com/mnorden81/
@@ -27,7 +27,7 @@
    Siehe pins.h (vorlaeufig, wird in Schritt 5 am Board geprueft).
 
    ── Das Port-Modell ───────────────────────────────────────────────────
-   Port A = CRSF (Serial2), fest.
+   Port A = CRSF (Serial2, beim C3 Serial0), fest. Port C nur beim S3.
    Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART0 (Serial0).
             Rolle je Port waehlbar in Web UND CRSF/Lua-Menue (RC_Common,
             uart_roles.h): Aus, CRSF (Modulkette: der CRSF-Router reicht
@@ -83,7 +83,10 @@
 #include "mem_info.h"
 #include "reed_trigger.h"  // Reed-Kontakte auf IO5/IO6 (optional, siehe reed_trigger.h)
 
-uint16_t Version = 8;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (8 -> "0.08")
+uint16_t Version = 9;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (9 -> "0.09")
+// v0.09: zweites Board ESP32-C3 Pro Mini (pins.h, Auswahl automatisch
+//        ueber das Board in der Arduino IDE). C3: Port A auf UART0,
+//        kein Port C (nur zwei UARTs), Audio-Tasks ohne festen Kern.
 // v0.08: Belegung des Sound-Speichers selbst aus den Dateien berechnet
 //        (4-KB-Bloecke), statt LittleFS.usedBytes() - das zeigte im Web
 //        dauerhaft 100 %. Web und Lua zeigen denselben Wert.
@@ -128,9 +131,16 @@ uint32_t PortC_Baud_boot        = 9600;
 bool     PortC_Duplicate_boot   = false;   // Port C hatte dieselbe Rolle wie Port B -> aus
 // Port A (CRSF) belegt Serial2, Port B Serial1, Port C Serial0 (UART0,
 // frei, weil die Konsole ueber USB laeuft).
+// ESP32-C3 (v0.09): kein Serial2 -> Port A auf UART0, Port C entfaellt.
+#if defined(BOARD_C3_PRO_MINI)
+static HardwareSerial* const PORTA_SERIAL = &Serial0;
+static HardwareSerial* const PORTB_SERIAL = &Serial1;
+static HardwareSerial* const PORTC_SERIAL = nullptr;   // gibt es nicht
+#else
 static HardwareSerial* const PORTA_SERIAL = &Serial2;
 static HardwareSerial* const PORTB_SERIAL = &Serial1;
 static HardwareSerial* const PORTC_SERIAL = &Serial0;
+#endif
 // Port B und C fuer RC_Common (uart_ports.h)
 static UartPort uartPorts[2] = {
     {"Port B", PORTB_SERIAL, PIN_PORTB_RX, PIN_PORTB_TX, UROLE_OFF, 0, UROLE_OFF, false, false},
@@ -307,7 +317,7 @@ static LuaItem luaItems[CRSF_PARAM_COUNT + 1];   // + Root
 static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
 static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
-    snprintf(buf, LUA_VIEW_BUF, "%s Mini S3", versionString);
+    snprintf(buf, LUA_VIEW_BUF, "%s Mini " BOARD_SHORT, versionString);
     v.text = buf;
 }
 static void luaShowDeviceName(uint8_t, LuaView& v, char* buf) {
@@ -473,8 +483,15 @@ static void buildLuaMenu() {
     m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
     m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
     m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0);
+#if HAS_PORT_C
     m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
     m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1);
+#else
+    // ESP32-C3: kein Port C. Felder bleiben als Anzeige, damit die
+    // Feldnummern ohne Luecke bleiben.
+    m.info(45, SETTINGS_FI, "Port C", "nicht vorhanden (C3)");
+    m.info(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", "-");
+#endif
     m.select(46, SETTINGS_FI, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
     m.select(47, SETTINGS_FI, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
     m.u8(48, SETTINGS_FI, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
@@ -497,6 +514,17 @@ static void buildLuaMenu() {
 // Laeuft nur, wenn "WLAN dauerhaft an" AUS ist, und vor dem Reservieren
 // der Sound-Puffer, damit der AP auf einem freien Heap startet. Wer BOOT
 // schon beim Einschalten haelt, landet im Flash-Modus des ROM.
+// Blaues Blinken im WLAN-Fenster. Einfache LED (C3-Board ohne RGB-LED):
+// blinkt in ihrer eigenen Farbe.
+static void bootLedBlue(bool on) {
+#if STATUS_LED_WS2812
+    neopixelWrite(PIN_STATUS_LED, 0, 0, on ? 40 : 0);
+#else
+    pinMode(PIN_STATUS_LED, OUTPUT);
+    digitalWrite(PIN_STATUS_LED, (on == (bool)STATUS_LED_ACTIVE_HIGH) ? HIGH : LOW);
+#endif
+}
+
 static bool waitForWifiButton() {
     Serial.printf("WLAN-Taste: %u s lang BOOT druecken = WLAN an\n",
                   (unsigned)(WIFI_BUTTON_WINDOW_MS / 1000));
@@ -507,10 +535,10 @@ static bool waitForWifiButton() {
             delay(30);   // entprellen
             if (digitalRead(PIN_BOOT_BUTTON) == LOW) { pressed = true; break; }
         }
-        neopixelWrite(PIN_STATUS_LED, 0, 0, ((millis() - start) / 250) % 2 ? 40 : 0);
+        bootLedBlue(((millis() - start) / 250) % 2);
         delay(10);
     }
-    neopixelWrite(PIN_STATUS_LED, 0, 0, 0);
+    bootLedBlue(false);
     return pressed;
 }
 
@@ -578,9 +606,9 @@ void setup() {
     PortC_Duplicate_boot = uartPorts[1].duplicate;
 
     buildLuaMenu();
-    statusLed.begin(PIN_STATUS_LED, true);
+    statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
     Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
-    Serial.printf("Soundmodul Mini %s (ESP32-S3)\n", versionString);
+    Serial.printf("Soundmodul Mini %s (" BOARD_NAME ")\n", versionString);
 }
 
 // Auto-WLAN-Failsafe: schaltet das WLAN ein, wenn eine Zeit lang kein

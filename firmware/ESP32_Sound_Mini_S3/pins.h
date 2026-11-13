@@ -2,6 +2,80 @@
 #define PINS_H
 
 /*
+ * v0.09: Zwei Boards, ein Code. Welcher Block gilt, entscheidet das in der
+ * Arduino IDE gewaehlte Board automatisch:
+ *   "ESP32S3 Dev Module"  -> ESP32-S3-Zero (Block unten, wie bisher)
+ *   "ESP32C3 Dev Module"  -> ESP32-C3 Pro Mini (Block BOARD_C3_PRO_MINI)
+ */
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define BOARD_C3_PRO_MINI 1
+#define BOARD_NAME "ESP32-C3"
+#define BOARD_SHORT "C3"
+
+/*
+ * ESP32-C3 Pro Mini (ESP32-C3, 4 MB Flash, kein PSRAM, ein Kern)
+ *
+ * Header von hinten gesehen, USB oben:
+ *   links  (Versorgungsreihe): 5V, GND, 3V3, IO4, IO3, IO2, IO1, IO0
+ *   rechts:                    IO5, IO6, IO7, IO8, IO9, IO10, IO20, IO21
+ *
+ * Der MAX98357A wird UMGEDREHT (Bauteilseite zum ESP) direkt auf die
+ * Versorgungsreihe geloetet, IO0 bleibt frei:
+ *   VIN-5V, GND-GND, SD offen (3V3 nicht geloetet), GAIN-IO4, DIN-IO3,
+ *   BCLK-IO2, LRC-IO1
+ *
+ * Auswahlregeln fuer den ESP32-C3:
+ *   - GPIO 2, 8, 9 sind Strapping-Pins und muessen beim Start HIGH sein.
+ *     IO2 (BCLK) ist ein Eingang am MAX, der interne Pull-up reicht meist;
+ *     sicher ist ein 10k-Widerstand IO2 -> 3V3.
+ *   - GPIO 9 ist die BOOT-Taste (WLAN-Taste nach dem Start)
+ *   - GPIO 18/19 sind der native USB-Anschluss (Konsole)
+ *   - nur zwei Hardware-UARTs: Port A (UART0) und Port B (UART1).
+ *     Port C gibt es auf dem C3 nicht.
+ *   - keine SD-Karte (Sounds und Backups im Flash)
+ */
+
+// ── I2S-Verstaerker (MAX98357A) ──────────────────────────────────────
+#define PIN_I2S_DOUT  3
+#define PIN_I2S_BCLK  2    // Strapping-Pin, beim Start HIGH (10k nach 3V3 empfohlen)
+#define PIN_I2S_LRC   1
+#define PIN_MAX_GAIN  4    // offen = 9 dB
+
+// ── Port A: CRSF (Hardware-UART0, Serial0) ───────────────────────────
+// IO20/21 sind die RX/TX-Pins des C3. Das ROM-Bootlog auf IO21 (nur beim
+// Start) wird von CRSF-Geraeten verworfen.
+#define PIN_CRSF_RX   20
+#define PIN_CRSF_TX   21
+
+// ── Port B: Hardware-UART1 (Serial1), Rolle waehlbar ─────────────────
+#define PIN_PORTB_RX  5
+#define PIN_PORTB_TX  6
+
+// ── Port C: gibt es auf dem C3 nicht (nur zwei UARTs) ────────────────
+#define HAS_PORT_C    0
+#define PIN_PORTC_RX  0xFF
+#define PIN_PORTC_TX  0xFF
+
+// ── BOOT-Taste (GPIO9, Pull-up auf dem Board) ────────────────────────
+#define PIN_BOOT_BUTTON 9
+#define WIFI_BUTTON_WINDOW_MS 3000
+
+// ── Status-LED ───────────────────────────────────────────────────────
+// VORLAEUFIG, bitte am Board pruefen: RGB-LED (WS2812) an GPIO8. Hat das
+// Board nur eine einfache LED, STATUS_LED_WS2812 auf 0 setzen
+// (STATUS_LED_ACTIVE_HIGH: 1 = LED leuchtet bei HIGH, 0 = bei LOW).
+#define PIN_STATUS_LED         8
+#define STATUS_LED_WS2812      1
+#define STATUS_LED_ACTIVE_HIGH 0
+
+#else  // ── ESP32-S3-Zero ─────────────────────────────────────────────
+#define BOARD_NAME "ESP32-S3"
+#define BOARD_SHORT "S3"
+#define HAS_PORT_C 1
+#define STATUS_LED_WS2812      1
+#define STATUS_LED_ACTIVE_HIGH 1
+
+/*
  * pins.h  -  Soundmodul Mini (ESP32-S3-Zero)
  *
  * Alle GPIOs an EINER Stelle. VORLAEUFIG: das endgueltige Pinout wird in
@@ -58,5 +132,7 @@
 // GPS und CRSF-Geraeten verworfen.
 #define PIN_PORTC_RX  44
 #define PIN_PORTC_TX  43
+
+#endif // Board
 
 #endif // PINS_H
