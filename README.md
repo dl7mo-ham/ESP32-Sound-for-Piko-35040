@@ -1,7 +1,30 @@
 # Soundmodul Mini (S3 und C3)
 
+## Eigene Ergänzungen für Piko 35040
+
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3:
+
+**Aktuelle Version in diesem Repo:** v0.12 (Reed-Modus: einfache Impulse für IO5/IO6, Motorsound und Flammen-LED über Web-UI; übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+
+### Reed-Betrieb (Piko 35040)
+
+![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
+
+Mit `REED_TRIGGER_ENABLED` (Standard) werden IO5 und IO6 als Reed-/Tasteneingänge genutzt statt CRSF. Beide reagieren nur auf einfache Impulse:
+
+| Eingang | Impuls | Aktion |
+|---|---|---|
+| IO6 | einfach | `sound1.wav` (Sound 1) |
+| IO5 | einfach | `sound2.wav` (Sound 2) |
+
+Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Entprellzeit und Retrigger-Pause stehen unter „Einstellung → Reed-Kontakte“.
+
+Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO7/IO8 zu schalten. Dafür muss die Rolle von Port B auf „Aus“ stehen, da IO7/IO8 sonst als UART-Pins belegt sind.
+
+---
+
+*Ab hier folgt die unveränderte README des Upstream-Projekts.*
 
 Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM). Seit v0.09 läuft derselbe Code auch auf dem **ESP32-C3 Pro Mini** (4 MB Flash, kein PSRAM), siehe [ESP32-C3 Pro Mini](#esp32-c3-pro-mini).
 Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-Sound-bidirectional_code), reduziert auf:
@@ -14,7 +37,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.12 (Reed-Modus: einfache Impulse für IO5/IO6, Motorsound und Flammen-LED über Web-UI; übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.11 (übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -194,21 +217,6 @@ Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
 | WLAN-Taste = BOOT-Taste auf dem S3-Zero | 0 |
 | Port C RX / TX | 44 / 43 |
 | Status-LED (WS2812 auf dem S3-Zero) | 21 |
-
-![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
-
-### Reed-Betrieb (Piko 35040)
-
-Mit `REED_TRIGGER_ENABLED` (Standard) werden IO5 und IO6 als Reed-/Tasteneingänge genutzt statt CRSF. Beide reagieren nur auf einfache Impulse:
-
-| Eingang | Impuls | Aktion |
-|---|---|---|
-| IO6 | einfach | `sound1.wav` (Sound 1) |
-| IO5 | einfach | `sound2.wav` (Sound 2) |
-
-Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Entprellzeit und Retrigger-Pause stehen unter „Einstellung → Reed-Kontakte“.
-
-Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO7/IO8 zu schalten. Dafür muss die Rolle von Port B auf „Aus“ stehen, da IO7/IO8 sonst als UART-Pins belegt sind.
 
 ### ESP32-C3 Pro Mini
 
