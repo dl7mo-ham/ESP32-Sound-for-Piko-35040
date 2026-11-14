@@ -800,21 +800,26 @@ void loop() {
 // ======== Sound ======================================================
 void handleSound(uint8_t idx, XT_Wav_Class* snd) {
     if(!snd)return;
-    if(Sound_on[idx]||Sound_on_web[idx]){
+    // One-Shot-Trigger sofort verbrauchen - auch wenn der Sound bereits
+    // laeuft. Sonst bleibt Sound_on_web[idx] true, der Slot haengt nach dem
+    // Wiedergabe-Ende dauerhaft im "laeuft bereits"-Zweig und startet nie
+    // wieder (siehe docs/audio-ablauf.md).
+    bool webTrigger = Sound_on_web[idx];
+    Sound_on_web[idx] = false;
+    if(Sound_on[idx]||webTrigger){
         if(!Sound_play[idx]){
             Sound_play[idx]=true;
             snd->LoadWavFile();
             snd->Volume=config.Volumen_Sound[idx];
             if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;
             I2SAudio.Play(snd,true,config.Volumen_Sound[idx]);
-            Sound_on_web[idx]=false;
         }else{
             snd->Volume=config.Volumen_Sound[idx];
         }
     }else{
         snd->RepeatForever=false;
-        // Lautstaerke auch waehrend des Nachspielens aktualisieren (z.B.
-        // Web-Testbutton, der Sound_on_web sofort wieder zuruecksetzt).
+        // Lautstaerke auch waehrend des Nachspielens aktualisieren (der
+        // One-Shot-Trigger wird oben bereits verbraucht).
         if(Sound_play[idx]) snd->Volume=config.Volumen_Sound[idx];
         if(config.Mode_Sound[idx]==2&&Sound_play[idx])I2SAudio.Stop(snd);
         // testSoundActive (Lua "Test Sound") zuruecksetzen, sobald die

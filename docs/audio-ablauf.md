@@ -32,17 +32,19 @@ Web-Tab "Motor" (nur Reed-Modus)
 ```
 handleSound(i, &SoundX)
 │
-├─ Sound_on[i] || Sound_on_web[i] ?
+├─ webTrigger = Sound_on_web[i]
+├─ Sound_on_web[i] = false                  ← One-Shot immer zurücksetzen
+│
+├─ Sound_on[i] || webTrigger ?
 │   ├─ JA, noch nicht laufend (Sound_play[i]==false):
 │   │     SoundX.LoadWavFile()
 │   │     if Mode==Loop: SoundX.RepeatForever = true
 │   │     I2SAudio.Play(&SoundX)
 │   │     Sound_play[i] = true
-│   │     Sound_on_web[i] = false          ← One-Shot zurücksetzen
 │   │
 │   └─ JA, läuft bereits: nichts tun (läuft weiter)
 │
-└─ Sound_on[i] == false && Sound_on_web[i] == false ?
+└─ Sound_on[i] == false && webTrigger == false ?
     ├─ RepeatForever = false
     ├─ Mode==Tippbetrieb: I2SAudio.Stop(&SoundX)
     └─ SoundX.Playing == false && Sound_play[i] == true:
