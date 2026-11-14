@@ -82,7 +82,11 @@
 #include "sound_store.h"
 #include "mem_info.h"
 
-uint16_t Version = 10; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (10 -> "0.10")
+uint16_t Version = 11; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (11 -> "0.11")
+// v0.11: Lua uebersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):
+//        Chunk-Fix fuer lange Auswahlfelder (Port-Baudrate), Quelle bzw.
+//        Adresse in Ordnernamen, Kanal Nr bei Aus/Dauer, Kanal Speed bei
+//        Deaktiviert, Baudrate bei Port "Aus" und beim C3 Port C ausgeblendet.
 // v0.10: Lua: "Kanal Nr" (Motor, Sounds) und "Kanal Nr Speed" bleiben immer
 //        Zahlenfelder (bei Aus/Dauer gesperrt). Vorher wurden sie zum
 //        Info-Feld "Deaktiviert" und liessen sich nach Wechsel der Quelle
@@ -350,8 +354,30 @@ static void luaShowMemory(uint8_t a, LuaView& v, char* buf) {
     v.text = buf;
 }
 
+// v0.11: Quelle im Ordnernamen, z. B. "Sound 3 (L 5)", "Motor (Aus)" (wie ELRS
+// selbst, z. B. "TX Power (100mW)"). Das ELRS-Lua laedt den Ordner nach einer
+// Aenderung darin neu.
+static void luaSourceText(int cfg, char* out, size_t len) {
+    static const char* const N[] = {"L", "H", "EK", "MKan", "Dauer", "Aus"};
+    uint8_t sel = einSelVal(cfg);
+    if (sel > 5) sel = 5;
+    if (sel <= 3) snprintf(out, len, "%s %d", N[sel], einNr(cfg));
+    else          snprintf(out, len, "%s", N[sel]);
+}
 static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
-    snprintf(buf, LUA_VIEW_BUF, "Sound %d", s);
+    char src[12];
+    luaSourceText(config.Source_Start_Sound[s], src, sizeof(src));
+    snprintf(buf, LUA_VIEW_BUF, "Sound %d (%s)", s, src);
+    v.name = buf;
+}
+static void luaShowMotorFolder(uint8_t, LuaView& v, char* buf) {
+    char src[12];
+    luaSourceText(config.Source_Start_Sound[0], src, sizeof(src));
+    snprintf(buf, LUA_VIEW_BUF, "Motor (%s)", src);
+    v.name = buf;
+}
+static void luaShowSettingsFolder(uint8_t, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "Einstellungen (Adr %d)", (int)config.modul_adress);
     v.name = buf;
 }
 
@@ -382,9 +408,12 @@ static void    luaSetSpdSrc(uint8_t, uint8_t v) {
 // Wuerde es zum Info-Feld ("Deaktiviert"), laedt das ELRS-Lua-Skript es nach
 // einer Aenderung der Quelle nicht neu (es laedt nur Zahlen-/Auswahlfelder
 // nach) - der Kanal liess sich dann erst nach Verlassen des Menues aendern.
+// v0.11: zusaetzlich ausgeblendet (CRSF hidden, Typ bleibt Zahl). Ein Lua
+// ohne hidden-Unterstuetzung zeigt das gesperrte Feld wie bisher.
 static void luaLockChannel(LuaView& v) {
     if (v.value < 1 || v.value > 16) v.value = 1;
     v.min = v.max = v.value;
+    v.hidden = true;
 }
 static void luaShowSpdChannel(uint8_t, LuaView& v, char*) {
     if (!spdActive(config.Source_Speed_Sound_0)) luaLockChannel(v);
@@ -435,6 +464,11 @@ static void    luaSetPortRole(uint8_t a, uint8_t v) {
                   a ? 'C' : 'B', uartRoleName(v));
 }
 static uint8_t luaGetPortBaud(uint8_t a)            { return uartBaudToIndex(luaPortBaud(a)); }
+// v0.11: Baudrate nur bei aktivem Port sichtbar
+static void    luaViewPortBaud(uint8_t a, LuaView& v, char*) { if (uartRoleClamp(luaPortRole(a)) == 0) v.hidden = true; }
+#if !HAS_PORT_C
+static void    luaHideAlways(uint8_t, LuaView& v, char*) { v.hidden = true; }   // C3: kein Port C
+#endif
 static void    luaSetPortBaud(uint8_t a, uint8_t v) {
     luaPortBaud(a) = uartBaudFromIndex(v); markDirty();
     Serial.printf("!!! Port %c Baudrate -> %u (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",
@@ -461,7 +495,7 @@ static void buildLuaMenu() {
     m.folder(0, 0, "");
     m.info(1, 0, "Version", "")->view = luaShowVersion;
 
-    m.folder(2, 0, "Motor");
+    m.folder(2, 0, "Motor")->view = luaShowMotorFolder;
     m.select(3, 2, "Motor Mode", "Eine Richtung;Zwei Richtungen", luaGetThrottleMode, luaSetThrottleMode);
     m.select(4, 2, "Motor EIN Modus", "Normal;Toggle", luaGetToggle, luaSetToggle);
     m.select(5, 2, "Quelle Motor", EIN_SEL_STR, luaGetSource, luaSetSource, 0);
@@ -486,20 +520,20 @@ static void buildLuaMenu() {
         m.select(fi + 5, fi, "Test Sound", AUS_EIN, luaGetTest, luaSetTest, s);
     }
 
-    m.folder(SETTINGS_FI, 0, "Einstellungen");
+    m.folder(SETTINGS_FI, 0, "Einstellungen")->view = luaShowSettingsFolder;
     m.u8(40, SETTINGS_FI, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
     m.u8(41, SETTINGS_FI, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
     m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
     m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
-    m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0);
+    m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0)->view = luaViewPortBaud;
 #if HAS_PORT_C
     m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
-    m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1);
+    m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1)->view = luaViewPortBaud;
 #else
     // ESP32-C3: kein Port C. Felder bleiben als Anzeige, damit die
     // Feldnummern ohne Luecke bleiben.
-    m.info(45, SETTINGS_FI, "Port C", "nicht vorhanden (C3)");
-    m.info(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", "-");
+    m.info(45, SETTINGS_FI, "Port C", "nicht vorhanden (C3)")->view = luaHideAlways;
+    m.info(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", "-")->view = luaHideAlways;
 #endif
     m.select(46, SETTINGS_FI, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
     m.select(47, SETTINGS_FI, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
