@@ -5,6 +5,9 @@
  *   IO6 -> sound1.wav
  *   IO5 -> sound2.wav
  *
+ * Ein Trigger wird nur bei der schliessenden Flanke (HIGH -> LOW) nach
+ * abgelaufener Entprellzeit ausgeloest.
+ *
  * Nur aktiv wenn REED_TRIGGER_ENABLED in reed_trigger.h definiert ist.
  */
 
@@ -13,17 +16,12 @@
 
 #ifdef REED_TRIGGER_ENABLED
 
-// Aktive Zeitparameter aus der Konfiguration (Web-UI). Bei ungueltigen
-// Werten gilt die jeweilige Werkseinstellung.
+// Aktive Entprellzeit aus der Konfiguration (Web-UI). Bei ungueltigen
+// Werten gilt die Werkseinstellung.
 static uint32_t reedDebounceMs() {
     return config.ReedDebounceMs >= 5
         ? (uint32_t)config.ReedDebounceMs
         : REED_DEBOUNCE_DEFAULT_MS;
-}
-static uint32_t reedRetriggerMs() {
-    return config.ReedRetriggerMs <= 5000
-        ? (uint32_t)config.ReedRetriggerMs
-        : REED_RETRIGGER_DEFAULT_MS;
 }
 
 // ── Interner Zustand eines Reed-Kanals ───────────────────────────────────
@@ -33,12 +31,11 @@ struct ReedChannel {
     bool     stableState;
     bool     rawLast;
     uint32_t lastChangeMs;
-    uint32_t lastTriggerMs;
 };
 
 static ReedChannel channels[] = {
-    { REED_PIN_SOUND1, 1, HIGH, HIGH, 0, 0 },
-    { REED_PIN_SOUND2, 2, HIGH, HIGH, 0, 0 },
+    { REED_PIN_SOUND1, 1, HIGH, HIGH, 0 },
+    { REED_PIN_SOUND2, 2, HIGH, HIGH, 0 },
 };
 static constexpr uint8_t REED_CHANNEL_COUNT = sizeof(channels) / sizeof(channels[0]);
 
@@ -50,7 +47,6 @@ void reedTriggerBegin() {
         ch.stableState   = HIGH;
         ch.rawLast       = HIGH;
         ch.lastChangeMs  = millis();
-        ch.lastTriggerMs = 0;
         Serial.printf("[Reed] IO%d -> sound%d.wav (INPUT_PULLUP, Entprellung %u ms)\n",
                       ch.pin, (unsigned)ch.soundSlot, (unsigned)reedDebounceMs());
     }
@@ -59,8 +55,7 @@ void reedTriggerBegin() {
 // ── reedTriggerUpdate() ──────────────────────────────────────────────────
 void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size) {
     uint32_t now = millis();
-    const uint32_t debounceMs  = reedDebounceMs();
-    const uint32_t retriggerMs = reedRetriggerMs();
+    const uint32_t debounceMs = reedDebounceMs();
 
     for (uint8_t i = 0; i < REED_CHANNEL_COUNT; i++) {
         ReedChannel& ch = channels[i];
@@ -82,12 +77,9 @@ void reedTriggerUpdate(bool* sound_on_web, uint8_t array_size) {
         // Kein Loslass-Ereignis noetig, dadurch spielt der Sound schon
         // beim Schliessen und nicht erst beim Oeffnen des Kontakts.
         if (ch.stableState == LOW) {
-            if ((now - ch.lastTriggerMs) >= retriggerMs) {
-                sound_on_web[ch.soundSlot] = true;
-                ch.lastTriggerMs = now;
-                Serial.printf("[Reed] IO%d Impuls -> sound%d.wav\n",
-                              ch.pin, (unsigned)ch.soundSlot);
-            }
+            sound_on_web[ch.soundSlot] = true;
+            Serial.printf("[Reed] IO%d Impuls -> sound%d.wav\n",
+                          ch.pin, (unsigned)ch.soundSlot);
         }
     }
 }

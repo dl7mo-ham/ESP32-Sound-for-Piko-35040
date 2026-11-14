@@ -18,7 +18,7 @@ Mit `REED_TRIGGER_ENABLED` (Standard) werden IO5 und IO6 als Reed-/Tasteneingän
 | IO6 | einfach | `sound1.wav` (Sound 1) |
 | IO5 | einfach | `sound2.wav` (Sound 2) |
 
-Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Entprellzeit und Retrigger-Pause stehen unter „Einstellung → Reed-Kontakte“.
+Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Die Entprellzeit steht unter „Einstellung → Reed-Kontakte“.
 
 Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO7/IO8 zu schalten. Dafür muss die Rolle von Port B auf „Aus“ stehen, da IO7/IO8 sonst als UART-Pins belegt sind.
 

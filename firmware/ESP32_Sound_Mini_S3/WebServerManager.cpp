@@ -309,9 +309,9 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <select id="mkan-adr1"></select>
     </div>
   </div>
-  <!-- Reed-Kontakte IO5/IO6: Zeitparameter. Nur sichtbar, wenn die Firmware
+  <!-- Reed-Kontakte IO5/IO6: Entprellzeit. Nur sichtbar, wenn die Firmware
        mit REED_TRIGGER_ENABLED gebaut wurde (cfg.reed.enabled, siehe
-       loadConfig()). Wirken ohne Neustart.
+       loadConfig()). Wirkt ohne Neustart.
        IO6 spielt Sound 1, IO5 spielt Sound 2 (nur einfache Impulse). -->
   <div class="card hidden" id="c-reed">
     <div class="card-title">Reed-Kontakte (IO5 / IO6)</div>
@@ -319,14 +319,9 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <span class="lbl">Entprellzeit (ms)</span>
       <input type="number" id="reed-dbt" min="5" max="500" step="5" style="width:110px">
     </div>
-    <div class="row">
-      <span class="lbl">Retrigger-Pause (ms)</span>
-      <input type="number" id="reed-rtg" min="0" max="5000" step="50" style="width:110px">
-    </div>
     <div style="font-size:12px;color:var(--sub);margin-top:8px">
       IO6 spielt Sound 1, IO5 spielt Sound 2. Entprellzeit: kuerzere Pulse
-      werden ignoriert. Retrigger-Pause: Mindestabstand zwischen zwei
-      ausgeloesten Sounds. Motorsound und Flammen-LED stehen im Tab "Motor".
+      werden ignoriert. Motorsound und Flammen-LED stehen im Tab "Motor".
     </div>
   </div>
   <hr>
@@ -804,13 +799,12 @@ function loadConfig(){
     sv('mod-adr',s.modul_adr);
     sv('mkan-adr0',s.mkan_adr0); sv('mkan-adr1',s.mkan_adr1);
     // Reed-Kontakte: Karte nur zeigen, wenn die Firmware den Reed-Modus
-    // enthaelt; die beiden Zeitparameter sind dort einstellbar.
+    // enthaelt; die Entprellzeit ist dort einstellbar.
     var rd=cfg.reed;
     var cr=document.getElementById('c-reed');
     if(cr) cr.className='card'+((rd&&rd.enabled)?'':' hidden');
     if(rd&&rd.enabled){
       sv('reed-dbt',rd.debounce_ms);
-      sv('reed-rtg',rd.retrigger_ms);
     }
     // Direktsteuerung Motorsound/Flamme (Tab "Motor") nur im Reed-Modus.
     var cc=document.getElementById('c-reed-control');
@@ -969,10 +963,9 @@ function renderDbg(){
         });
       }
       var db=(dbg.reed.debounce_ms!==undefined)?dbg.reed.debounce_ms:'?';
-      var rt=(dbg.reed.retrigger_ms!==undefined)?dbg.reed.retrigger_ms:'?';
       rh += '<div class="row"><span class="lbl">Motorsound</span><span class="badge ' + (dbg.reed.motor_on?'bg-g':'bg-s') + '">' + (dbg.reed.motor_on?'EIN':'AUS') + '</span></div>';
       rh += '<div class="row"><span class="lbl">LED-Flamme</span><span class="badge ' + (dbg.reed.flame_on?'bg-g':'bg-s') + '">' + (dbg.reed.flame_on?'EIN':'AUS') + '</span></div>';
-      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO6: Impuls spielt Sound 1, IO5: Impuls spielt Sound 2. Motorsound und LED-Flamme werden im Tab "Motor" geschaltet. Entprellung '+db+' ms, Retrigger-Pause '+rt+' ms. Live-Aktualisierung alle 2 s.</div>';
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO6: Impuls spielt Sound 1, IO5: Impuls spielt Sound 2. Motorsound und LED-Flamme werden im Tab "Motor" geschaltet. Entprellung '+db+' ms. Live-Aktualisierung alle 2 s.</div>';
       rd.innerHTML=rh;
     }
   }
@@ -1218,7 +1211,6 @@ function saveSettings(){
   // Felder bei jedem Speichern ungewollte Werte setzen.
   if(cfg.reed&&cfg.reed.enabled){
     d.reed_debounce_ms=gi('reed-dbt');
-    d.reed_retrigger_ms=gi('reed-rtg');
   }
   xpost('/api/config',d,function(r){
     // Kein zusaetzliches /save noetig - handleApiConfigPost() markiert die
@@ -1329,10 +1321,9 @@ function importConfigRun(data){
     portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1,
-    // Reed-Zeitparameter (Sicherungen vor dieser Version haben kein
+    // Reed-Entprellzeit (Sicherungen vor dieser Version haben kein
     // reed-Objekt - dann bleiben die gespeicherten Werte unveraendert).
-    reed_debounce_ms:(data.reed?data.reed.debounce_ms:undefined),
-    reed_retrigger_ms:(data.reed?data.reed.retrigger_ms:undefined)
+    reed_debounce_ms:(data.reed?data.reed.debounce_ms:undefined)
   });
 
   // Feldname-Stolperfalle: /api/config liefert Motor-throttle_mode als
@@ -1742,7 +1733,7 @@ static String jsonEscape(const char* s) {
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
 //               portb_role, portb_baud, portc_role, portc_baud,
-//               reed_debounce_ms, reed_retrigger_ms }
+//               reed_debounce_ms }
 //               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
@@ -1812,14 +1803,10 @@ void WebServerManager::handleApiConfigPost() {
       { config.sport_poll_id[1]=(uint8_t)strtol(tmp,nullptr,16); changed=true; }
   }
 
-  // Reed-Kontakte: Zeitparameter (Web-UI unter "Einstellungen"). Wirken
+  // Reed-Kontakte: Entprellzeit (Web-UI unter "Einstellungen"). Wirkt
   // ohne Neustart, da reed_trigger.cpp sie bei jeder Auswertung aus config liest.
   if (jsonGetInt(body, "reed_debounce_ms", v)) {
     config.ReedDebounceMs = (uint16_t)constrain(v,5,500);
-    changed = true;
-  }
-  if (jsonGetInt(body, "reed_retrigger_ms", v)) {
-    config.ReedRetriggerMs = (uint16_t)constrain(v,0,5000);
     changed = true;
   }
 
@@ -1901,8 +1888,8 @@ String WebServerManager::buildConfigJson() {
   snprintf(p1, sizeof(p1), "%02X", config.sport_poll_id[1]);
   j += "\"sport\":{\"poll_id0\":\"" + String(p0) + "\",\"poll_id1\":\"" + String(p1) + "\"},";
 
-  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und die beiden
-  // Zeitparameter (einstellbar in der Web-UI unter "Einstellungen"). Dazu
+  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und die
+  // Entprellzeit (einstellbar in der Web-UI unter "Einstellungen"). Dazu
   // der aktuelle Zustand der Direktsteuerung (Tab "Motor").
 #ifdef REED_TRIGGER_ENABLED
   j += "\"reed\":{\"enabled\":true,";
@@ -1910,7 +1897,6 @@ String WebServerManager::buildConfigJson() {
   j += "\"reed\":{\"enabled\":false,";
 #endif
   j += "\"debounce_ms\":"    + String(config.ReedDebounceMs)  + ",";
-  j += "\"retrigger_ms\":"   + String(config.ReedRetriggerMs) + ",";
   j += "\"motor_on\":"       + String(motorSoundIsOn() ? "true" : "false") + ",";
   j += "\"flame_on\":"       + String(flameIsOn() ? "true" : "false")     + "},";
 
@@ -2506,7 +2492,6 @@ void WebServerManager::handleApiDebug() {
 #ifdef REED_TRIGGER_ENABLED
   j += ",\"reed\":{\"enabled\":true,";
   j += "\"debounce_ms\":"   + String(config.ReedDebounceMs)  + ",";
-  j += "\"retrigger_ms\":"  + String(config.ReedRetriggerMs) + ",";
   j += "\"motor_on\":"      + String(motorSoundIsOn() ? "true" : "false") + ",";
   j += "\"flame_on\":"      + String(flameIsOn() ? "true" : "false")     + ",";
   j += "\"pins\":[";

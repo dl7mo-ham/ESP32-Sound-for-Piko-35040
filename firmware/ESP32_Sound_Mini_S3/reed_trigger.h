@@ -25,10 +25,9 @@
  *   IO6  -> sound1.wav (war PIN_CRSF_TX)
  *   IO5  -> sound2.wav (war PIN_CRSF_RX)
  *
- * Die beiden Zeitparameter sind in der Web-UI unter "Einstellungen ->
- * Reed-Kontakte" einstellbar und werden in config.Reed*Ms gespeichert:
- *   Entprellzeit:                config.ReedDebounceMs    (Standard 50 ms)
- *   Mindestpause zwischen Triggern: config.ReedRetriggerMs (Standard 200 ms)
+ * Die Entprellzeit ist in der Web-UI unter "Einstellungen ->
+ * Reed-Kontakte" einstellbar und wird in config.ReedDebounceMs gespeichert
+ * (Standard 50 ms).
  */
 
 // ── Aktivierung ──────────────────────────────────────────────────────────
@@ -43,10 +42,9 @@
 static constexpr uint8_t  REED_PIN_SOUND1 = 6;    // IO6 -> sound1.wav
 static constexpr uint8_t  REED_PIN_SOUND2 = 5;    // IO5 -> sound2.wav
 
-// Werkseinstellungen; die aktiven Werte kommen aus config.Reed*Ms und sind
+// Werkseinstellung; der aktive Wert kommt aus config.ReedDebounceMs und ist
 // in der Web-UI unter "Einstellungen -> Reed-Kontakte" einstellbar.
-static constexpr uint32_t REED_DEBOUNCE_DEFAULT_MS   = 50;   // Entprellzeit
-static constexpr uint32_t REED_RETRIGGER_DEFAULT_MS  = 200;  // Mindestpause Retrigger
+static constexpr uint32_t REED_DEBOUNCE_DEFAULT_MS = 50;   // Entprellzeit
 
 // ── Schnittstelle ────────────────────────────────────────────────────────
 
