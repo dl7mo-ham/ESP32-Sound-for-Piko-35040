@@ -3,20 +3,27 @@
 ## 1. Trigger-Quellen
 
 ```
-CRSF-Bus (Port A)          Reed-Trigger (IO5/IO6)       Web / Lua-Menü
-       │                          │                            │
-  Config()                reedTriggerUpdate()           Sound_on_web[i]=true
-  wertet Kanäle aus        IO6: Kurz Motor / Lang LED      (einmaliger Trigger)
-       │                   IO5: Kurz sound1 / Lang sound2      │
-  Sound_on[i] = true/false        │                            │
-       └──────────────────────────┴────────────────────────────┘
-                                  │
-                             handleSound(i)
+CRSF-Bus (Port A)        Reed-Trigger (IO5/IO6)        Web / Lua-Menü
+       │                        │                            │
+  Config()              reedTriggerUpdate()          Sound_on_web[i]=true
+  wertet Kanäle aus      IO6: Impuls -> sound1        (einmaliger Trigger)
+       │                 IO5: Impuls -> sound2              │
+  Sound_on[i] = true/false      │                            │
+       └────────────────────────┴────────────────────────────┘
+                                │
+                           handleSound(i)
+
+Web-Tab "Motor" (nur Reed-Modus)
+  Motorsound-Button  -> setMotorSound()  -> Sound_on_Motor
+  LED-Flammen-Button -> flameSet()       -> flame_led.cpp
 ```
 
 > [!NOTE]
 > `Sound_on[]` wird jeden Loop-Durchlauf neu gesetzt (dauerhaft, solange Quelle aktiv).
 > `Sound_on_web[]` ist ein **One-Shot-Flag**: `handleSound` setzt es sofort wieder auf `false`.
+
+> [!NOTE]
+> Im Reed-Modus reagieren IO5 und IO6 nur auf einfache Impulse: IO6 spielt Sound 1, IO5 Sound 2. Motorsound und Flammen-LED werden über den Web-Tab „Motor“ geschaltet (`POST /api/control`), nicht mehr über lange Reed-Impulse.
 
 ---
 
@@ -194,8 +201,9 @@ loop()
   ├─ crsf.read_packets()               (Port A – entfällt bei REED_TRIGGER_ENABLED)
   │    └─► BUS_OK, channel_output[]
   ├─ reedTriggerUpdate()               (nur bei REED_TRIGGER_ENABLED)
-  │    └─► IO6: kurz Sound_on_Motor Toggle / lang LED-Toggle (Flammen-Effekt),
-  │         IO5: Sound_on_web[1/2] (kurz/lang)
+  │    └─► IO6: Impuls -> Sound_on_web[1] (sound1.wav),
+  │         IO5: Impuls -> Sound_on_web[2] (sound2.wav)
+  ├─ flameUpdate()                     (nur bei REED_TRIGGER_ENABLED, Flammen-LED)
   ├─ uartPortsTelemetry() / updateLed()
   ├─ CRSF Lua-Menü (Read/Write/Command)
   ├─ saveConfigForce()                 (500ms nach letzter Änderung)

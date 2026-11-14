@@ -16,6 +16,13 @@
 #include "sound_store.h"     // Sound-Speicher (Flash)
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
 #include "reed_trigger.h"    // Reed-Kontakte IO5/IO6 (optional)
+#include "flame_led.h"       // Flammen-LED (Web-UI, spaeter IO7/IO8)
+
+// Direktsteuerung Motorsound (ESP32_Sound_Mini_S3.ino) - im Reed-Modus gibt
+// es keinen CRSF-Kanal fuer den Motor, geschaltet wird ueber /api/control.
+extern void toggleMotorSound();
+extern void setMotorSound(bool on);
+extern bool motorSoundIsOn();
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -133,6 +140,21 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <option value="0">Normal</option>
       <option value="1">Toggle</option>
     </select>
+  </div>
+  <!-- Direktsteuerung im Reed-Modus: IO5/IO6 liefern nur einfache Impulse
+       fuer Sound 1/2. Motorsound und Flammen-LED werden deshalb hier
+       geschaltet (POST /api/control). Spaeter optional auch ueber
+       Taster/Schalter an IO7/IO8. -->
+  <div class="card hidden" id="c-reed-control">
+    <div class="card-title">Direktsteuerung (Reed-Modus)</div>
+    <div class="g2">
+      <button class="btn btn-p" id="btn-reed-motor" onclick="toggleMotorDirect()">Motorsound: AUS</button>
+      <button class="btn btn-g" id="btn-reed-flame" onclick="toggleFlameDirect()">LED-Flamme: AUS</button>
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-top:8px">
+      IO6 spielt Sound 1, IO5 spielt Sound 2 (nur einfache Impulse).
+      Motorsound und Flammen-LED werden hier ein- und ausgeschaltet.
+    </div>
   </div>
   <div class="card">
     <div class="card-title">Quelle Einschalten Motor</div>
@@ -289,7 +311,8 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
   <!-- Reed-Kontakte IO5/IO6: Zeitparameter. Nur sichtbar, wenn die Firmware
        mit REED_TRIGGER_ENABLED gebaut wurde (cfg.reed.enabled, siehe
-       loadConfig()). Wirken ohne Neustart. -->
+       loadConfig()). Wirken ohne Neustart.
+       IO6 spielt Sound 1, IO5 spielt Sound 2 (nur einfache Impulse). -->
   <div class="card hidden" id="c-reed">
     <div class="card-title">Reed-Kontakte (IO5 / IO6)</div>
     <div class="row">
@@ -297,17 +320,13 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <input type="number" id="reed-dbt" min="5" max="500" step="5" style="width:110px">
     </div>
     <div class="row">
-      <span class="lbl">Lang-Puls ab (ms)</span>
-      <input type="number" id="reed-long" min="100" max="5000" step="50" style="width:110px">
-    </div>
-    <div class="row">
       <span class="lbl">Retrigger-Pause (ms)</span>
       <input type="number" id="reed-rtg" min="0" max="5000" step="50" style="width:110px">
     </div>
     <div style="font-size:12px;color:var(--sub);margin-top:8px">
-      Entprellzeit: kuerzere Pulse werden ignoriert. Lang-Puls ab: ab dieser
-      Dauer gilt der Kontakt als lang. Retrigger-Pause: Mindestabstand
-      zwischen zwei ausgeloesten Aktionen.
+      IO6 spielt Sound 1, IO5 spielt Sound 2. Entprellzeit: kuerzere Pulse
+      werden ignoriert. Retrigger-Pause: Mindestabstand zwischen zwei
+      ausgeloesten Sounds. Motorsound und Flammen-LED stehen im Tab "Motor".
     </div>
   </div>
   <hr>
@@ -785,15 +804,18 @@ function loadConfig(){
     sv('mod-adr',s.modul_adr);
     sv('mkan-adr0',s.mkan_adr0); sv('mkan-adr1',s.mkan_adr1);
     // Reed-Kontakte: Karte nur zeigen, wenn die Firmware den Reed-Modus
-    // enthaelt; die drei Zeitparameter sind dort einstellbar.
+    // enthaelt; die beiden Zeitparameter sind dort einstellbar.
     var rd=cfg.reed;
     var cr=document.getElementById('c-reed');
     if(cr) cr.className='card'+((rd&&rd.enabled)?'':' hidden');
     if(rd&&rd.enabled){
       sv('reed-dbt',rd.debounce_ms);
-      sv('reed-long',rd.long_press_ms);
       sv('reed-rtg',rd.retrigger_ms);
     }
+    // Direktsteuerung Motorsound/Flamme (Tab "Motor") nur im Reed-Modus.
+    var cc=document.getElementById('c-reed-control');
+    if(cc) cc.className='card'+((rd&&rd.enabled)?'':' hidden');
+    if(rd&&rd.enabled) setReedControlLabels(rd.motor_on,rd.flame_on);
     // Port B/C laden: Options-Liste und Baudraten-Standardwerte kommen vom
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
@@ -946,10 +968,11 @@ function renderDbg(){
           rh += '<div class="row"><span class="lbl">IO' + p.pin + ' &rarr; ' + p.label + '</span><span class="badge ' + badgeCls + '">' + st + '</span></div>';
         });
       }
-      var lp=(dbg.reed.long_press_ms!==undefined)?dbg.reed.long_press_ms:'?';
       var db=(dbg.reed.debounce_ms!==undefined)?dbg.reed.debounce_ms:'?';
       var rt=(dbg.reed.retrigger_ms!==undefined)?dbg.reed.retrigger_ms:'?';
-      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO5: kurzer Puls (&lt; '+lp+' ms) spielt Sound 1, langer Puls (&gt;= '+lp+' ms) spielt Sound 2. IO6: kurzer Puls (&lt; '+lp+' ms) schaltet den Motorsound ein bzw. aus, langer Puls (&gt;= '+lp+' ms) schaltet die LED ein bzw. aus. Entprellung '+db+' ms, Retrigger-Pause '+rt+' ms. Live-Aktualisierung alle 2 s.</div>';
+      rh += '<div class="row"><span class="lbl">Motorsound</span><span class="badge ' + (dbg.reed.motor_on?'bg-g':'bg-s') + '">' + (dbg.reed.motor_on?'EIN':'AUS') + '</span></div>';
+      rh += '<div class="row"><span class="lbl">LED-Flamme</span><span class="badge ' + (dbg.reed.flame_on?'bg-g':'bg-s') + '">' + (dbg.reed.flame_on?'EIN':'AUS') + '</span></div>';
+      rh += '<div style="font-size:11px;color:var(--sub);margin-top:8px">IO6: Impuls spielt Sound 1, IO5: Impuls spielt Sound 2. Motorsound und LED-Flamme werden im Tab "Motor" geschaltet. Entprellung '+db+' ms, Retrigger-Pause '+rt+' ms. Live-Aktualisierung alle 2 s.</div>';
       rd.innerHTML=rh;
     }
   }
@@ -1047,6 +1070,24 @@ function testSound(){
     toast('Sound '+curSnd+' wird gespielt');
   });
 }
+// Direktsteuerung im Reed-Modus (Motorsound / Flammen-LED), POST /api/control.
+function setReedControlLabels(motor,flame){
+  var bm=document.getElementById('btn-reed-motor');
+  var bf=document.getElementById('btn-reed-flame');
+  if(bm) bm.textContent='Motorsound: '+(motor?'EIN':'AUS');
+  if(bf) bf.textContent='LED-Flamme: '+(flame?'EIN':'AUS');
+}
+function reedControlPost(data){
+  xpost('/api/control',data,function(r){
+    try{var d=JSON.parse(r);if(d.ok){
+      setReedControlLabels(d.motor,d.flame);
+      if(cfg.reed){cfg.reed.motor_on=d.motor;cfg.reed.flame_on=d.flame;}
+      return;}}catch(e){}
+    toast('Fehler',1);
+  });
+}
+function toggleMotorDirect(){ reedControlPost({motor_toggle:true}); }
+function toggleFlameDirect(){ reedControlPost({flame_toggle:true}); }
 // WAV-Datei fuer den aktuell ausgewaehlten Sound per WLAN hochladen. Echtes
 // multipart/form-data (FormData) statt einer rohen XHR-Uebertragung, damit
 // die Firmware die Datei haeppchenweise verarbeiten kann, ohne sie komplett
@@ -1177,7 +1218,6 @@ function saveSettings(){
   // Felder bei jedem Speichern ungewollte Werte setzen.
   if(cfg.reed&&cfg.reed.enabled){
     d.reed_debounce_ms=gi('reed-dbt');
-    d.reed_long_press_ms=gi('reed-long');
     d.reed_retrigger_ms=gi('reed-rtg');
   }
   xpost('/api/config',d,function(r){
@@ -1292,7 +1332,6 @@ function importConfigRun(data){
     // Reed-Zeitparameter (Sicherungen vor dieser Version haben kein
     // reed-Objekt - dann bleiben die gespeicherten Werte unveraendert).
     reed_debounce_ms:(data.reed?data.reed.debounce_ms:undefined),
-    reed_long_press_ms:(data.reed?data.reed.long_press_ms:undefined),
     reed_retrigger_ms:(data.reed?data.reed.retrigger_ms:undefined)
   });
 
@@ -1527,6 +1566,8 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   server.on("/api/config", HTTP_POST, []() { WebServerManager::handleApiConfigPost(); });
   server.on("/api/debug",     []() { WebServerManager::handleApiDebug();  });
   server.on("/api/sound",     []() { WebServerManager::handleApiSound();  });
+  // Direktsteuerung Motorsound/Flammen-LED (Reed-Modus, Web-Tab "Motor")
+  server.on("/api/control",   HTTP_POST, []() { WebServerManager::handleApiControl(); });
   // Sound-WAV per WLAN hochladen - zweiter Handler-Parameter ist der
   // eigentliche Upload-Callback (mehrfach pro Request, siehe HTTPUpload-
   // Status in handleApiSoundUploadData()); der erste wird einmal am Ende
@@ -1701,7 +1742,7 @@ static String jsonEscape(const char* s) {
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
 //               portb_role, portb_baud, portc_role, portc_baud,
-//               reed_debounce_ms, reed_long_press_ms, reed_retrigger_ms }
+//               reed_debounce_ms, reed_retrigger_ms }
 //               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
@@ -1775,10 +1816,6 @@ void WebServerManager::handleApiConfigPost() {
   // ohne Neustart, da reed_trigger.cpp sie bei jeder Auswertung aus config liest.
   if (jsonGetInt(body, "reed_debounce_ms", v)) {
     config.ReedDebounceMs = (uint16_t)constrain(v,5,500);
-    changed = true;
-  }
-  if (jsonGetInt(body, "reed_long_press_ms", v)) {
-    config.ReedLongPressMs = (uint16_t)constrain(v,100,5000);
     changed = true;
   }
   if (jsonGetInt(body, "reed_retrigger_ms", v)) {
@@ -1864,16 +1901,18 @@ String WebServerManager::buildConfigJson() {
   snprintf(p1, sizeof(p1), "%02X", config.sport_poll_id[1]);
   j += "\"sport\":{\"poll_id0\":\"" + String(p0) + "\",\"poll_id1\":\"" + String(p1) + "\"},";
 
-  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und die drei
-  // Zeitparameter (einstellbar in der Web-UI unter "Einstellungen").
+  // Reed-Kontakte: ob der Modus in dieser Firmware aktiv ist und die beiden
+  // Zeitparameter (einstellbar in der Web-UI unter "Einstellungen"). Dazu
+  // der aktuelle Zustand der Direktsteuerung (Tab "Motor").
 #ifdef REED_TRIGGER_ENABLED
   j += "\"reed\":{\"enabled\":true,";
 #else
   j += "\"reed\":{\"enabled\":false,";
 #endif
   j += "\"debounce_ms\":"    + String(config.ReedDebounceMs)  + ",";
-  j += "\"long_press_ms\":"  + String(config.ReedLongPressMs) + ",";
-  j += "\"retrigger_ms\":"   + String(config.ReedRetriggerMs) + "},";
+  j += "\"retrigger_ms\":"   + String(config.ReedRetriggerMs) + ",";
+  j += "\"motor_on\":"       + String(motorSoundIsOn() ? "true" : "false") + ",";
+  j += "\"flame_on\":"       + String(flameIsOn() ? "true" : "false")     + "},";
 
   // WiFi
   j += "\"wifi\":{";
@@ -2462,15 +2501,17 @@ void WebServerManager::handleApiDebug() {
   j += "\"bus_ok\":" + String(BUS_OK ? "true" : "false");
   j += "}";
 
-  // Reed-Kontakt-Status: ob der Modus aktiv ist und aktueller Pinzustand
+  // Reed-Kontakt-Status: ob der Modus aktiv ist, aktueller Pinzustand und
+  // der Zustand der Direktsteuerung (Motorsound/Flamme)
 #ifdef REED_TRIGGER_ENABLED
   j += ",\"reed\":{\"enabled\":true,";
   j += "\"debounce_ms\":"   + String(config.ReedDebounceMs)  + ",";
-  j += "\"long_press_ms\":" + String(config.ReedLongPressMs) + ",";
   j += "\"retrigger_ms\":"  + String(config.ReedRetriggerMs) + ",";
+  j += "\"motor_on\":"      + String(motorSoundIsOn() ? "true" : "false") + ",";
+  j += "\"flame_on\":"      + String(flameIsOn() ? "true" : "false")     + ",";
   j += "\"pins\":[";
-  j += "{\"pin\":" + String(REED_PIN_SOUNDS) + ",\"label\":\"Kurz: Sound 1 / Lang: Sound 2\",\"closed\":" + String(digitalRead(REED_PIN_SOUNDS) == LOW ? "true" : "false") + "}";
-  j += ",{\"pin\":" + String(REED_PIN_MOTOR) + ",\"label\":\"Kurz: Motorsound ein-/ausschalten / Lang: LED ein-/ausschalten\",\"closed\":" + String(digitalRead(REED_PIN_MOTOR) == LOW ? "true" : "false") + "}";
+  j += "{\"pin\":" + String(REED_PIN_SOUND1) + ",\"label\":\"Sound 1\",\"closed\":" + String(digitalRead(REED_PIN_SOUND1) == LOW ? "true" : "false") + "}";
+  j += ",{\"pin\":" + String(REED_PIN_SOUND2) + ",\"label\":\"Sound 2\",\"closed\":" + String(digitalRead(REED_PIN_SOUND2) == LOW ? "true" : "false") + "}";
   j += "]}";
 #else
   j += ",\"reed\":{\"enabled\":false}";
@@ -2524,6 +2565,31 @@ void WebServerManager::handleApiSound() {
 
   if (changed) markDirty();
   sendOk(server);
+}
+
+// ── POST /api/control ─────────────────────────────────────────────────────
+// Direktsteuerung im Reed-Modus (Web-Tab "Motor"):
+//   {"motor_toggle":true} bzw. {"flame_toggle":true}
+//   oder explizit {"motor":0|1}, {"flame":0|1}
+// Antwort: {"ok":true,"motor":true,"flame":false}
+// Die Funktionen sind bewusst vom Reed-Trigger getrennt, damit spaeter auch
+// Taster/Schalter an IO7/IO8 denselben Weg nutzen koennen.
+void WebServerManager::handleApiControl() {
+  if (!server.hasArg("plain")) { sendErr(server); return; }
+  const String& body = server.arg("plain");
+  int v;
+
+  if (jsonGetInt(body, "motor", v))                        setMotorSound(v != 0);
+  else if (body.indexOf("\"motor_toggle\":true") >= 0)     toggleMotorSound();
+  if (jsonGetInt(body, "flame", v))                        flameSet(v != 0);
+  else if (body.indexOf("\"flame_toggle\":true") >= 0)     flameToggle();
+
+  String j = "{\"ok\":true,\"motor\":";
+  j += motorSoundIsOn() ? "true" : "false";
+  j += ",\"flame\":";
+  j += flameIsOn() ? "true" : "false";
+  j += "}";
+  sendJson(server, j);
 }
 
 // ── Haupt-Request-Handler ────────────────────────────────────────────────

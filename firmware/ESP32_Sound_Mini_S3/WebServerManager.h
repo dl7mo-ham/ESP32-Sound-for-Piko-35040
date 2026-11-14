@@ -43,6 +43,8 @@ private:
   static void      handleApiConfigPost();
   static void      handleApiDebug();
   static void      handleApiSound();
+  // Direktsteuerung Motorsound/Flammen-LED im Reed-Modus (Tab "Motor").
+  static void      handleApiControl();
   static String    buildConfigJson();
   // Sound-WAV-Dateien per WLAN direkt auf die SD-Karte hochladen
   // (multipart/form-data, siehe Kommentare in WebServerManager.cpp).

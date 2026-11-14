@@ -59,6 +59,8 @@
    XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
    sound_store.cpp/.h     Sound-Speicher Flash (LittleFS)
    mem_info.cpp/.h        Speicherbelegung Flash/RAM fuer Web und Lua
+   reed_trigger.cpp/.h    Reed-Kontakte IO5/IO6 (Impuls -> Sound 1/2)
+   flame_led.cpp/.h       Flammen-Effekt der Status-LED (Web, spaeter IO7/IO8)
    RC_Common/             Gemeinsame Basis aller ESP32-Module (identische
                           Kopie wie im Soundmodul V7 und im Multiswitch):
                           CRSF mit Router, UART-Rollen, S.Port, GPS,
@@ -82,8 +84,14 @@
 #include "sound_store.h"
 #include "mem_info.h"
 #include "reed_trigger.h"  // Reed-Kontakte auf IO5/IO6 (optional, siehe reed_trigger.h)
+#include "flame_led.h"     // Flammen-LED (Web-UI, spaeter IO7/IO8)
 
-uint16_t Version = 10; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (10 -> "0.10")
+uint16_t Version = 11; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (11 -> "0.11")
+// v0.11: Reed-Modus: IO6/IO5 reagieren nur noch auf einfache Impulse
+//        (IO6 -> sound1.wav, IO5 -> sound2.wav). Lange Tastendruecke
+//        entfallen, weil sie mit dem Piko 35040 nicht zuverlaessig
+//        funktionieren. Motorsound und Flammen-LED werden stattdessen im
+//        Web-Tab "Motor" geschaltet (spaeter optional ueber IO7/IO8).
 // v0.10: Lua: "Kanal Nr" (Motor, Sounds) und "Kanal Nr Speed" bleiben immer
 //        Zahlenfelder (bei Aus/Dauer gesperrt). Vorher wurden sie zum
 //        Info-Feld "Deaktiviert" und liessen sich nach Wechsel der Quelle
@@ -120,6 +128,22 @@ bool Sound_on_Motor       = false;
 bool Sound_on_Motor_state = false;
 bool engine_break         = false;
 unsigned long shutdown_timer = 0;
+
+// Direktsteuerung Motorsound (Web-UI, spaeter IO7/IO8). Im Reed-Modus gibt
+// es keinen CRSF-Kanal fuer den Motor; der Zustand wird deshalb von Hand
+// getoggelt. Sound_on_web[0] wird dabei geloescht, damit ein alter
+// Legacy-Trigger ("/Sound/on?menu=0") das Ausschalten nicht verhindert.
+void setMotorSound(bool on) {
+    Sound_on_Motor = on;
+    Sound_on_web[0] = false;
+    Serial.printf("[Motor] Direktsteuerung -> %s\n", on ? "EIN (Start->Loop)" : "AUS (Shut)");
+}
+void toggleMotorSound() {
+    setMotorSound(!Sound_on_Motor);
+}
+bool motorSoundIsOn() {
+    return Sound_on_Motor;
+}
 
 enum Engine_State : uint8_t { OFF, STARTING, RUNNING, STOPPING };
 volatile uint8_t engine_State = OFF;
@@ -578,6 +602,7 @@ void setup() {
     soundStoreBegin();
 #ifdef REED_TRIGGER_ENABLED
     reedTriggerBegin();   // IO5 + IO6 als Reed-Eingaenge (ersetzt CRSF)
+    flameBegin();         // Flammen-LED aus, geschaltet ueber die Web-UI
 #endif
     LoadFiles();
 
@@ -700,8 +725,10 @@ void loop() {
         einkanalFunctionCRSF();
     }
 #else
-    // Reed-Modus: IO5/IO6 als GPIO-Eingaenge, kein CRSF
-    reedTriggerUpdate(Sound_on_web, RCSOUND_NUM_SLOTS, Sound_on_Motor);
+    // Reed-Modus: IO5/IO6 als GPIO-Eingaenge, kein CRSF.
+    // IO6 -> sound1.wav, IO5 -> sound2.wav (nur einfache Impulse).
+    reedTriggerUpdate(Sound_on_web, RCSOUND_NUM_SLOTS);
+    flameUpdate();   // Flammen-LED (per Web-UI geschaltet)
 #endif
 
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
@@ -717,7 +744,8 @@ void loop() {
     if(currentTime<5000) return;
     for(uint8_t i=1;i<=RCSOUND_NUM_SOUNDS;i++) handleSound(i,Sounds[i]);
 
-    // Motor Toggle (nur im CRSF-Modus; im Reed-Modus steuert IO6 Sound_on_Motor direkt)
+    // Motor Toggle (nur im CRSF-Modus; im Reed-Modus steuert die Web-UI
+    // Sound_on_Motor direkt, siehe setMotorSound())
 #ifndef REED_TRIGGER_ENABLED
     if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
     else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;
