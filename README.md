@@ -11,7 +11,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.11 (übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.12 (Sound-Zuordnung: Sounds behalten ihren Namen, noch nicht auf Hardware getestet; v0.11 übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -39,14 +39,22 @@ In der Arduino IDE steht nach „Überprüfen“ zusätzlich die Firmware-Größ
 
 ## Sounds
 
-Dateinamen: `start.wav`, `loop.wav`, `shut.wav`, `sound1.wav` … `sound4.wav` (16 Bit PCM, 22,05 kHz mono empfohlen).
+Format: WAV, 16 Bit PCM, 22,05 kHz mono empfohlen.
+
+**Seit v0.12 behalten Sounds ihren Namen.** Beim Hochladen werden nur Umlaute ersetzt (ä → ae), Leerzeichen werden zu `_`, und der Name wird auf 26 Zeichen plus `.wav` gekürzt. Welcher Sound auf welchem Platz spielt (Loop, Standgas, Start, Sound 1–4), legst du so fest:
+
+- **Web-UI, Tab „Speicher“:** zeigt alle gespeicherten Sounds mit Größe und Platz. Pro Platz gibt es eine Auswahlliste. Ein Sound darf auf mehreren Plätzen liegen. Dort kannst du auch Sounds hochladen (mehrere auf einmal) und löschen.
+- **Web-UI, Tabs „Motor“ und „Sounds“:** „Hochladen“ speichert die Datei mit ihrem Namen und legt sie gleich auf diesen Platz.
+- **Lua-Menü, Ordner „Sound-Zuordnung“** (Felder 58–61): erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien. Neu hochgeladene Sounds erscheinen nach erneutem Öffnen des Menüs.
+
+Module mit älterer Firmware behalten ihre Sounds: `loop.wav`, `shut.wav`, `start.wav` und `sound1.wav` … `sound4.wav` bleiben auf ihren Plätzen. Die Zuordnung steht im Export und im Backup.
 
 Die Sounds liegen im Flash (LittleFS). Das Mini hat keine SD-Karte, die Auswahl Auto/Flash/SD gibt es seit v0.04 nicht mehr.
 
 Sounds ins Flash bringen:
 
-1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen
-2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs`
+1. Web-UI: Tab „Speicher“, „Motor“ oder „Sounds“ → WAV hochladen
+2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs` (danach im Tab „Speicher“ zuordnen, außer die Dateien heißen `loop.wav` … `sound4.wav`)
 
 Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfiguration sichern“: im Modul sichern, wiederherstellen, löschen; automatisch vor jedem Import und Firmware-Update). `pio run -t uploadfs` überschreibt den ganzen Flash-Speicher und damit auch diese Backups.
 
@@ -217,6 +225,7 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 | Version | Änderung |
 |---|---|
+| 0.12 | **Sound-Zuordnung:** Sounds behalten beim Hochladen ihren Namen. Neuer Web-Tab „Speicher“ mit allen Sounds, Auswahlliste je Platz, Hochladen und Löschen. Neuer Lua-Ordner „Sound-Zuordnung“ (Felder 58–61: Platz, Datei, Größe). Vorhandene `loop.wav` … `sound4.wav` bleiben auf ihren Plätzen, die Zuordnung steht im Export/Backup. Gilt für S3 und C3. Noch nicht auf Hardware getestet. |
 | 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |
 | 0.10 | Lua: „Kanal Nr“ (Motor und Sounds) und „Kanal Nr Speed“ bleiben immer Zahlenfelder, bei Quelle „Aus“ oder „Dauer“ gesperrt. Vorher wurden sie dann zum Info-Feld „Deaktiviert“. Das ELRS-Lua-Skript lädt nach einer Änderung der Quelle nur Zahlen- und Auswahlfelder neu, deshalb ließ sich der Kanal nach dem Umstellen (z. B. auf EK) erst nach Verlassen des Menüs ändern. Gilt für S3 und C3. |
 | 0.09 | Zweites Board **ESP32-C3 Pro Mini** im selben Code (`pins.h` wählt nach dem Board in der Arduino IDE). C3: Port A auf UART0 (IO20/21), Port B auf IO5/6, kein Port C, Audio-Tasks ohne festen CPU-Kern, CI baut S3 und C3. Für den S3 ändert sich nichts. |

@@ -49,7 +49,7 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   57 Feld-IDs, lueckenlos 1..57 (Tabelle in buildLuaMenu()), Liste direkt beim
+   61 Feld-IDs, lueckenlos 1..61 (Tabelle in buildLuaMenu()), Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
@@ -81,8 +81,13 @@
 #include "src/RC_Common/status_led.h"
 #include "sound_store.h"
 #include "mem_info.h"
+#include "sound_map.h"
 
-uint16_t Version = 11; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (11 -> "0.11")
+uint16_t Version = 12; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (12 -> "0.12")
+// v0.12: Sound-Zuordnung: Dateien behalten ihren Namen (sound_map.h). Neuer
+//        Web-Tab "Speicher" (alle Sounds, Auswahlliste je Platz, Hochladen,
+//        Loeschen) und Lua-Ordner "Sound-Zuordnung" (Felder 58-61).
+//        Vorhandene loop.wav ... sound4.wav bleiben auf ihrem Platz.
 // v0.11: Lua uebersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):
 //        Chunk-Fix fuer lange Auswahlfelder (Port-Baudrate), Quelle bzw.
 //        Adresse in Ordnernamen, Kanal Nr bei Aus/Dauer, Kanal Speed bei
@@ -236,6 +241,8 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //  51: Info Geraetename
 //  53: Folder Speicher {54..57} (v0.06, nur Anzeige)
 //   54:Info Firmware  55:Info Sounds  56:Info RAM frei  57:Info PSRAM frei
+//  58: Folder Sound-Zuordnung {59..61} (v0.12)
+//   59:Sel Platz (nur Auswahl, nicht gespeichert)  60:Sel Datei  61:Sel Groesse (nur Anzeige)
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
@@ -243,9 +250,10 @@ static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
 static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
 static constexpr uint8_t MEMORY_FI        = PORTC_BAUD_FI + 1;
-static constexpr uint8_t CRSF_PARAM_COUNT = MEMORY_FI + 4;
+static constexpr uint8_t SOUNDMAP_FI      = MEMORY_FI + 5;
+static constexpr uint8_t CRSF_PARAM_COUNT = SOUNDMAP_FI + 3;
 // Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 57,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SOUNDMAP_FI == 58 && CRSF_PARAM_COUNT == 61,
               "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -488,6 +496,69 @@ static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec 
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
 
+// ── Sound-Zuordnung (v0.12, Felder 58-61) ───────────────────────────────
+// "Platz" waehlt nur aus, welcher Platz gerade bearbeitet wird (nicht
+// gespeichert). "Datei" zeigt die Dateien im Sound-Speicher als
+// Auswahlliste: "(leer)", dann die aktuelle Datei des Platzes, dann die
+// uebrigen alphabetisch. Namen auf 12 Zeichen gekuerzt. Die Liste wird bei
+// jedem Abruf neu gelesen; get/set rechnen mit derselben Liste, solange sich
+// zwischen Anzeige und Schreiben nichts an den Dateien aendert. Neue
+// Dateien erscheinen am Sender nach erneutem Oeffnen des Menues. Das ELRS-
+// Lua laedt "Datei" und "Groesse" neu, wenn "Platz" geaendert wird.
+static uint8_t luaMapSlot = 3;   // Sound 1
+static char    luaSlotOpts[96];
+static constexpr size_t LUA_FILE_OPTS_MAX = 200;   // RC_Common sendet hoechstens 256 Byte je Feld
+static constexpr int    LUA_FILE_MAX      = 20;
+static char    luaFileOpts[LUA_FILE_OPTS_MAX + 16];
+static char    luaFileNames[LUA_FILE_MAX][SND_FILE_LEN];
+static uint8_t luaFileCount = 0;   // ohne "(leer)"
+
+static void luaBuildFileList() {
+    static SoundFileInfo files[SND_LIST_MAX];
+    int n = soundListFiles(files, SND_LIST_MAX);
+    const char* cur = config.Sound_File[luaMapSlot];
+    luaFileCount = 0;
+    size_t len = snprintf(luaFileOpts, sizeof(luaFileOpts), "(leer)");
+    auto add = [&](const char* name) {
+        if (luaFileCount >= LUA_FILE_MAX) return;
+        char shortName[16];
+        size_t nl = strlen(name);
+        if (nl > 4 && strcasecmp(name + nl - 4, ".wav") == 0) nl -= 4;
+        if (nl > 12) snprintf(shortName, sizeof(shortName), "%.11s~", name);
+        else         snprintf(shortName, sizeof(shortName), "%.*s", (int)nl, name);
+        if (len + 1 + strlen(shortName) > LUA_FILE_OPTS_MAX) return;
+        len += snprintf(luaFileOpts + len, sizeof(luaFileOpts) - len, ";%s", shortName);
+        snprintf(luaFileNames[luaFileCount++], SND_FILE_LEN, "%s", name);
+    };
+    if (cur[0]) add(cur);   // aktuelle Datei immer sichtbar, auch wenn sie fehlt
+    for (int i = 0; i < n; i++)
+        if (strcasecmp(files[i].name, cur) != 0) add(files[i].name);
+}
+static uint8_t luaGetMapSlot(uint8_t)               { return luaMapSlot; }
+static void    luaSetMapSlot(uint8_t, uint8_t v)    { if (v < SND_FILE_SLOTS) luaMapSlot = v; }
+static void luaViewMapFile(uint8_t, LuaView& v, char*) {
+    luaBuildFileList();
+    v.text = luaFileOpts;
+    v.max  = luaFileCount;
+    v.value = config.Sound_File[luaMapSlot][0] ? 1 : 0;
+}
+static uint8_t luaGetMapFile(uint8_t)               { return config.Sound_File[luaMapSlot][0] ? 1 : 0; }
+static void    luaSetMapFile(uint8_t, uint8_t v) {
+    luaBuildFileList();
+    if (v == 0) soundMapSet(luaMapSlot, "");
+    else if (v <= luaFileCount) soundMapSet(luaMapSlot, luaFileNames[v - 1]);
+}
+static uint8_t luaGetZero(uint8_t)                  { return 0; }
+static void luaShowMapSize(uint8_t, LuaView& v, char* buf) {
+    const char* cur = config.Sound_File[luaMapSlot];
+    uint32_t size = 0;
+    if (!cur[0])                       snprintf(buf, LUA_VIEW_BUF, "-");
+    else if (!soundFileSize(cur, size)) snprintf(buf, LUA_VIEW_BUF, "Datei fehlt");
+    else                               snprintf(buf, LUA_VIEW_BUF, "%u KB", (unsigned)((size + 1023) / 1024));
+    v.text = buf;
+    v.max  = 0;
+}
+
 static void buildLuaMenu() {
     static const char* AUS_EIN = "Aus;Ein";
     LuaMenu& m = luaMenu;
@@ -550,6 +621,21 @@ static void buildLuaMenu() {
         LuaItem* it = m.info(MEMORY_FI + 1 + a, MEMORY_FI, MEM_NAMES[a], "");
         it->arg = a; it->view = luaShowMemory;
     }
+
+    // v0.12: Sound-Zuordnung
+    {
+        size_t len = 0;
+        luaSlotOpts[0] = '\0';
+        for (int i = 0; i < SND_FILE_SLOTS; i++)
+            len += snprintf(luaSlotOpts + len, sizeof(luaSlotOpts) - len, "%s%s",
+                            i ? ";" : "", soundMapSlotLabel(i).c_str());
+    }
+    m.folder(SOUNDMAP_FI, 0, "Sound-Zuordnung");
+    m.select(SOUNDMAP_FI + 1, SOUNDMAP_FI, "Platz", luaSlotOpts, luaGetMapSlot, luaSetMapSlot);
+    m.select(SOUNDMAP_FI + 2, SOUNDMAP_FI, "Datei", "(leer)", luaGetMapFile, luaSetMapFile)->view = luaViewMapFile;
+    // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
+    // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
+    m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
 }
 
 // WLAN-Taste: wartet nach dem Start WIFI_BUTTON_WINDOW_MS auf einen
@@ -604,6 +690,7 @@ void setup() {
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
+    soundMapApplyAll();   // v0.12: Dateinamen je Platz aus der Konfiguration
     LoadFiles();
 
     // begin() registriert nur die HTTP-Routen und merkt sich SSID/Passwort.
