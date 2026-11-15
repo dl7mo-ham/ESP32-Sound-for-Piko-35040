@@ -49,7 +49,7 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   61 Feld-IDs, lueckenlos 1..61 (Tabelle in buildLuaMenu()), Liste direkt beim
+   62 Feld-IDs, lueckenlos 1..62 (Tabelle in buildLuaMenu()), Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
@@ -83,7 +83,14 @@
 #include "mem_info.h"
 #include "sound_map.h"
 
-uint16_t Version = 12; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (12 -> "0.12")
+uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
+// v0.13: Status-LED mit demselben Farbschema wie alle Module (RC_Common
+//        1.4.0): gruen langsam = OK, rot schnell = Failsafe / kein RC-Link,
+//        rot Aufblitzen = kein Signal (vorher aus), blau Doppelblitz =
+//        Adresskonflikt (neu angezeigt), gelb Doppelblitz = Port C mit
+//        doppelter Rolle, violett statt gruen/rot = WLAN an. Lua
+//        Einstellungen > "LED Farbfolge" (Feld 62, NVS "ledrgb", S3-Zero
+//        Vorgabe RGB). BOOT-Taste im Betrieb 2 s halten = WLAN an/aus.
 // v0.12: Sound-Zuordnung: Dateien behalten ihren Namen (sound_map.h). Neuer
 //        Web-Tab "Speicher" (alle Sounds, Auswahlliste je Platz, Hochladen,
 //        Loeschen) und Lua-Ordner "Sound-Zuordnung" (Felder 58-61).
@@ -243,6 +250,7 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //   54:Info Firmware  55:Info Sounds  56:Info RAM frei  57:Info PSRAM frei
 //  58: Folder Sound-Zuordnung {59..61} (v0.12)
 //   59:Sel Platz (nur Auswahl, nicht gespeichert)  60:Sel Datei  61:Sel Groesse (nur Anzeige)
+//  62: Sel LED Farbfolge (v0.13, im Ordner Einstellungen)
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
@@ -251,9 +259,10 @@ static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
 static constexpr uint8_t MEMORY_FI        = PORTC_BAUD_FI + 1;
 static constexpr uint8_t SOUNDMAP_FI      = MEMORY_FI + 5;
-static constexpr uint8_t CRSF_PARAM_COUNT = SOUNDMAP_FI + 3;
+static constexpr uint8_t LEDRGB_FI        = SOUNDMAP_FI + 4;
+static constexpr uint8_t CRSF_PARAM_COUNT = LEDRGB_FI;
 // Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SOUNDMAP_FI == 58 && CRSF_PARAM_COUNT == 61,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SOUNDMAP_FI == 58 && CRSF_PARAM_COUNT == 62,
               "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -495,6 +504,8 @@ static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec 
 // Operation, siehe V7)
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
+static uint8_t luaGetLedRgb(uint8_t)                { return config.LedRgb ? 0 : 1; }   // v0.13
+static void    luaSetLedRgb(uint8_t, uint8_t v)     { config.LedRgb = (v == 0); markDirty(); }
 
 // ── Sound-Zuordnung (v0.12, Felder 58-61) ───────────────────────────────
 // "Platz" waehlt nur aus, welcher Platz gerade bearbeitet wird (nicht
@@ -613,6 +624,7 @@ static void buildLuaMenu() {
     // v0.04: nur noch Anzeige (keine SD-Karte), Feld bleibt, damit die
     // Feldnummern ohne Luecke bleiben
     m.info(50, SETTINGS_FI, "Sound-Speicher", "Flash");
+    m.select(LEDRGB_FI, SETTINGS_FI, "LED Farbfolge", "RGB (S3-Zero);GRB", luaGetLedRgb, luaSetLedRgb);   // v0.13
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 
     static const char* MEM_NAMES[4] = {"Firmware", "Sounds", "RAM frei", "PSRAM frei"};
@@ -643,17 +655,8 @@ static void buildLuaMenu() {
 // Laeuft nur, wenn "WLAN dauerhaft an" AUS ist, und vor dem Reservieren
 // der Sound-Puffer, damit der AP auf einem freien Heap startet. Wer BOOT
 // schon beim Einschalten haelt, landet im Flash-Modus des ROM.
-// Blaues Blinken im WLAN-Fenster. Einfache LED (C3-Board ohne RGB-LED):
-// blinkt in ihrer eigenen Farbe.
-static void bootLedBlue(bool on) {
-#if STATUS_LED_WS2812
-    neopixelWrite(PIN_STATUS_LED, 0, 0, on ? 40 : 0);
-#else
-    pinMode(PIN_STATUS_LED, OUTPUT);
-    digitalWrite(PIN_STATUS_LED, (on == (bool)STATUS_LED_ACTIVE_HIGH) ? HIGH : LOW);
-#endif
-}
-
+// Blaues Blinken im WLAN-Fenster (RC_Common, StatusLed::showBootWindow).
+// Einfache LED (falls das C3-Board keine RGB-LED hat): blinkt in ihrer Farbe.
 static bool waitForWifiButton() {
     Serial.printf("WLAN-Taste: %u s lang BOOT druecken = WLAN an\n",
                   (unsigned)(WIFI_BUTTON_WINDOW_MS / 1000));
@@ -664,11 +667,35 @@ static bool waitForWifiButton() {
             delay(30);   // entprellen
             if (digitalRead(PIN_BOOT_BUTTON) == LOW) { pressed = true; break; }
         }
-        bootLedBlue(((millis() - start) / 250) % 2);
+        statusLed.showBootWindow(millis() - start);
         delay(10);
     }
-    bootLedBlue(false);
+    statusLed.writeRgb(0, 0, 0);
     return pressed;
+}
+
+// v0.13: BOOT-Taste im Betrieb 2 s halten = WLAN an/aus (wie Router und
+// Schaltmodule). Erst scharf, nachdem die Taste nach dem Start einmal
+// losgelassen war; einmal je Druck.
+static void checkWifiButton(unsigned long now) {
+    static unsigned long downSince = 0;
+    static bool done = true;
+    if (digitalRead(PIN_BOOT_BUTTON) == LOW) {
+        if (!downSince) downSince = now ? now : 1;
+        if (!done && now - downSince >= WIFI_BUTTON_HOLD_MS) {
+            done = true;
+            if (WebServerManager::isApActive()) {
+                Serial.println("BOOT-Taste: WLAN aus");
+                WebServerManager::disableAP();
+            } else {
+                Serial.println("BOOT-Taste: WLAN an");
+                WebServerManager::enableAP();
+            }
+        }
+    } else {
+        downSince = 0;
+        done = false;
+    }
 }
 
 // ======== Setup ======================================================
@@ -687,6 +714,8 @@ void setup() {
                   (uint8_t)constrain(config.modul_adress,0,15) * 2);
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
+    statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
+    statusLed.setRgbOrder(config.LedRgb);   // v0.13
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
@@ -728,7 +757,6 @@ void setup() {
     PortC_Duplicate_boot = uartPorts[1].duplicate;
 
     buildLuaMenu();
-    statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
     Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
     Serial.printf("Soundmodul Mini %s (" BOARD_NAME ")\n", versionString);
 }
@@ -750,18 +778,24 @@ void wifiFailsafeCheck() {
     }
 }
 
-// Status-LED (RC_Common): langsam = kein CRSF, schnell = Link schwach,
-// aus = alles gut
+// Status-LED (RC_Common 1.4.0, gleiches Schema in allen Modulen):
+// gruen langsam = RC-Signal OK, rot schnell = Frames, aber Failsafe /
+// kein RC-Link, rot Aufblitzen = kein CRSF an Port A, blau Doppelblitz =
+// Adresskonflikt, gelb Doppelblitz = Port C mit doppelter Rolle,
+// violett statt gruen/rot = WLAN an.
 static void updateLed() {
     unsigned long now = millis();
     const LinkStatistics& ls = crsf.getLinkStatistics();
     StatusLedInput in = {};
+    bool dup = crsf.isDuplicateAddress();
+    in.configError   = dup || PortC_Duplicate_boot;
     in.crsf          = true;
     in.busOk         = BUS_OK;
     in.lastRcFrameMs = crsf.getLastRcFrameMs();
     in.linkStatsMs   = ls.lastUpdate;
     in.uplinkLQ      = ls.uplinkLQ;
-    statusLed.update(statusLedMode(in, now), now);
+    statusLed.setRgbOrder(config.LedRgb);
+    statusLed.update(statusLedMode(in, now), now, dup, WebServerManager::isApActive());
 }
 
 // ======== Loop =======================================================
@@ -788,6 +822,7 @@ void loop() {
     // ueberschrieben.
     uartPortsTelemetry(crsf);
     updateLed();
+    checkWifiButton(currentTime);   // v0.13
     if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
         // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
         crsf.setDeviceInfoReplyPending(false);

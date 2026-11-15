@@ -88,6 +88,9 @@ struct ConfigData {
     // uebersprungen. Default AN.
     bool     WifiAlwaysOn;
 
+    // v0.13: Farbfolge der Status-LED: true = RGB (S3-Zero), false = GRB
+    bool     LedRgb;
+
     // v0.12: Dateiname je Platz (ohne "/"), siehe SND_FILE_SLOTS oben.
     // Werkseinstellung: loop.wav, shut.wav, start.wav, sound1.wav ...
     char Sound_File[SND_FILE_SLOTS][SND_FILE_LEN];

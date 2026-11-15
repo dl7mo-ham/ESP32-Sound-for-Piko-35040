@@ -59,6 +59,7 @@
 // ── BOOT-Taste (GPIO9, Pull-up auf dem Board) ────────────────────────
 #define PIN_BOOT_BUTTON 9
 #define WIFI_BUTTON_WINDOW_MS 3000
+#define WIFI_BUTTON_HOLD_MS   2000   // v0.13: im Betrieb 2 s halten = WLAN an/aus
 
 // ── Status-LED ───────────────────────────────────────────────────────
 // VORLAEUFIG, bitte am Board pruefen: RGB-LED (WS2812) an GPIO8. Hat das
@@ -67,6 +68,8 @@
 #define PIN_STATUS_LED         8
 #define STATUS_LED_WS2812      1
 #define STATUS_LED_ACTIVE_HIGH 0
+// Farbfolge der WS2812 (Lua "LED Farbfolge"): false = GRB (Standard)
+#define STATUS_LED_RGB_DEFAULT false
 
 #else  // ── ESP32-S3-Zero ─────────────────────────────────────────────
 #define BOARD_NAME "ESP32-S3"
@@ -121,10 +124,14 @@
 // Seit v0.05 ersetzt sie die WLAN-Bruecke an GPIO9, GPIO9 ist frei.
 #define PIN_BOOT_BUTTON 0
 #define WIFI_BUTTON_WINDOW_MS 3000
+#define WIFI_BUTTON_HOLD_MS   2000   // v0.13: im Betrieb 2 s halten = WLAN an/aus
 
 // ── Status-LED: RGB-LED (WS2812) des S3-Zero ─────────────────────────
 // Status von Port A (RC_Common, status_led.h)
 #define PIN_STATUS_LED 21
+// Die LED des S3-Zero erwartet RGB statt GRB (Rot/Gruen vertauscht, wie
+// beim CRSF-Router festgestellt). Vorgabe fuer Lua "LED Farbfolge".
+#define STATUS_LED_RGB_DEFAULT true
 
 // ── Port C: Hardware-UART0 (Serial0), Rolle waehlbar wie Port B ──────
 // IO43/44 sind die TX/RX-Pins am Header (UART0 ist frei, die Konsole
