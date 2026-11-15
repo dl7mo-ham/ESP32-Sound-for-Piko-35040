@@ -15,6 +15,7 @@
 #include "src/RC_Common/config_backup.h"   // v0.04: Einstellungs-Backups im Flash
 #include "sound_store.h"     // Sound-Speicher (Flash)
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
+#include "sound_map.h"       // v0.12: Sound-Zuordnung
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -93,6 +94,23 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 .mono{font-family:var(--mono);font-size:12px}
 .hidden{display:none!important}
+/* v0.12: Tab "Speicher" (Sound-Zuordnung) */
+.st-bar{height:8px;background:var(--surf2);border-radius:4px;overflow:hidden}
+.st-bar i{display:block;height:100%;background:var(--accent);width:0}
+.st-grp{font-size:11px;color:var(--sub);margin:10px 0 2px;text-transform:uppercase;letter-spacing:.05em}
+.st-slot{display:grid;grid-template-columns:78px minmax(0,1fr) 36px;gap:6px;align-items:center;padding:3px 0}
+.st-slot label{font-size:12px;color:var(--sub)}
+.st-slot select{width:100%;min-width:0}
+.st-ib{background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:var(--r);height:34px;cursor:pointer}
+.st-ib:hover{border-color:var(--accent);color:var(--accent)}
+.st-file{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:8px 0;border-top:1px solid var(--border)}
+.st-file:first-child{border-top:0}
+.st-fn{font-family:var(--mono);font-size:12.5px;overflow-wrap:anywhere}
+.st-sz{color:var(--sub);font-size:11px}
+.st-use{font-size:11px;color:var(--sub)}
+.st-use.free{color:var(--yellow)}
+.st-del{grid-row:span 2;align-self:center;background:none;border:1px solid var(--border);color:var(--red);border-radius:var(--r);padding:4px 10px;font-size:12px;cursor:pointer}
+.st-del.ask{background:var(--red);border-color:var(--red);color:#fff}
 /* Toast */
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
   background:var(--green);color:#fff;padding:10px 20px;border-radius:var(--r);
@@ -109,6 +127,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 <nav>
   <div class="tab active" onclick="showTab('motor')">Motor</div>
   <div class="tab" onclick="showTab('sounds')">Sounds</div>
+  <div class="tab" onclick="showTab('store')">Speicher</div>
   <div class="tab" onclick="showTab('settings')">Einstellung</div>
   <div class="tab" onclick="showTab('wifi')">WiFi</div>
   <div class="tab" onclick="showTab('lipo')">LiPo</div>
@@ -182,34 +201,35 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div class="card-title">Motor-Sound-Dateien verwalten</div>
     <div style="font-size:12px;color:var(--sub);margin-bottom:10px">
       Loop-, Standgas- und Start-Sound direkt per WLAN in den Sound-Speicher hochladen
-      oder von dort l&ouml;schen - wirkt sofort, ohne Neustart des Moduls.
+      oder von dort l&ouml;schen - wirkt sofort, ohne Neustart des Moduls. Die Datei
+      beh&auml;lt ihren Namen; tauschen geht auch im Tab Speicher.
     </div>
     <div class="sl-wrap">
-      <div class="sl-head"><span>Loop (loop.wav)</span></div>
+      <div class="sl-head"><span>Loop</span></div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:6px" id="mf-loop-status">-</div>
       <div class="g2">
         <button class="btn btn-s" onclick="document.getElementById('mf-loop-file').click()">&#8679; Hochladen</button>
-        <button class="btn btn-r" onclick="deleteMotorFile('loop.wav')">L&ouml;schen</button>
+        <button class="btn btn-r" onclick="deleteMotorFile('loop')">L&ouml;schen</button>
       </div>
-      <input type="file" id="mf-loop-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('loop.wav',this.files[0])">
+      <input type="file" id="mf-loop-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('loop',this.files[0])">
     </div>
     <div class="sl-wrap">
-      <div class="sl-head"><span>Standgas (shut.wav)</span></div>
+      <div class="sl-head"><span>Standgas</span></div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:6px" id="mf-shut-status">-</div>
       <div class="g2">
         <button class="btn btn-s" onclick="document.getElementById('mf-shut-file').click()">&#8679; Hochladen</button>
-        <button class="btn btn-r" onclick="deleteMotorFile('shut.wav')">L&ouml;schen</button>
+        <button class="btn btn-r" onclick="deleteMotorFile('shut')">L&ouml;schen</button>
       </div>
-      <input type="file" id="mf-shut-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('shut.wav',this.files[0])">
+      <input type="file" id="mf-shut-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('shut',this.files[0])">
     </div>
     <div class="sl-wrap">
-      <div class="sl-head"><span>Start (start.wav)</span></div>
+      <div class="sl-head"><span>Start</span></div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:6px" id="mf-start-status">-</div>
       <div class="g2">
         <button class="btn btn-s" onclick="document.getElementById('mf-start-file').click()">&#8679; Hochladen</button>
-        <button class="btn btn-r" onclick="deleteMotorFile('start.wav')">L&ouml;schen</button>
+        <button class="btn btn-r" onclick="deleteMotorFile('start')">L&ouml;schen</button>
       </div>
-      <input type="file" id="mf-start-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('start.wav',this.files[0])">
+      <input type="file" id="mf-start-file" accept="audio/wav,.wav" style="display:none" onchange="uploadMotorFile('start',this.files[0])">
     </div>
     <div class="row hidden" id="mf-upload-progress">
       <div style="font-size:12px;color:var(--sub)" id="mf-upload-status">-</div>
@@ -263,9 +283,37 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       <div style="font-size:12px;color:var(--sub)" id="snd-upload-status">-</div>
     </div>
     <div style="font-size:12px;color:var(--sub);margin-top:10px">
-      Ersetzt bzw. l&ouml;scht die WAV-Datei im Sound-Speicher (Flash) des Moduls.
-      Erwartet 16-Bit-PCM-WAV; die &Auml;nderung wirkt sofort, ohne Neustart.
+      Hochladen speichert die Datei mit ihrem Namen und legt sie auf diesen Sound.
+      L&ouml;schen entfernt die Datei aus dem Sound-Speicher (Flash). Andere Sounds
+      w&auml;hlst du im Tab Speicher. Erwartet 16-Bit-PCM-WAV; wirkt sofort, ohne Neustart.
     </div>
+  </div>
+</div>
+
+<!-- ═══ SPEICHER (v0.12: Sound-Zuordnung) ════════════════════════════ -->
+<div id="tab-store" class="hidden">
+  <div class="card">
+    <div class="card-title" id="st-title">Speicher</div>
+    <div class="st-bar"><i id="st-bar"></i></div>
+    <div style="font-size:12px;color:var(--sub);margin-top:6px" id="st-txt">-</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Zuordnung</div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:4px">
+      Welcher gespeicherte Sound auf welchem Platz spielt. Ein Sound darf auf mehreren Pl&auml;tzen liegen.
+      &Auml;nderungen wirken sofort.
+    </div>
+    <div id="st-slots"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Gespeicherte Sounds</div>
+    <div id="st-files"></div>
+    <button class="btn btn-s" onclick="document.getElementById('st-up-file').click()">&#8679; WAV hochladen (Name bleibt erhalten)</button>
+    <input type="file" id="st-up-file" accept="audio/wav,.wav" multiple style="display:none" onchange="libUpload(this.files)">
+    <div class="row hidden" id="st-up-progress" style="margin-top:8px">
+      <div style="font-size:12px;color:var(--sub)" id="st-up-status">-</div>
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-top:8px" id="st-rule"></div>
   </div>
 </div>
 
@@ -569,7 +617,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 <script src="/rc_common.js"></script>
 <script>
 var cfg={}, dbg={}, curSnd=1, lipoTmr=0;
-var TABS=['motor','sounds','settings','wifi','lipo','debug'];
+var TABS=['motor','sounds','store','settings','wifi','lipo','debug'];
 
 // ─── Toast ────────────────────────────────────────────────────────────────
 var toastTmr=0;
@@ -610,6 +658,7 @@ function showTab(t){
   // Datei-Status (vorhanden/Groesse) beim Betreten von Motor/Sounds aktuell
   // halten - z.B. wenn parallel per SD-Backup/-Karte etwas geaendert wurde.
   if(t==='motor'||t==='sounds') loadSoundFileStatus();
+  if(t==='store') loadSoundLib();   // v0.12: Sound-Zuordnung
 }
 
 // ─── XHR-Helfer ──────────────────────────────────────────────────────────
@@ -976,124 +1025,176 @@ function saveSound(){
 function testSound(){
   xpost('/api/sound',{id:curSnd,test:true},function(){toast('Sound '+curSnd+' wird gespielt');});
 }
-// WAV-Datei fuer den aktuell ausgewaehlten Sound per WLAN hochladen. Echtes
-// multipart/form-data (FormData) statt einer rohen XHR-Uebertragung, damit
-// die Firmware die Datei haeppchenweise verarbeiten kann, ohne sie komplett
-// im RAM zu puffern - siehe handleApiSoundUploadData() in
-// WebServerManager.cpp.
-function uploadSoundFile(file){
-  if(!file)return;
-  var name='sound'+curSnd+'.wav';
-  var prog=document.getElementById('snd-upload-progress');
-  var status=document.getElementById('snd-upload-status');
-  prog.className='row'; status.textContent='Hochladen … (0%)';
-
-  var fd=new FormData();
-  fd.append('file',file,name);
-
-  var x=new XMLHttpRequest();
-  x.open('POST','/api/soundupload?name='+encodeURIComponent(name),true);
-  x.upload.onprogress=function(e){
-    if(e.lengthComputable) status.textContent='Hochladen … ('+Math.round(e.loaded/e.total*100)+'%)';
-  };
-  x.onload=function(){
-    try{
-      var d=JSON.parse(x.responseText);
-      if(d.ok){
-        status.textContent='Fertig: '+d.file+' ('+d.size+' Bytes)';
-        toast('Sound '+curSnd+' aktualisiert');
-        sndFiles[name]={exists:true,size:d.size};
-        updateSoundFileStatusDisplay();
-      } else {
-        status.textContent='Fehler: '+errText(d.error);
-        toast('Upload fehlgeschlagen',1);
-      }
-    }catch(e){
-      status.textContent='Fehler beim Hochladen';
-      toast('Upload fehlgeschlagen',1);
-    }
-  };
-  x.onerror=function(){ status.textContent='Verbindungsfehler'; toast('Verbindungsfehler',1); };
-  x.send(fd);
-  document.getElementById('snd-upload-file').value='';
+// ─── Sound-Dateien und Sound-Zuordnung (v0.12) ─────────────────────────
+// Jede Datei behaelt ihren Namen; welche Datei auf welchem Platz spielt,
+// steht im Modul (Sound-Zuordnung, /api/soundmap). Plaetze: "loop",
+// "shut", "start", "1".."N". sndSlots ist ein Client-Cache von
+// /api/soundfiles (Platz -> {file,exists,size}) fuer die Tabs Motor/Sounds,
+// sndLib der Inhalt von /api/soundlib fuer den Tab "Speicher".
+var sndSlots={}, sndLib=null, sndMaxLen=26, delAsk='';
+function curSlotKey(){ return String(curSnd); }
+// Dateiname wie im Modul erlaubt: Umlaute ersetzt, Leerzeichen -> _,
+// nur A-Z a-z 0-9 _ -, hoechstens sndMaxLen Zeichen + ".wav"
+function sanName(n){
+  var b=String(n).split(/[\\\/]/).pop().replace(/\.wav$/i,'');
+  b=b.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue')
+     .replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss')
+     .replace(/\s+/g,'_').replace(/[^A-Za-z0-9_\-]/g,'');
+  if(!b) b='sound';
+  return b.substr(0,sndMaxLen)+'.wav';
 }
-// Datei-Verwaltung fuer Sound-Dateien (Motor: loop/shut/start.wav, Sound
-// 1-4: soundN.wav) - Status abfragen, aktuellen Sound-Slot loeschen,
-// Motor-Dateien hochladen/loeschen. sndFiles ist ein einfacher Client-Cache
-// (name -> {exists,size}), damit nicht nach jeder Kleinigkeit neu vom Geraet
-// gelesen werden muss; nach Upload/Loeschen wird er lokal nachgefuehrt.
-var sndFiles={};
+function bareName(n){ return String(n).replace(/\.wav$/i,''); }
+function escH(s){ return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function fmtKB(b){ return Math.max(1,Math.round(b/1024))+' KB'; }
 function loadSoundFileStatus(){
   xget('/api/soundfiles',0,function(r){
-    try{ var d=JSON.parse(r); if(d&&d.ok&&d.files){ sndFiles=d.files; updateSoundFileStatusDisplay(); } }
+    try{ var d=JSON.parse(r); if(d&&d.ok&&d.slots){ sndSlots=d.slots; updateSoundFileStatusDisplay(); } }
     catch(e){}
   });
 }
-function fmtFileStatus(name){
-  var f=sndFiles[name];
+function fmtSlotStatus(k){
+  var f=sndSlots[k];
   if(!f) return '-';
-  return f.exists ? (Math.round(f.size/1024)+' KB vorhanden') : 'keine Datei im Sound-Speicher';
+  if(!f.file) return 'Kein Sound zugeordnet';
+  return f.exists ? (f.file+' ('+fmtKB(f.size)+')') : (f.file+' fehlt im Sound-Speicher');
 }
 function updateSoundFileStatusDisplay(){
-  var name='sound'+curSnd+'.wav';
-  var nm=document.getElementById('snd-file-name'); if(nm) nm.textContent=name;
-  var st=document.getElementById('snd-file-status'); if(st) st.textContent=fmtFileStatus(name);
-  ['loop','shut','start'].forEach(function(k){
-    var el=document.getElementById('mf-'+k+'-status');
-    if(el) el.textContent=fmtFileStatus(k+'.wav');
+  var k=curSlotKey(), f=sndSlots[k];
+  var nm=document.getElementById('snd-file-name'); if(nm) nm.textContent=(f&&f.file)?f.file:'leer';
+  var st=document.getElementById('snd-file-status'); if(st) st.textContent=fmtSlotStatus(k);
+  ['loop','shut','start'].forEach(function(m){
+    var el=document.getElementById('mf-'+m+'-status');
+    if(el) el.textContent=fmtSlotStatus(m);
   });
 }
-function deleteSoundSlotFile(){
-  var name='sound'+curSnd+'.wav';
-  if(!confirm('Datei "'+name+'" loeschen?')) return;
-  xpost('/api/sounddelete?name='+encodeURIComponent(name),{},function(r){
-    try{
-      var d=JSON.parse(r);
-      if(d.ok){ toast('Sound '+curSnd+' geloescht'); sndFiles[name]={exists:false,size:0}; updateSoundFileStatusDisplay(); }
-      else toast('Loeschen fehlgeschlagen: '+errText(d.error),1);
-    }catch(e){ toast('Fehler',1); }
-  });
-}
-function uploadMotorFile(name,file){
-  if(!file)return;
-  var prog=document.getElementById('mf-upload-progress');
-  var status=document.getElementById('mf-upload-status');
-  prog.className='row'; status.textContent='Hochladen '+name+' … (0%)';
-
+// Hochladen: behaelt den (angepassten) Originalnamen. slot = Platz, dem die
+// Datei gleich zugeordnet wird ('' = nur speichern).
+function uploadWav(file,slot,statusEl,progEl,done){
+  if(!file) return;
+  var name=sanName(file.name);
+  if(progEl) progEl.className='row';
+  if(statusEl) statusEl.textContent='Hochladen '+name+' … (0%)';
   var fd=new FormData();
   fd.append('file',file,name);
-
   var x=new XMLHttpRequest();
-  x.open('POST','/api/soundupload?name='+encodeURIComponent(name),true);
+  x.open('POST','/api/soundupload?name='+encodeURIComponent(name)+(slot?'&slot='+encodeURIComponent(slot):''),true);
   x.upload.onprogress=function(e){
-    if(e.lengthComputable) status.textContent='Hochladen '+name+' … ('+Math.round(e.loaded/e.total*100)+'%)';
+    if(e.lengthComputable&&statusEl) statusEl.textContent='Hochladen '+name+' … ('+Math.round(e.loaded/e.total*100)+'%)';
   };
   x.onload=function(){
-    try{
-      var d=JSON.parse(x.responseText);
-      if(d.ok){
-        status.textContent='Fertig: '+d.file+' ('+d.size+' Bytes)';
-        toast(name+' aktualisiert');
-        sndFiles[name]={exists:true,size:d.size};
-        updateSoundFileStatusDisplay();
-      } else {
-        status.textContent='Fehler: '+errText(d.error);
-        toast('Upload fehlgeschlagen',1);
-      }
-    }catch(e){ status.textContent='Fehler beim Hochladen'; toast('Upload fehlgeschlagen',1); }
+    var d=null; try{ d=JSON.parse(x.responseText); }catch(e){}
+    if(d&&d.ok){
+      if(statusEl) statusEl.textContent='Fertig: '+d.file+' ('+fmtKB(d.size)+')';
+      toast(name===file.name?(name+' gespeichert'):(file.name+' gespeichert als '+name));
+    } else {
+      if(statusEl) statusEl.textContent='Fehler: '+errText(d?d.error:'');
+      toast('Upload fehlgeschlagen',1);
+    }
+    loadSoundFileStatus(); if(sndLib) loadSoundLib();
+    if(done) done(d&&d.ok);
   };
-  x.onerror=function(){ status.textContent='Verbindungsfehler'; toast('Verbindungsfehler',1); };
+  x.onerror=function(){ if(statusEl) statusEl.textContent='Verbindungsfehler'; toast('Verbindungsfehler',1); if(done) done(false); };
   x.send(fd);
 }
-function deleteMotorFile(name){
-  if(!confirm('Datei "'+name+'" loeschen?')) return;
+function uploadSoundFile(file){
+  uploadWav(file,curSlotKey(),document.getElementById('snd-upload-status'),document.getElementById('snd-upload-progress'));
+  document.getElementById('snd-upload-file').value='';
+}
+function uploadMotorFile(slot,file){
+  uploadWav(file,slot,document.getElementById('mf-upload-status'),document.getElementById('mf-upload-progress'));
+  var inp=document.getElementById('mf-'+slot+'-file'); if(inp) inp.value='';
+}
+// Loescht die Datei, die auf dem Platz liegt (auch auf anderen Plaetzen
+// mit derselben Datei wird es dann still).
+function deleteSlotFile(slot,label){
+  var f=sndSlots[slot];
+  if(!f||!f.file){ toast('Kein Sound zugeordnet',1); return; }
+  if(!confirm('Datei "'+f.file+'" aus dem Sound-Speicher loeschen? Alle Plaetze mit dieser Datei werden leer.')) return;
+  deleteWav(f.file,function(){ toast(label+': '+f.file+' geloescht'); });
+}
+function deleteSoundSlotFile(){ deleteSlotFile(curSlotKey(),'Sound '+curSnd); }
+function deleteMotorFile(slot){ deleteSlotFile(slot,slot==='loop'?'Loop':slot==='shut'?'Standgas':'Start'); }
+function deleteWav(name,ok){
   xpost('/api/sounddelete?name='+encodeURIComponent(name),{},function(r){
-    try{
-      var d=JSON.parse(r);
-      if(d.ok){ toast(name+' geloescht'); sndFiles[name]={exists:false,size:0}; updateSoundFileStatusDisplay(); }
-      else toast('Loeschen fehlgeschlagen: '+errText(d.error),1);
-    }catch(e){ toast('Fehler',1); }
+    var d=null; try{ d=JSON.parse(r); }catch(e){}
+    if(d&&d.ok){ if(ok) ok(); }
+    else toast('Loeschen fehlgeschlagen: '+errText(d?d.error:''),1);
+    loadSoundFileStatus(); if(sndLib) loadSoundLib();
   });
+}
+
+// ─── Tab "Speicher": alle Sounds, Zuordnung per Auswahlliste ─────────────
+function loadSoundLib(){
+  xget('/api/soundlib',0,function(r){
+    try{ var d=JSON.parse(r); if(d&&d.ok){ sndLib=d; if(d.maxlen) sndMaxLen=d.maxlen; renderSoundLib(); } }
+    catch(e){ toast('Ladefehler',1); }
+  });
+}
+function renderSoundLib(){
+  var d=sndLib; if(!d) return;
+  var used=+d.used||0, total=+d.total||0;
+  var bar=document.getElementById('st-bar'); if(bar) bar.style.width=(total?Math.min(100,used/total*100):0).toFixed(1)+'%';
+  var tx=document.getElementById('st-txt');
+  if(tx) tx.textContent=total ? (d.files.length+' Sounds, '+(used/1048576).toFixed(2)+' MB von '+(total/1048576).toFixed(2)+' MB belegt, '+((total-used)/1048576).toFixed(2)+' MB frei') : 'Sound-Speicher nicht verfuegbar';
+  var tt=document.getElementById('st-title'); if(tt) tt.textContent='Speicher ('+(d.store||'')+')';
+  var names=d.files.map(function(f){return f.name;});
+  var h='';
+  d.slots.forEach(function(s,i){
+    if(i===0) h+='<div class="st-grp">Motor</div>';
+    if(i===3) h+='<div class="st-grp">Sounds</div>';
+    var opts='<option value="">(leer)</option>';
+    var list=names.slice();
+    if(s.file && list.indexOf(s.file)<0) list.unshift(s.file);
+    list.forEach(function(n){
+      var miss=names.indexOf(n)<0;
+      opts+='<option value="'+escH(n)+'"'+(n===s.file?' selected':'')+'>'+escH(bareName(n))+(miss?' (fehlt)':'')+'</option>';
+    });
+    h+='<div class="st-slot"><label for="st-sel-'+s.key+'">'+escH(s.label)+'</label>'+
+       '<select id="st-sel-'+s.key+'" data-slot="'+s.key+'" onchange="setSlotFile(this)">'+opts+'</select>'+
+       (i<3?'<span></span>':'<button class="st-ib" title="Testen" onclick="testSlot(\''+s.key+'\')">&#9654;</button>')+'</div>';
+  });
+  document.getElementById('st-slots').innerHTML=h;
+  var fh='';
+  d.files.forEach(function(f,i){
+    var users=d.slots.filter(function(s){return s.file.toLowerCase()===f.name.toLowerCase();}).map(function(s){return s.label;});
+    var ask=(delAsk===f.name);
+    fh+='<div class="st-file"><div class="st-fn">'+escH(f.name)+' <span class="st-sz">'+fmtKB(f.size)+'</span></div>'+
+        '<button class="st-del'+(ask?' ask':'')+'" onclick="libDelete('+i+')">'+(ask?'Wirklich?':'L&ouml;schen')+'</button>'+
+        '<div class="st-use'+(users.length?'':' free')+'">'+(users.length?'spielt auf: '+escH(users.join(', ')):'keinem Platz zugeordnet')+'</div></div>';
+  });
+  if(d.more) fh+='<div class="st-use">Weitere Dateien werden nicht angezeigt.</div>';
+  document.getElementById('st-files').innerHTML=fh||'<div class="st-use">Noch keine Sounds gespeichert.</div>';
+  var ru=document.getElementById('st-rule');
+  if(ru) ru.textContent='Der Name bleibt erhalten. Umlaute werden ersetzt (ä → ae), Leerzeichen werden zu _, höchstens '+sndMaxLen+' Zeichen plus .wav.';
+}
+function setSlotFile(sel){
+  var slot=sel.getAttribute('data-slot'), file=sel.value;
+  xpost('/api/soundmap',{slot:slot,file:file},function(r){
+    var d=null; try{ d=JSON.parse(r); }catch(e){}
+    if(d&&d.ok){
+      var s=sndLib.slots.filter(function(x){return x.key===slot;})[0];
+      if(s) s.file=file;
+      toast((file?bareName(file):'(leer)')+' → '+(s?s.label:slot));
+      renderSoundLib(); loadSoundFileStatus();
+    } else { toast('Zuordnung fehlgeschlagen',1); loadSoundLib(); }
+  });
+}
+function testSlot(slot){
+  xpost('/api/sound',{id:parseInt(slot),test:true},function(){ toast('Sound '+slot+' wird gespielt'); });
+}
+function libDelete(i){
+  var f=sndLib.files[i]; if(!f) return;
+  if(delAsk!==f.name){ delAsk=f.name; renderSoundLib(); return; }
+  delAsk='';
+  deleteWav(f.name,function(){ toast(f.name+' geloescht'); });
+}
+function libUpload(files){
+  var list=[].slice.call(files||[]);
+  var st=document.getElementById('st-up-status'), pr=document.getElementById('st-up-progress');
+  (function next(){
+    if(!list.length){ document.getElementById('st-up-file').value=''; return; }
+    uploadWav(list.shift(),'',st,pr,function(){ next(); });
+  })();
 }
 function saveSettings(){
   var d={
@@ -1236,6 +1337,11 @@ function importConfigRun(data){
   soundPosts.forEach(function(p){
     if(p.id===undefined) return;
     steps.push(function(next){ xpost('/api/sound', p, function(){ next(); }); });
+  });
+  // v0.12: Sound-Zuordnung (fehlt in Sicherungen bis v0.11 -> bleibt wie sie ist)
+  var sf=data.sound_files;
+  if(sf) Object.keys(sf).forEach(function(k){
+    steps.push(function(next){ xpost('/api/soundmap',{slot:k,file:sf[k]||''},function(){ next(); }); });
   });
   steps.push(function(next){ xget('/save',0,function(){ next(); }); });
 
@@ -1455,6 +1561,9 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   // Sound-Datei.
   server.on("/api/soundfiles",  HTTP_GET,  []() { WebServerManager::handleApiSoundFiles(); });
   server.on("/api/sounddelete", HTTP_POST, []() { WebServerManager::handleApiSoundDelete(); });
+  // v0.12: Sound-Zuordnung (Web-Tab "Speicher")
+  server.on("/api/soundlib",    HTTP_GET,  []() { WebServerManager::handleApiSoundLib(); });
+  server.on("/api/soundmap",    HTTP_POST, []() { WebServerManager::handleApiSoundMap(); });
   // Firmware-Update per WLAN (POST /api/otaupdate), /rc_common.js und
   // /api/uartroles kommen aus RC_Common (web_common.cpp), gleich in allen
   // Modulen. Schreibt in das inaktive OTA-Segment.
@@ -1778,6 +1887,15 @@ String WebServerManager::buildConfigJson() {
   j += "\"auto_timeout\":" + String(config.WifiAutoTimeoutSec)      + ",";
   j += "\"always_on\":"    + String(config.WifiAlwaysOn ? 1 : 0)    + "},";
 
+  // v0.12: Sound-Zuordnung (Datei je Platz), wird beim Import ueber
+  // /api/soundmap wieder eingespielt
+  j += "\"sound_files\":{";
+  for (int i = 0; i < SND_FILE_SLOTS; i++) {
+    if (i) j += ",";
+    j += "\"" + soundMapSlotKey(i) + "\":\"" + jsonEscape(config.Sound_File[i]) + "\"";
+  }
+  j += "},";
+
   j += "\"version\":\"" + String(versionString) + "\"";
   j += "}";
   return j;
@@ -1787,41 +1905,17 @@ void WebServerManager::handleApiConfig() {
   sendJson(server, buildConfigJson());
 }
 
-// ── POST /api/soundupload?name=... ───────────────────────────────────────
-// Sound-WAV-Dateien direkt per WLAN auf die SD-Karte hochladen - erspart
-// das Ausbauen der SD-Karte fuer neue/geaenderte Sounds. Nur die von der
-// Firmware tatsaechlich erwarteten Dateinamen werden akzeptiert (kein
-// beliebiges Schreiben auf die SD-Karte ueber diesen Endpunkt).
+// ── POST /api/soundupload?name=...[&slot=...] ─────────────────────────────
+// Sound-WAV-Dateien direkt per WLAN in den Sound-Speicher hochladen.
+// v0.12: die Datei behaelt ihren Namen (die Weboberflaeche ersetzt vorher
+// Umlaute und Leerzeichen); erlaubt sind nur A-Z a-z 0-9 _ - und ".wav"
+// (soundNameOk(strict), kein beliebiges Schreiben ins Dateisystem). Mit
+// slot=loop|shut|start|1..N wird die Datei danach gleich diesem Platz
+// zugeordnet (Tabs Motor/Sounds). Alle Plaetze, die die Datei schon
+// benutzen, werden vorher angehalten (soundMapCloseUsers()) und die
+// Motor-Plaetze danach neu geladen.
 static bool isValidSoundUploadName(const String& name) {
-  if (name == "loop.wav" || name == "shut.wav" || name == "start.wav") return true;
-  // "sound1.wav" .. "sound4.wav"
-  if (!name.startsWith("sound") || !name.endsWith(".wav")) return false;
-  String numPart = name.substring(5, name.length() - 4);
-  if (numPart.length() == 0 || numPart.length() > 2) return false;
-  for (size_t i = 0; i < numPart.length(); i++) {
-    if (!isDigit(numPart[i])) return false;
-  }
-  int n = numPart.toInt();
-  return n >= 1 && n <= RCSOUND_NUM_SOUNDS;
-}
-
-// Liefert (falls vorhanden) das Sound-Objekt, das die Datei "name" abspielt -
-// Bugfix v7.09: siehe Aufrufer (handleApiSoundUploadData()/-Delete()). Fuer
-// Sound1-4 (Sounds[]) wird das Handle vom Haupt-Loop() ohnehin bei jedem
-// neuen Trigger frisch per LoadWavFile() geoeffnet (siehe handleSound() im
-// .ino); fuer die drei Motor-Dateien (loop/shut/start.wav) dagegen NICHT -
-// die werden per LoadFiles() nur EINMAL beim Boot geoeffnet und danach nie
-// wieder angefasst, solange der Motor laeuft. Das Handle bleibt also die
-// gesamte Laufzeit ueber offen.
-static XT_Wav_Class* soundObjectFor(const String& name) {
-  if (name == "loop.wav")  return &Sound_loop;
-  if (name == "shut.wav")  return &Sound_shut;
-  if (name == "start.wav") return &Sound_start;
-  if (name.startsWith("sound") && name.endsWith(".wav")) {
-    int n = name.substring(5, name.length() - 4).toInt();
-    if (n >= 1 && n <= RCSOUND_NUM_SOUNDS) return Sounds[n];
-  }
-  return nullptr;
+  return soundNameOk(name.c_str(), true);
 }
 
 // ── v7.11: Datei-Deskriptoren waehrend Upload/Loeschen voruebergehend freigeben
@@ -1923,11 +2017,6 @@ static bool   uploadMutexHeld = false;
 static bool   uploadFailed    = false;
 static String uploadErrCode;
 static uint32_t uploadBytes   = 0;
-// v7.09: das Sound-Objekt, dessen Datei GERADE hochgeladen wird (siehe
-// soundObjectFor()) - am START gemerkt, damit es am ENDE (nach erfolgreichem
-// Schreiben) mit der neuen Datei neu geladen werden kann, statt bis zum
-// naechsten Trigger/Reboot mit geschlossenem Handle dazustehen.
-static XT_Wav_Class* uploadTargetSound = nullptr;
 // v7.11: Bitmaske der fuer die Dauer des Uploads freigegebenen Motor-Handles
 // (siehe releaseIdleSoundHandles()) - am Ende wieder herzustellen.
 static uint32_t uploadMotorMask = 0;
@@ -1947,7 +2036,6 @@ void WebServerManager::handleApiSoundUploadData() {
 
   if (upload.status == UPLOAD_FILE_START) {
     uploadFailed = false; uploadErrCode = ""; uploadBytes = 0; uploadMutexHeld = false;
-    uploadTargetSound = nullptr;
     uploadMotorMask = 0;
 
     String name = server.arg("name");
@@ -1976,23 +2064,23 @@ void WebServerManager::handleApiSoundUploadData() {
     // waehrend wir ihn selbst schon halten wuerde also sofort blockieren
     // (Deadlock). Deshalb hier schliessen, BEVOR wir unten sdMutexTake()
     // fuer den eigentlichen Schreibvorgang nehmen.
-    XT_Wav_Class* target = soundObjectFor(name);
-    if (target) target->UnLoadWavFile();
+    // v0.12: alle Plaetze, die diese Datei benutzen (Sound-Zuordnung),
+    // anhalten und schliessen.
+    soundMapCloseUsers(name.c_str());
     // v7.11: zusaetzlich die ungenutzten Motor-Handles freigeben, damit fuer
     // soundFS().open() unten garantiert ein Deskriptor frei ist (siehe
     // releaseIdleSoundHandles()). Muss - wie das Schliessen des Ziel-Sounds
     // direkt darueber - VOR sdMutexTake() passieren (Deadlock-Gefahr).
-    uint32_t motorMask = releaseIdleSoundHandles(target);
+    uint32_t motorMask = releaseIdleSoundHandles(nullptr);
 
     if (!sdMutexTake(3000)) {
       uploadFailed = true; uploadErrCode = "sd_busy";
       logSdUploadFail(name.c_str(), "sd_busy", motorMask, 0);
-      if (target) target->LoadWavFile(); // vorherigen Zustand wiederherstellen
+      soundMapReloadUsers(name.c_str()); // vorherigen Zustand wiederherstellen
       restoreSoundHandles(motorMask);
       return;
     }
     uploadMutexHeld = true;
-    uploadTargetSound = target;
     uploadMotorMask   = motorMask;
 
     soundFS().remove("/" + name);
@@ -2015,8 +2103,8 @@ void WebServerManager::handleApiSoundUploadData() {
       uploadFailed = true; uploadErrCode = "sd_locked";
       logSdUploadFail(name.c_str(), "sd_locked (Datei schreibgeschuetzt?)", motorMask, 0);
       sdMutexGive(); uploadMutexHeld = false;
-      uploadTargetSound = nullptr; uploadMotorMask = 0;
-      if (target) target->LoadWavFile(); // Mutex ist jetzt frei - alte Datei besteht ja weiter
+      uploadMotorMask = 0;
+      soundMapReloadUsers(name.c_str()); // Mutex ist jetzt frei - alte Datei besteht ja weiter
       restoreSoundHandles(motorMask);
       return;
     }
@@ -2025,7 +2113,7 @@ void WebServerManager::handleApiSoundUploadData() {
       uploadFailed = true; uploadErrCode = "sd_write";
       logSdUploadFail(name.c_str(), "sd_write (SD.open fehlgeschlagen)", motorMask, 0);
       sdMutexGive(); uploadMutexHeld = false;
-      uploadTargetSound = nullptr; uploadMotorMask = 0;
+      uploadMotorMask = 0;
       // Datei existiert nach dem entfernten Original nicht mehr - nichts
       // Sinnvolles zum Neuladen da, target bleibt bewusst leer (FileOK=false).
       restoreSoundHandles(motorMask);
@@ -2054,9 +2142,7 @@ void WebServerManager::handleApiSoundUploadData() {
     } else {
       Serial.printf("[SD-Upload] Fertig: %u Bytes\n", (unsigned)uploadBytes);
     }
-    XT_Wav_Class* target = uploadTargetSound;
     uint32_t      motorMask = uploadMotorMask;
-    uploadTargetSound = nullptr;
     uploadMotorMask   = 0;
     if (uploadMutexHeld) { sdMutexGive(); uploadMutexHeld = false; }
     // Ab hier halten wir den SD-Mutex NICHT mehr - LoadWavFile() darf ihn
@@ -2067,7 +2153,13 @@ void WebServerManager::handleApiSoundUploadData() {
     // Fehler/Abbruch: die Datei wurde oben geloescht, LoadWavFile() schlaegt
     // dann korrekt fehl und setzt FileOK=false (kein Sound mehr auf diesem
     // Slot, bis ein neuer Upload klappt).
-    if (target) target->LoadWavFile();
+    String upName = server.arg("name");
+    if (isValidSoundUploadName(upName)) {
+      // v0.12: Tabs Motor/Sounds laden mit slot=... hoch -> gleich zuordnen
+      int slot = soundMapSlotFromKey(server.arg("slot"));
+      if (!uploadFailed && slot >= 0) soundMapSet(slot, upName.c_str());
+      soundMapReloadUsers(upName.c_str());
+    }
     // v7.11: die fuer den Upload freigegebenen Motor-Handles wieder oeffnen.
     restoreSoundHandles(motorMask);
     // v7.16: Cooldown fuer den naechsten Config-Save starten (siehe
@@ -2094,41 +2186,66 @@ void WebServerManager::handleApiSoundUpload() {
   sendJson(server, "{\"ok\":true,\"file\":\"" + name + "\",\"size\":" + String(uploadBytes) + "}");
 }
 
-// Liest, ob eine Datei existiert und wie gross sie ist - kleiner Helfer fuer
-// handleApiSoundFiles(), damit dort nicht zweimal derselbe soundFS().open()/close()-
-// Block steht.
-static bool sdFileInfo(const String& path, uint32_t& outSize) {
-  File f = soundFS().open(path, FILE_READ);
-  if (!f) return false;
-  outSize = f.size();
-  f.close();
-  return true;
-}
-
 // ── GET /api/soundfiles ───────────────────────────────────────────────────
-// Liefert fuer alle von der Firmware erwarteten Sound-Dateien (Motor:
-// loop/shut/start.wav, Sound 1-4: soundN.wav), ob sie auf der SD-Karte
-// vorhanden sind und wie gross sie sind - Grundlage fuer die Datei-Verwaltung
-// im Webinterface (Tab "Motor"/"Sounds": Status je Datei, Upload/Loeschen).
+// v0.12: je Platz (loop, shut, start, 1-N) die zugeordnete Datei, ob sie im
+// Sound-Speicher liegt und wie gross sie ist - fuer die Tabs Motor/Sounds.
+// Liest ueber stat() (oeffnet keine Datei, braucht keinen Mutex).
 void WebServerManager::handleApiSoundFiles() {
-  static const char* const fixedNames[3] = { "loop.wav", "shut.wav", "start.wav" };
-  bool haveSd = sdMutexTake(3000);
-
-  String j = "{\"ok\":true,\"files\":{";
-  bool first = true;
-  for (int i = 0; i < 3 + RCSOUND_NUM_SOUNDS; i++) {
-    String name = (i < 3) ? String(fixedNames[i]) : ("sound" + String(i - 2) + ".wav");
+  String j = "{\"ok\":true,\"slots\":{";
+  for (int i = 0; i < SND_FILE_SLOTS; i++) {
+    const char* f = config.Sound_File[i];
     uint32_t size = 0;
-    bool exists = haveSd && sdFileInfo("/" + name, size);
-    if (!first) j += ",";
-    first = false;
-    j += "\"" + name + "\":{\"exists\":" + String(exists ? "true" : "false") +
-         ",\"size\":" + String(size) + "}";
+    bool exists = soundFileSize(f, size);
+    if (i) j += ",";
+    j += "\"" + soundMapSlotKey(i) + "\":{\"file\":\"" + jsonEscape(f) + "\",\"exists\":" +
+         String(exists ? "true" : "false") + ",\"size\":" + String(size) + "}";
   }
   j += "}}";
-
-  if (haveSd) sdMutexGive();
   sendJson(server, j);
+}
+
+// ── GET /api/soundlib ─────────────────────────────────────────────────────
+// v0.12: alle WAV-Dateien im Sound-Speicher, die Zuordnung je Platz und der
+// Speicherplatz - fuer den Web-Tab "Speicher".
+void WebServerManager::handleApiSoundLib() {
+  static SoundFileInfo files[SND_LIST_MAX];
+  int n = soundListFiles(files, SND_LIST_MAX);
+  String j = "{\"ok\":true,\"maxlen\":" + String((unsigned)SND_NAME_MAX_BASE) +
+             ",\"store\":\"" + String(soundStoreName()) + "\"" +
+             ",\"total\":" + String((double)soundStoreTotalBytes(), 0) +
+             ",\"used\":"  + String((double)soundStoreUsedBytes(), 0) +
+             ",\"more\":" + String(n >= SND_LIST_MAX ? "true" : "false") + ",\"files\":[";
+  for (int i = 0; i < n; i++) {
+    if (i) j += ",";
+    j += "{\"name\":\"" + jsonEscape(files[i].name) + "\",\"size\":" + String(files[i].size) + "}";
+  }
+  j += "],\"slots\":[";
+  for (int i = 0; i < SND_FILE_SLOTS; i++) {
+    if (i) j += ",";
+    j += "{\"key\":\"" + soundMapSlotKey(i) + "\",\"label\":\"" + soundMapSlotLabel(i) +
+         "\",\"file\":\"" + jsonEscape(config.Sound_File[i]) + "\"}";
+  }
+  j += "]}";
+  sendJson(server, j);
+}
+
+// ── POST /api/soundmap  {"slot":"loop"|"shut"|"start"|"1"..,"file":"name.wav"|""}
+// v0.12: Platz neu belegen. Die Datei muss nicht vorhanden sein (Import einer
+// Sicherung vor dem Hochladen der Sounds); "" = Platz leer.
+void WebServerManager::handleApiSoundMap() {
+  if (!server.hasArg("plain")) { sendErr(server); return; }
+  const String& body = server.arg("plain");
+  char key[8] = "", file[SND_FILE_LEN] = "";
+  if (!jsonGetStr(body, "slot", key, sizeof(key))) { sendErr(server); return; }
+  int slot = soundMapSlotFromKey(key);
+  int vs;
+  if (slot < 0 || !jsonFindKey(body, "file", vs)) { sendErr(server); return; }
+  jsonGetStr(body, "file", file, sizeof(file));   // "" -> Platz leer
+  if (!soundMapSet(slot, file)) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_name\"}");
+    return;
+  }
+  sendOk(server);
 }
 
 // ── POST /api/sounddelete?name=... ───────────────────────────────────────
@@ -2140,7 +2257,7 @@ void WebServerManager::handleApiSoundFiles() {
 // kein Absturz, keine Sonderbehandlung an anderer Stelle noetig.
 void WebServerManager::handleApiSoundDelete() {
   String name = server.arg("name");
-  if (!isValidSoundUploadName(name)) {
+  if (!soundNameOk(name.c_str(), false)) {   // v0.12: jede WAV-Datei im Sound-Speicher
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_name\"}");
     return;
   }
@@ -2151,16 +2268,15 @@ void WebServerManager::handleApiSoundDelete() {
   // fehl. Muss VOR dem eigenen sdMutexTake() passieren, da UnLoadWavFile()/
   // LoadWavFile() den (nicht rekursiven) SD-Mutex selbst nehmen - sonst
   // Deadlock.
-  XT_Wav_Class* target = soundObjectFor(name);
-  if (target) target->UnLoadWavFile();
+  soundMapCloseUsers(name.c_str());   // v0.12: alle Plaetze mit dieser Datei
   // v7.11: wie beim Upload zusaetzlich die ungenutzten Motor-Handles
   // freigeben (siehe releaseIdleSoundHandles()) - ebenfalls VOR dem eigenen
   // sdMutexTake(), da UnLoadWavFile()/LoadWavFile() den Mutex selbst nehmen.
-  uint32_t motorMask = releaseIdleSoundHandles(target);
+  uint32_t motorMask = releaseIdleSoundHandles(nullptr);
 
   if (!sdMutexTake(3000)) {
     server.send(503, "application/json", "{\"ok\":false,\"error\":\"sd_busy\"}");
-    if (target) target->LoadWavFile(); // vorherigen Zustand wiederherstellen
+    soundMapReloadUsers(name.c_str()); // vorherigen Zustand wiederherstellen
     restoreSoundHandles(motorMask);
     return;
   }
@@ -2172,7 +2288,10 @@ void WebServerManager::handleApiSoundDelete() {
   // Erfolgreich geloescht: OpenWavFile() findet die Datei nicht mehr und
   // setzt FileOK=false. Loeschen fehlgeschlagen: die alte Datei besteht
   // weiter, also neu laden statt stumm zu bleiben.
-  if (target) target->LoadWavFile();
+  // v0.12: geloescht -> die Plaetze mit dieser Datei werden leer;
+  // fehlgeschlagen -> alte Datei besteht weiter, Motor-Plaetze neu laden.
+  if (ok) soundMapClearUsers(name.c_str());
+  else    soundMapReloadUsers(name.c_str());
   restoreSoundHandles(motorMask);
   // v7.16: siehe Kommentar bei markSdActivity() - gilt fuer Loeschen genauso
   // wie fuer Upload.
@@ -2253,15 +2372,16 @@ void WebServerManager::handleApiDebug() {
   // deshalb "fehlt", obwohl die Datei vorhanden war.
   // Dazu "fsfiles": ALLE Dateien im Flash (Sounds, Backups, evtl. Reste),
   // damit sichtbar ist, was den Platz belegt.
-  static const char* const fixedNames[3] = { "loop.wav", "shut.wav", "start.wav" };
+  // v0.12: je Platz die zugeordnete Datei ("Sound 2: Horn.wav")
   bool haveFs = sdMutexTake(1000);
   j += "\"wav\":[";
-  for (int i = 0; i < 3 + RCSOUND_NUM_SOUNDS; i++) {
-    String name = (i < 3) ? String(fixedNames[i]) : ("sound" + String(i - 2) + ".wav");
+  for (int i = 0; i < SND_FILE_SLOTS; i++) {
+    const char* f = config.Sound_File[i];
     uint32_t size = 0;
-    bool exists = haveFs && sdFileInfo("/" + name, size);
+    bool exists = soundFileSize(f, size);
     if (i) j += ",";
-    j += "{\"n\":\"" + name + "\",\"e\":" + String(exists ? 1 : 0) + ",\"s\":" + String(size) + "}";
+    j += "{\"n\":\"" + soundMapSlotLabel(i) + ": " + (f[0] ? jsonEscape(f) : String("(leer)")) +
+         "\",\"e\":" + String(exists ? 1 : 0) + ",\"s\":" + String(size) + "}";
   }
   j += "],";
   j += "\"fsfiles\":[";

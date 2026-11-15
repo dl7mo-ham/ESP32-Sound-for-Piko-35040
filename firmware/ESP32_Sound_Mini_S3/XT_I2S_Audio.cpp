@@ -312,6 +312,13 @@ bool XT_Wav_Class::OpenWavFile()
     // gleichzeitig und verbraucht dabei unnoetig einen weiteren der knappen
     // File-Deskriptoren (siehe max_files in sound_store.cpp).
     if (WavFile) WavFile.close();
+    // v0.12: leerer Platz (Sound-Zuordnung "(leer)") - nichts oeffnen
+    if (FileName.length() <= 1)
+    {
+        FileOK = false;
+        if (sdMutex) xSemaphoreGive(sdMutex);
+        return false;
+    }
     WavFile = soundFS().open(FileName); // Flash (LittleFS), siehe sound_store.h
     if (WavFile == false)
     {
