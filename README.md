@@ -7,11 +7,11 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), keine SD-Karte
 - **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
-- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link
+- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link, gleiches Farbschema wie alle Module (siehe [Status-LED](#status-led))
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.12 (Sound-Zuordnung: Sounds behalten ihren Namen, noch nicht auf Hardware getestet; v0.11 übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.13 (Status-LED mit denselben Farben wie alle Module, noch nicht auf Hardware getestet; v0.12 Sound-Zuordnung: Sounds behalten ihren Namen; v0.11 übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -138,14 +138,31 @@ pio run -t upload       # flashen
 pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ```
 
+## Status-LED
+
+Gleiches Schema in allen Modulen (seit v0.13 / RC_Common 1.4.0):
+
+| LED | Bedeutung |
+|---|---|
+| grün langsam | CRSF-Signal in Ordnung |
+| rot schnell | Frames kommen, aber Failsafe / kein RC-Link |
+| rot Aufblitzen (kurz alle 1 s) | kein CRSF an Port A |
+| blau Doppelblitz | Adresskonflikt: ein Gerät an Port B/C hat dieselbe Adresse |
+| gelb Doppelblitz | Port C hat dieselbe Rolle wie Port B (Port C bleibt aus) |
+| violett statt grün/rot | WLAN ist an (Muster bleibt) |
+| blau blinkend (3 s nach dem Start) | jetzt BOOT drücken = WLAN an |
+
+Blinkt die LED rot, obwohl alles verbunden ist, sind Rot und Grün vertauscht: im Lua-Menü Einstellungen → „LED Farbfolge“ (Feld 62) umstellen. Vorgabe ist RGB für den S3-Zero, GRB für den C3.
+
 ## WLAN einschalten
 
 Das Modul öffnet den Access Point „Sound-Mini“ (Passwort `123456789`), Weboberfläche http://192.168.1.1. Das WLAN geht an über:
 
 1. **„WLAN dauerhaft an“** (ab Werk EIN): WLAN ist nach jedem Einschalten sofort an. Umschalten im Web-Tab „WiFi“ oder im Lua-Menü (Einstellungen → „WLAN dauerhaft an“), wirkt ab dem nächsten Start.
 2. **BOOT-Taste:** Ist „WLAN dauerhaft an“ aus, blinkt die LED nach dem Einschalten 3 s lang blau. Wer in dieser Zeit kurz die BOOT-Taste des S3-Zero drückt, schaltet das WLAN ein. Die Taste beim Einschalten **nicht** gedrückt halten, sonst startet der ESP im Flash-Modus (dann einfach neu einschalten).
-3. **Lua-Menü „WLAN jetzt“** (Einstellungen, Feld 46) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
-4. **Auto-WLAN bei Signalverlust:** schaltet das WLAN ein, wenn länger als die eingestellte Zeit kein CRSF-Signal kommt.
+3. **BOOT-Taste im Betrieb** (ab v0.13): 2 s gedrückt halten schaltet das WLAN an oder aus (wie beim CRSF-Router und den Schaltmodulen).
+4. **Lua-Menü „WLAN jetzt“** (Einstellungen, Feld 46) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
+5. **Auto-WLAN bei Signalverlust:** schaltet das WLAN ein, wenn länger als die eingestellte Zeit kein CRSF-Signal kommt.
 
 Eine WLAN-Brücke oder ein Jumper ist seit v0.05 nicht mehr nötig, GPIO9 ist frei.
 
@@ -225,6 +242,7 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 | Version | Änderung |
 |---|---|
+| 0.13 | **Status-LED wie alle Module** (RC_Common 1.4.0): grün langsam = OK, rot schnell = Failsafe / kein RC-Link, rot Aufblitzen = kein Signal (vorher aus), blau Doppelblitz = Adresskonflikt (neu), gelb Doppelblitz = doppelte Port-Rolle, violett = WLAN an. Neues Lua-Feld 62 „LED Farbfolge“ (RGB/GRB). BOOT-Taste im Betrieb 2 s halten = WLAN an/aus. Noch nicht auf Hardware getestet. |
 | 0.12 | **Sound-Zuordnung:** Sounds behalten beim Hochladen ihren Namen. Neuer Web-Tab „Speicher“ mit allen Sounds, Auswahlliste je Platz, Hochladen und Löschen. Neuer Lua-Ordner „Sound-Zuordnung“ (Felder 58–61: Platz, Datei, Größe). Vorhandene `loop.wav` … `sound4.wav` bleiben auf ihren Plätzen, die Zuordnung steht im Export/Backup. Gilt für S3 und C3. Noch nicht auf Hardware getestet. |
 | 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |
 | 0.10 | Lua: „Kanal Nr“ (Motor und Sounds) und „Kanal Nr Speed“ bleiben immer Zahlenfelder, bei Quelle „Aus“ oder „Dauer“ gesperrt. Vorher wurden sie dann zum Info-Feld „Deaktiviert“. Das ELRS-Lua-Skript lädt nach einer Änderung der Quelle nur Zahlen- und Auswahlfelder neu, deshalb ließ sich der Kanal nach dem Umstellen (z. B. auf EK) erst nach Verlassen des Menüs ändern. Gilt für S3 und C3. |
