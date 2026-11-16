@@ -1,7 +1,5 @@
 # Projektvorschlag: Soundmodul Mini (Stand 13.10.2026)
 
-> **Archiv:** ursprünglicher Plan vom 13.10.2026, wird nicht mehr aktualisiert. Repo- und Ordnernamen haben sich seitdem geändert. Aktueller Stand: [README.md](../README.md) und [CHANGELOG.md](../CHANGELOG.md).
-
 Nur Vorschlag, noch kein Repo und kein Code.
 
 Grundlage: Sound-Firmware v7.18 (`mnorden81-ESP32-Sound-bidirectional_code`, `main` @ `4d0f1df`) und die lokale Notiz `Sound/Mini/README.md` (MAX98357, CRSF, Board C3 oder S3-Zero offen).

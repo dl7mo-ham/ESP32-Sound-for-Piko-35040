@@ -1,5 +1,33 @@
 # Soundmodul Mini (S3 und C3)
 
+## Eigene Ergänzungen für Piko 35040
+
+Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
+steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
+
+**Aktuelle Version in diesem Repo:** v0.12 (Reed-Modus: einfache Impulse für IO5/IO6, Motorsound und Flammen-LED über Web-UI; übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+
+**Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
+
+### Reed-Betrieb (Piko 35040)
+
+![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
+
+Mit `REED_TRIGGER_ENABLED` (Standard) werden IO5 und IO6 als Reed-/Tasteneingänge genutzt statt CRSF. Beide reagieren nur auf einfache Impulse:
+
+| Eingang | Impuls | Aktion |
+|---|---|---|
+| IO6 | einfach | `sound1.wav` (Sound 1) |
+| IO5 | einfach | `sound2.wav` (Sound 2) |
+
+Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Die Entprellzeit steht unter „Einstellung → Reed-Kontakte“.
+
+Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO7/IO8 zu schalten. Dafür muss die Rolle von Port B auf „Aus“ stehen, da IO7/IO8 sonst als UART-Pins belegt sind.
+
+---
+
+*Ab hier folgt die unveränderte README des Upstream-Projekts.*
+
 Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM). Seit v0.09 läuft derselbe Code auch auf dem **ESP32-C3 Pro Mini** (4 MB Flash, kein PSRAM), siehe [ESP32-C3 Pro Mini](#esp32-c3-pro-mini).
 Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-Sound-bidirectional_code), reduziert auf:
 
@@ -7,15 +35,15 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), keine SD-Karte
 - **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
-- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link, gleiches Farbschema wie alle Module (siehe [Status-LED](#status-led))
+- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.13 (noch nicht auf Hardware getestet, zuletzt getestet: v0.07 am 29.10.2026; C3-Variante noch nicht getestet). Alle Versionen: [CHANGELOG.md](CHANGELOG.md).
+**Aktuelle Version:** v0.11 (übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
-Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.docx) · Ursprünglicher Projektplan (Archiv): [`docs/projektplan.md`](docs/projektplan.md)
+Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.docx) · Projektplan: [`docs/projektplan.md`](docs/projektplan.md)
 
 ## Flash-Aufteilung (4 MB)
 
@@ -39,22 +67,14 @@ In der Arduino IDE steht nach „Überprüfen“ zusätzlich die Firmware-Größ
 
 ## Sounds
 
-Format: WAV, 16 Bit PCM, 22,05 kHz mono empfohlen.
-
-**Seit v0.12 behalten Sounds ihren Namen.** Beim Hochladen werden nur Umlaute ersetzt (ä → ae), Leerzeichen werden zu `_`, und der Name wird auf 26 Zeichen plus `.wav` gekürzt. Welcher Sound auf welchem Platz spielt (Loop, Standgas, Start, Sound 1–4), legst du so fest:
-
-- **Web-UI, Tab „Speicher“:** zeigt alle gespeicherten Sounds mit Größe und Platz. Pro Platz gibt es eine Auswahlliste. Ein Sound darf auf mehreren Plätzen liegen. Dort kannst du auch Sounds hochladen (mehrere auf einmal) und löschen.
-- **Web-UI, Tabs „Motor“ und „Sounds“:** „Hochladen“ speichert die Datei mit ihrem Namen und legt sie gleich auf diesen Platz.
-- **Lua-Menü, Ordner „Sound-Zuordnung“** (Felder 58–61): erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien. Neu hochgeladene Sounds erscheinen nach erneutem Öffnen des Menüs.
-
-Module mit älterer Firmware behalten ihre Sounds: `loop.wav`, `shut.wav`, `start.wav` und `sound1.wav` … `sound4.wav` bleiben auf ihren Plätzen. Die Zuordnung steht im Export und im Backup.
+Dateinamen: `start.wav`, `loop.wav`, `shut.wav`, `sound1.wav` … `sound4.wav` (16 Bit PCM, 22,05 kHz mono empfohlen).
 
 Die Sounds liegen im Flash (LittleFS). Das Mini hat keine SD-Karte, die Auswahl Auto/Flash/SD gibt es seit v0.04 nicht mehr.
 
 Sounds ins Flash bringen:
 
-1. Web-UI: Tab „Speicher“, „Motor“ oder „Sounds“ → WAV hochladen
-2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs` (danach im Tab „Speicher“ zuordnen, außer die Dateien heißen `loop.wav` … `sound4.wav`)
+1. Web-UI: Tab „Motor“ bzw. „Sounds“ → WAV hochladen
+2. USB: Dateien nach `firmware/data/` legen, dann `pio run -t uploadfs`
 
 Konfigurations-Backups liegen ab v0.04 im Flash (Weboberfläche, Karte „Konfiguration sichern“: im Modul sichern, wiederherstellen, löschen; automatisch vor jedem Import und Firmware-Update). `pio run -t uploadfs` überschreibt den ganzen Flash-Speicher und damit auch diese Backups.
 
@@ -138,31 +158,14 @@ pio run -t upload       # flashen
 pio run -t uploadfs     # Sounds aus firmware/data/ ins Flash
 ```
 
-## Status-LED
-
-Gleiches Schema in allen Modulen (seit v0.13 / RC_Common 1.4.0):
-
-| LED | Bedeutung |
-|---|---|
-| grün langsam | CRSF-Signal in Ordnung |
-| rot schnell | Frames kommen, aber Failsafe / kein RC-Link |
-| rot Aufblitzen (kurz alle 1 s) | kein CRSF an Port A |
-| blau Doppelblitz | Adresskonflikt: ein Gerät an Port B/C hat dieselbe Adresse |
-| gelb Doppelblitz | Port C hat dieselbe Rolle wie Port B (Port C bleibt aus) |
-| violett statt grün/rot | WLAN ist an (Muster bleibt) |
-| blau blinkend (3 s nach dem Start) | jetzt BOOT drücken = WLAN an |
-
-Blinkt die LED rot, obwohl alles verbunden ist, sind Rot und Grün vertauscht: im Lua-Menü Einstellungen → „LED Farbfolge“ (Feld 62) umstellen. Vorgabe ist RGB für den S3-Zero, GRB für den C3.
-
 ## WLAN einschalten
 
 Das Modul öffnet den Access Point „Sound-Mini“ (Passwort `123456789`), Weboberfläche http://192.168.1.1. Das WLAN geht an über:
 
 1. **„WLAN dauerhaft an“** (ab Werk EIN): WLAN ist nach jedem Einschalten sofort an. Umschalten im Web-Tab „WiFi“ oder im Lua-Menü (Einstellungen → „WLAN dauerhaft an“), wirkt ab dem nächsten Start.
 2. **BOOT-Taste:** Ist „WLAN dauerhaft an“ aus, blinkt die LED nach dem Einschalten 3 s lang blau. Wer in dieser Zeit kurz die BOOT-Taste des S3-Zero drückt, schaltet das WLAN ein. Die Taste beim Einschalten **nicht** gedrückt halten, sonst startet der ESP im Flash-Modus (dann einfach neu einschalten).
-3. **BOOT-Taste im Betrieb** (ab v0.13): 2 s gedrückt halten schaltet das WLAN an oder aus (wie beim CRSF-Router und den Schaltmodulen).
-4. **Lua-Menü „WLAN jetzt“** (Einstellungen, Feld 46) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
-5. **Auto-WLAN bei Signalverlust:** schaltet das WLAN ein, wenn länger als die eingestellte Zeit kein CRSF-Signal kommt.
+3. **Lua-Menü „WLAN jetzt“** (Einstellungen, Feld 46) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
+4. **Auto-WLAN bei Signalverlust:** schaltet das WLAN ein, wenn länger als die eingestellte Zeit kein CRSF-Signal kommt.
 
 Eine WLAN-Brücke oder ein Jumper ist seit v0.05 nicht mehr nötig, GPIO9 ist frei.
 
@@ -173,7 +176,7 @@ Die Pins kommen aus `firmware/ESP32_Sound_Mini_S3/pins.h` (ein KiCad-Schaltplan 
 
 ### Aufbau
 
-Das Modul ist ein Sandwich aus zwei Platinen, ohne Lochrasterplatine (Aufbau von PiperPilot, läuft):
+Das Modul ist ein Sandwich aus zwei Platinen, ohne Lochrasterplatine (Aufbau von Martin, läuft):
 
 - Der **MAX98357A** sitzt Rücken an Rücken auf der Rückseite des S3-Zero. Seine 7-polige Stiftleiste geht durch beide Platinen und trifft 5V, GND, 3V3, IO1 bis IO4 (VIN-5V, GND-GND, GAIN-IO1, DIN-IO2, BCLK-IO3, LRC-IO4). Den **SD-Stift weglassen**, 3V3 bleibt frei.
 - Die Bauteilseite des ESP mit USB-C und BOOT-Taste bleibt frei zugänglich.
@@ -240,14 +243,25 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 ## Versionen
 
-Aktuell v0.13. Alle Versionen mit Änderungen: [CHANGELOG.md](CHANGELOG.md).
+| Version | Änderung |
+|---|---|
+| 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |
+| 0.10 | Lua: „Kanal Nr“ (Motor und Sounds) und „Kanal Nr Speed“ bleiben immer Zahlenfelder, bei Quelle „Aus“ oder „Dauer“ gesperrt. Vorher wurden sie dann zum Info-Feld „Deaktiviert“. Das ELRS-Lua-Skript lädt nach einer Änderung der Quelle nur Zahlen- und Auswahlfelder neu, deshalb ließ sich der Kanal nach dem Umstellen (z. B. auf EK) erst nach Verlassen des Menüs ändern. Gilt für S3 und C3. |
+| 0.09 | Zweites Board **ESP32-C3 Pro Mini** im selben Code (`pins.h` wählt nach dem Board in der Arduino IDE). C3: Port A auf UART0 (IO20/21), Port B auf IO5/6, kein Port C, Audio-Tasks ohne festen CPU-Kern, CI baut S3 und C3. Für den S3 ändert sich nichts. |
+| 0.08 | Sound-Speicher-Belegung wird aus den Dateien berechnet (4-KB-Blöcke plus Verwaltung) statt mit `LittleFS.usedBytes()`. Diese Bibliotheksfunktion ist nur eine obere Schätzung und zeigte im Web dauerhaft „100 %, frei 0,00 MB“, obwohl noch Platz frei war. Web und Lua zeigen jetzt denselben Wert. Der alte Bibliothekswert steht nur noch im seriellen Monitor. |
+| 0.07 | Web-Tab „Debug“: „WAV Dateien“ zeigt jetzt, ob die Datei im Flash liegt (mit Größe). Vorher stand bei Sound 1–4 „fehlt“, solange der Sound nicht gerade gespielt wurde. RAM-Zeile eindeutig (belegt, frei, min frei). Neue Karte „Dateien im Flash“ mit allen Dateien und Summe. |
+| 0.06 | Speicherbelegung: Firmware, Sounds (Flash), RAM und PSRAM im Web-Tab „Debug“ (Karte „Speicherbelegung“) und im Lua-Ordner „Speicher“ (Felder 53–57, nur Anzeige). Auf Hardware getestet (28.10.2026). |
+| 0.05 | WLAN-Taste statt WLAN-Brücke: Die BOOT-Taste (GPIO0) nach dem Einschalten innerhalb von 3 s kurz drücken schaltet das WLAN ein (nur wenn „WLAN dauerhaft an“ aus ist, LED blinkt dabei blau). GPIO9 und der Jumper entfallen. |
+| 0.04 | Einstellungs-Backup im Flash statt auf SD-Karte (RC_Common 1.2.0), automatisch vor Import und Firmware-Update. Keine SD-Karte mehr, Sounds nur im Flash. |
+| 0.03 | Gemeinsame Basis **RC_Common 1.1.0**: Core 3.0.7, CRSF-Bibliothek 1.1.0 mit Router (Port B/C mit Rolle CRSF reichen Frames zwischen Port A und dem Port weiter), Rollen mit gemeinsamen Nummern (Aus, CRSF, S.Port, GPS, Raw; alte Werte werden beim ersten Start umgerechnet), gemeinsame NVS-Schlüssel, Lua-Menü als Tabelle mit unveränderten Feld-IDs, Status-LED, WLAN-Failsafe und OTA aus RC_Common. Web-API: `portb_role`/`portc_role` statt `portb_mode`/`portc_mode` (alte Sicherungen werden umgerechnet). **GPS-Baudrate „Auto“** (Vorgabe für GPS, wie Betaflight): Der Port sucht die Baudrate des GPS selbst, stellt es auf 115200 Baud und 10 Hz um (ATGM336H und u-blox) und sucht neu, wenn 3 s keine Daten kommen. Baudraten in der Weboberfläche als Auswahlliste mit „Auto“. |
+| 0.02 | Port C mit Rolle und Baudrate wie Port B, Pins verschoben |
 
 ## Ordner
 
 - `firmware/` PlatformIO-Projekt
 - `hardware/gehaeuse/` 3D-Druck-Gehäuse S3 (STL, STEP, Quelle)
 - `hardware/gehaeuse-c3/` 3D-Druck-Gehäuse C3 (STL, STEP, Quelle)
-- `docs/` Projektbeschreibung, Hardware-Bauplan, 3D-Modell, ursprünglicher Projektplan (Archiv)
+- `docs/` Projektbeschreibung, Projektplan, später Pinout und Changelog
 - `backups/` funktionierende Stände (nur lokal, nicht im Repo)
 
 ## Lizenz
