@@ -1,7 +1,7 @@
 # Gehaeuse fuer das ESP32 Sound Mini S3 (Sandwich: MAX98357A Ruecken an Ruecken unter dem ESP32-S3-Zero)
 # Parametrisch mit CadQuery. Aufruf: python gehaeuse.py  -> STL/STEP im Ordner "export"
 #
-# Masse aus dem 3D-Modell docs/3d-modell/Aufbau3D_Mini-S3.html (Martins Fotos vom 27.10.2026).
+# Masse aus dem 3D-Modell docs/3d-modell/Aufbau3D_Mini-S3.html (Fotos vom 27.10.2026).
 # Modell-Koordinaten (wie im 3D-Modell): x entlang ESP (USB-Ende = minus), z quer (Reihe A = minus),
 # y = Hoehe, ESP-Platine y 0..1, Bauteilseite des ESP bei y < 0, MAX-Seite bei y > 0.
 # Im Gehaeuse liegt die ESP-Seite OBEN (BOOT-Taste und LED unter dem Deckel):

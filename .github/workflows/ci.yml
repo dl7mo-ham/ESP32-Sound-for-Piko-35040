@@ -1,6 +1,6 @@
 name: CI
 
-# Gemeinsame CI aller ESP32-Module (RC_Common 1.3.0):
+# Gemeinsame CI aller ESP32-Module (RC_Common 1.4.0):
 #   1. RC_Common-Kopie gegen MANIFEST.sha256 pruefen (Kopie unveraendert)
 #      und die Host-Tests der Basis ausfuehren.
 #   2. Arduino-Skizze mit festem Core (esp32:esp32@3.0.7) bauen und die
@@ -69,6 +69,11 @@ jobs:
           name: ${{ matrix.artifact }}
           # *.ino.bin = OTA-Update, *.merged.bin = Komplett-Image ab 0x0 (USB)
           path: build/*.bin
+      # Gegenprobe mit dem neueren Core (Arduino IDE nutzt 3.3.12), nur Kompiliertest
+      - name: Kompilieren mit esp32-Core 3.3.12
+        run: |
+          arduino-cli core install esp32:esp32@3.3.12
+          arduino-cli compile --warnings default --fqbn "${{ matrix.fqbn }}" "$SKETCH"
 
   build-platformio:
     name: Build firmware (PlatformIO, S3 + C3)

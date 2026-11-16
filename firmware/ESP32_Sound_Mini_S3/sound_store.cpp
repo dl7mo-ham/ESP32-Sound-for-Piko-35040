@@ -29,6 +29,7 @@ void soundStoreBegin() {
 fs::FS&     soundFS()         { return LittleFS; }
 bool        soundStoreReady() { return flashOk; }
 const char* soundStoreName()  { return "Flash"; }
+const char* soundStoreMount() { return "/littlefs"; }
 
 uint64_t soundStoreTotalBytes() { return flashOk ? (uint64_t)LittleFS.totalBytes() : 0; }
 uint64_t soundStoreLibUsedBytes() { return flashOk ? (uint64_t)LittleFS.usedBytes() : 0; }

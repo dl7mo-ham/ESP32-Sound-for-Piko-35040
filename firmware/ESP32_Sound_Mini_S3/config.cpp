@@ -7,8 +7,10 @@
  */
 
 #include "config.h"
+#include "pins.h"   // v0.13: STATUS_LED_RGB_DEFAULT
 #include <Preferences.h>
 #include "src/RC_Common/settings_common.h"
+#include "sound_map.h"
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -60,6 +62,8 @@ void Reset_all() {
     config.WifiAutoTimeoutSec  = 60;
     config.WifiAlwaysOn        = true;
     config.ReedDebounceMs      = 50;
+    config.LedRgb              = STATUS_LED_RGB_DEFAULT;   // v0.13
+    for (int i = 0; i < SND_FILE_SLOTS; i++) soundMapDefaultName(i, config.Sound_File[i]);
     configDirty = true;
 }
 
@@ -131,6 +135,17 @@ void loadConfig() {
         snprintf(key,sizeof(key),"gadr%d",i);
         config.EK_Gruppen_Adresse[i] = p.getInt(key, (i==0) ? 0 : 255);
     }
+    // v0.12: Sound-Zuordnung. Fehlt der Schluessel (Firmware bis v0.11),
+    // bleiben die festen Namen loop.wav ... sound4.wav aus Reset_all().
+    if (p.getBytesLength("sfiles") == sizeof(config.Sound_File)) {
+        p.getBytes("sfiles", config.Sound_File, sizeof(config.Sound_File));
+        for (int i = 0; i < SND_FILE_SLOTS; i++) {
+            config.Sound_File[i][SND_FILE_LEN - 1] = '\0';
+            if (config.Sound_File[i][0] && !soundNameOk(config.Sound_File[i], false))
+                config.Sound_File[i][0] = '\0';
+        }
+    }
+    config.LedRgb                 = p.getBool("ledrgb", STATUS_LED_RGB_DEFAULT);   // v0.13
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
     config.ReedDebounceMs         = (uint16_t)constrain(p.getInt("rddbt", 50),   5, 500);
@@ -178,6 +193,8 @@ void saveConfigForce() {
         snprintf(key,sizeof(key),"gadr%d",i);
         p.putInt(key, config.EK_Gruppen_Adresse[i]);
     }
+    p.putBytes("sfiles", config.Sound_File, sizeof(config.Sound_File));
+    p.putBool("ledrgb", config.LedRgb);   // v0.13
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
     p.putInt("rddbt",(int)config.ReedDebounceMs);

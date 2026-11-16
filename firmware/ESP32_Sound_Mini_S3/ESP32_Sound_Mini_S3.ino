@@ -16,6 +16,8 @@
    Seit v0.04 liegen Einstellungs-Backups im Flash (RC_Common 1.2.0,
    config_backup), das Mini hat keine SD-Karte.
 
+   Versionsgeschichte: siehe CHANGELOG.md im Hauptordner des Repos.
+
    ── Quellen (Motor EIN und Sound 1-4) ─────────────────────────────────
    BUS Kanal Low/High (1-16), Einkanal (1-8, Schalter an der eigenen
    WM-Adresse), MKan (1-16, zwei frei waehlbare CRSF-Gruppenadressen),
@@ -49,7 +51,7 @@
        (sonst bricht eine laufende Konfiguration/OTA ab).
 
    ── CRSF-/Lua-Parametermenue ──────────────────────────────────────────
-   57 Feld-IDs, lueckenlos 1..57 (Tabelle in buildLuaMenu()), Liste direkt beim
+   62 Feld-IDs, lueckenlos 1..62 (Tabelle in buildLuaMenu()), Liste direkt beim
    Parameter-System weiter unten. CRSF-Busadresse 0xC0+WM-Adresse und
    Telemetrie-Zeitslot nach dem Wilhelm-Meier-Schema.
 
@@ -85,8 +87,9 @@
 #include "mem_info.h"
 #include "reed_trigger.h"  // Reed-Kontakte auf IO5/IO6 (optional, siehe reed_trigger.h)
 #include "flame_led.h"     // Flammen-LED (Web-UI, spaeter IO7/IO8)
+#include "sound_map.h"
 
-uint16_t Version = 12; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (12 -> "0.12")
+uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
 // v0.11: Lua uebersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):
 //        Chunk-Fix fuer lange Auswahlfelder (Port-Baudrate), Quelle bzw.
 //        Adresse in Ordnernamen, Kanal Nr bei Aus/Dauer, Kanal Speed bei
@@ -256,6 +259,9 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //  51: Info Geraetename
 //  53: Folder Speicher {54..57} (v0.06, nur Anzeige)
 //   54:Info Firmware  55:Info Sounds  56:Info RAM frei  57:Info PSRAM frei
+//  58: Folder Sound-Zuordnung {59..61} (v0.12)
+//   59:Sel Platz (nur Auswahl, nicht gespeichert)  60:Sel Datei  61:Sel Groesse (nur Anzeige)
+//  62: Sel LED Farbfolge (v0.13, im Ordner Einstellungen)
 static constexpr uint8_t SOUND_FIRST_FI   = 15;
 static constexpr uint8_t FIELDS_PER_SOUND = 6;
 static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
@@ -263,9 +269,11 @@ static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
 static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
 static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
 static constexpr uint8_t MEMORY_FI        = PORTC_BAUD_FI + 1;
-static constexpr uint8_t CRSF_PARAM_COUNT = MEMORY_FI + 4;
+static constexpr uint8_t SOUNDMAP_FI      = MEMORY_FI + 5;
+static constexpr uint8_t LEDRGB_FI        = SOUNDMAP_FI + 4;
+static constexpr uint8_t CRSF_PARAM_COUNT = LEDRGB_FI;
 // Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && CRSF_PARAM_COUNT == 57,
+static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SOUNDMAP_FI == 58 && CRSF_PARAM_COUNT == 62,
               "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -507,6 +515,71 @@ static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec 
 // Operation, siehe V7)
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
+static uint8_t luaGetLedRgb(uint8_t)                { return config.LedRgb ? 0 : 1; }   // v0.13
+static void    luaSetLedRgb(uint8_t, uint8_t v)     { config.LedRgb = (v == 0); markDirty(); }
+
+// ── Sound-Zuordnung (v0.12, Felder 58-61) ───────────────────────────────
+// "Platz" waehlt nur aus, welcher Platz gerade bearbeitet wird (nicht
+// gespeichert). "Datei" zeigt die Dateien im Sound-Speicher als
+// Auswahlliste: "(leer)", dann die aktuelle Datei des Platzes, dann die
+// uebrigen alphabetisch. Namen auf 12 Zeichen gekuerzt. Die Liste wird bei
+// jedem Abruf neu gelesen; get/set rechnen mit derselben Liste, solange sich
+// zwischen Anzeige und Schreiben nichts an den Dateien aendert. Neue
+// Dateien erscheinen am Sender nach erneutem Oeffnen des Menues. Das ELRS-
+// Lua laedt "Datei" und "Groesse" neu, wenn "Platz" geaendert wird.
+static uint8_t luaMapSlot = 3;   // Sound 1
+static char    luaSlotOpts[96];
+static constexpr size_t LUA_FILE_OPTS_MAX = 200;   // RC_Common sendet hoechstens 256 Byte je Feld
+static constexpr int    LUA_FILE_MAX      = 20;
+static char    luaFileOpts[LUA_FILE_OPTS_MAX + 16];
+static char    luaFileNames[LUA_FILE_MAX][SND_FILE_LEN];
+static uint8_t luaFileCount = 0;   // ohne "(leer)"
+
+static void luaBuildFileList() {
+    static SoundFileInfo files[SND_LIST_MAX];
+    int n = soundListFiles(files, SND_LIST_MAX);
+    const char* cur = config.Sound_File[luaMapSlot];
+    luaFileCount = 0;
+    size_t len = snprintf(luaFileOpts, sizeof(luaFileOpts), "(leer)");
+    auto add = [&](const char* name) {
+        if (luaFileCount >= LUA_FILE_MAX) return;
+        char shortName[16];
+        size_t nl = strlen(name);
+        if (nl > 4 && strcasecmp(name + nl - 4, ".wav") == 0) nl -= 4;
+        if (nl > 12) snprintf(shortName, sizeof(shortName), "%.11s~", name);
+        else         snprintf(shortName, sizeof(shortName), "%.*s", (int)nl, name);
+        if (len + 1 + strlen(shortName) > LUA_FILE_OPTS_MAX) return;
+        len += snprintf(luaFileOpts + len, sizeof(luaFileOpts) - len, ";%s", shortName);
+        snprintf(luaFileNames[luaFileCount++], SND_FILE_LEN, "%s", name);
+    };
+    if (cur[0]) add(cur);   // aktuelle Datei immer sichtbar, auch wenn sie fehlt
+    for (int i = 0; i < n; i++)
+        if (strcasecmp(files[i].name, cur) != 0) add(files[i].name);
+}
+static uint8_t luaGetMapSlot(uint8_t)               { return luaMapSlot; }
+static void    luaSetMapSlot(uint8_t, uint8_t v)    { if (v < SND_FILE_SLOTS) luaMapSlot = v; }
+static void luaViewMapFile(uint8_t, LuaView& v, char*) {
+    luaBuildFileList();
+    v.text = luaFileOpts;
+    v.max  = luaFileCount;
+    v.value = config.Sound_File[luaMapSlot][0] ? 1 : 0;
+}
+static uint8_t luaGetMapFile(uint8_t)               { return config.Sound_File[luaMapSlot][0] ? 1 : 0; }
+static void    luaSetMapFile(uint8_t, uint8_t v) {
+    luaBuildFileList();
+    if (v == 0) soundMapSet(luaMapSlot, "");
+    else if (v <= luaFileCount) soundMapSet(luaMapSlot, luaFileNames[v - 1]);
+}
+static uint8_t luaGetZero(uint8_t)                  { return 0; }
+static void luaShowMapSize(uint8_t, LuaView& v, char* buf) {
+    const char* cur = config.Sound_File[luaMapSlot];
+    uint32_t size = 0;
+    if (!cur[0])                       snprintf(buf, LUA_VIEW_BUF, "-");
+    else if (!soundFileSize(cur, size)) snprintf(buf, LUA_VIEW_BUF, "Datei fehlt");
+    else                               snprintf(buf, LUA_VIEW_BUF, "%u KB", (unsigned)((size + 1023) / 1024));
+    v.text = buf;
+    v.max  = 0;
+}
 
 static void buildLuaMenu() {
     static const char* AUS_EIN = "Aus;Ein";
@@ -562,6 +635,7 @@ static void buildLuaMenu() {
     // v0.04: nur noch Anzeige (keine SD-Karte), Feld bleibt, damit die
     // Feldnummern ohne Luecke bleiben
     m.info(50, SETTINGS_FI, "Sound-Speicher", "Flash");
+    m.select(LEDRGB_FI, SETTINGS_FI, "LED Farbfolge", "RGB (S3-Zero);GRB", luaGetLedRgb, luaSetLedRgb);   // v0.13
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 
     static const char* MEM_NAMES[4] = {"Firmware", "Sounds", "RAM frei", "PSRAM frei"};
@@ -570,6 +644,21 @@ static void buildLuaMenu() {
         LuaItem* it = m.info(MEMORY_FI + 1 + a, MEMORY_FI, MEM_NAMES[a], "");
         it->arg = a; it->view = luaShowMemory;
     }
+
+    // v0.12: Sound-Zuordnung
+    {
+        size_t len = 0;
+        luaSlotOpts[0] = '\0';
+        for (int i = 0; i < SND_FILE_SLOTS; i++)
+            len += snprintf(luaSlotOpts + len, sizeof(luaSlotOpts) - len, "%s%s",
+                            i ? ";" : "", soundMapSlotLabel(i).c_str());
+    }
+    m.folder(SOUNDMAP_FI, 0, "Sound-Zuordnung");
+    m.select(SOUNDMAP_FI + 1, SOUNDMAP_FI, "Platz", luaSlotOpts, luaGetMapSlot, luaSetMapSlot);
+    m.select(SOUNDMAP_FI + 2, SOUNDMAP_FI, "Datei", "(leer)", luaGetMapFile, luaSetMapFile)->view = luaViewMapFile;
+    // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
+    // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
+    m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
 }
 
 // WLAN-Taste: wartet nach dem Start WIFI_BUTTON_WINDOW_MS auf einen
@@ -577,17 +666,8 @@ static void buildLuaMenu() {
 // Laeuft nur, wenn "WLAN dauerhaft an" AUS ist, und vor dem Reservieren
 // der Sound-Puffer, damit der AP auf einem freien Heap startet. Wer BOOT
 // schon beim Einschalten haelt, landet im Flash-Modus des ROM.
-// Blaues Blinken im WLAN-Fenster. Einfache LED (C3-Board ohne RGB-LED):
-// blinkt in ihrer eigenen Farbe.
-static void bootLedBlue(bool on) {
-#if STATUS_LED_WS2812
-    neopixelWrite(PIN_STATUS_LED, 0, 0, on ? 40 : 0);
-#else
-    pinMode(PIN_STATUS_LED, OUTPUT);
-    digitalWrite(PIN_STATUS_LED, (on == (bool)STATUS_LED_ACTIVE_HIGH) ? HIGH : LOW);
-#endif
-}
-
+// Blaues Blinken im WLAN-Fenster (RC_Common, StatusLed::showBootWindow).
+// Einfache LED (falls das C3-Board keine RGB-LED hat): blinkt in ihrer Farbe.
 static bool waitForWifiButton() {
     Serial.printf("WLAN-Taste: %u s lang BOOT druecken = WLAN an\n",
                   (unsigned)(WIFI_BUTTON_WINDOW_MS / 1000));
@@ -598,11 +678,35 @@ static bool waitForWifiButton() {
             delay(30);   // entprellen
             if (digitalRead(PIN_BOOT_BUTTON) == LOW) { pressed = true; break; }
         }
-        bootLedBlue(((millis() - start) / 250) % 2);
+        statusLed.showBootWindow(millis() - start);
         delay(10);
     }
-    bootLedBlue(false);
+    statusLed.writeRgb(0, 0, 0);
     return pressed;
+}
+
+// v0.13: BOOT-Taste im Betrieb 2 s halten = WLAN an/aus (wie Router und
+// Schaltmodule). Erst scharf, nachdem die Taste nach dem Start einmal
+// losgelassen war; einmal je Druck.
+static void checkWifiButton(unsigned long now) {
+    static unsigned long downSince = 0;
+    static bool done = true;
+    if (digitalRead(PIN_BOOT_BUTTON) == LOW) {
+        if (!downSince) downSince = now ? now : 1;
+        if (!done && now - downSince >= WIFI_BUTTON_HOLD_MS) {
+            done = true;
+            if (WebServerManager::isApActive()) {
+                Serial.println("BOOT-Taste: WLAN aus");
+                WebServerManager::disableAP();
+            } else {
+                Serial.println("BOOT-Taste: WLAN an");
+                WebServerManager::enableAP();
+            }
+        }
+    } else {
+        downSince = 0;
+        done = false;
+    }
 }
 
 // ======== Setup ======================================================
@@ -626,9 +730,12 @@ void setup() {
 #endif
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
+    statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
+    statusLed.setRgbOrder(config.LedRgb);   // v0.13
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
+    soundMapApplyAll();   // v0.12: Dateinamen je Platz aus der Konfiguration
 #ifdef REED_TRIGGER_ENABLED
     reedTriggerBegin();   // IO5 + IO6 als Reed-Eingaenge (ersetzt CRSF)
     flameBegin();         // Flammen-LED aus, geschaltet ueber die Web-UI
@@ -670,7 +777,6 @@ void setup() {
     PortC_Duplicate_boot = uartPorts[1].duplicate;
 
     buildLuaMenu();
-    statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
     Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
     Serial.printf("Soundmodul Mini %s (" BOARD_NAME ")\n", versionString);
 }
@@ -692,18 +798,24 @@ void wifiFailsafeCheck() {
     }
 }
 
-// Status-LED (RC_Common): langsam = kein CRSF, schnell = Link schwach,
-// aus = alles gut
+// Status-LED (RC_Common 1.4.0, gleiches Schema in allen Modulen):
+// gruen langsam = RC-Signal OK, rot schnell = Frames, aber Failsafe /
+// kein RC-Link, rot Aufblitzen = kein CRSF an Port A, blau Doppelblitz =
+// Adresskonflikt, gelb Doppelblitz = Port C mit doppelter Rolle,
+// violett statt gruen/rot = WLAN an.
 static void updateLed() {
     unsigned long now = millis();
     const LinkStatistics& ls = crsf.getLinkStatistics();
     StatusLedInput in = {};
+    bool dup = crsf.isDuplicateAddress();
+    in.configError   = dup || PortC_Duplicate_boot;
     in.crsf          = true;
     in.busOk         = BUS_OK;
     in.lastRcFrameMs = crsf.getLastRcFrameMs();
     in.linkStatsMs   = ls.lastUpdate;
     in.uplinkLQ      = ls.uplinkLQ;
-    statusLed.update(statusLedMode(in, now), now);
+    statusLed.setRgbOrder(config.LedRgb);
+    statusLed.update(statusLedMode(in, now), now, dup, WebServerManager::isApActive());
 }
 
 // ======== Loop =======================================================
@@ -731,6 +843,7 @@ void loop() {
     // ueberschrieben.
     uartPortsTelemetry(crsf);
     updateLed();
+    checkWifiButton(currentTime);   // v0.13
     if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
         // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
         crsf.setDeviceInfoReplyPending(false);

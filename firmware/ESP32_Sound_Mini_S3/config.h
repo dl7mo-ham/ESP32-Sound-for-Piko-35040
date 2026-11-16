@@ -35,6 +35,13 @@ static constexpr int RCSOUND_NUM_SLOTS  = RCSOUND_NUM_SOUNDS + 1;
 // Kanaele. Adresse 255 = Gruppe deaktiviert.
 static constexpr int RCSOUND_NUM_GROUPS = 2;
 
+// v0.12: Sound-Zuordnung (sound_map.h). Jede Datei behaelt ihren Namen, pro
+// Platz steht hier, welche Datei dort spielt: 0 = Loop, 1 = Standgas,
+// 2 = Start, 3.. = Sound 1-4. Leerer Name = Platz leer.
+static constexpr int    SND_FILE_SLOTS    = 3 + RCSOUND_NUM_SOUNDS;
+static constexpr size_t SND_NAME_MAX_BASE = 26;   // Flash: Name ohne ".wav"
+static constexpr size_t SND_FILE_LEN      = SND_NAME_MAX_BASE + 4 + 2;   // + ".wav" + '\0' (32)
+
 struct ConfigData {
     int Source_Start_Sound[RCSOUND_NUM_SLOTS];   // Quelle Motor(0) + Sound 1-4
     int Volumen_Sound[RCSOUND_NUM_SLOTS];        // Lautstaerke 0-200
@@ -84,6 +91,13 @@ struct ConfigData {
     // Entprellzeit der Reed-Kontakte IO5/IO6 (Web-UI: Einstellungen ->
     // Reed-Kontakte). Wird ohne Neustart wirksam.
     uint16_t ReedDebounceMs;    // Entprellzeit, Default 50 ms (5-500)
+
+    // v0.13: Farbfolge der Status-LED: true = RGB (S3-Zero), false = GRB
+    bool     LedRgb;
+
+    // v0.12: Dateiname je Platz (ohne "/"), siehe SND_FILE_SLOTS oben.
+    // Werkseinstellung: loop.wav, shut.wav, start.wav, sound1.wav ...
+    char Sound_File[SND_FILE_SLOTS][SND_FILE_LEN];
 };
 
 extern ConfigData    config;

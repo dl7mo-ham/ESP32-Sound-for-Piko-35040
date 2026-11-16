@@ -55,6 +55,9 @@ private:
   // in WebServerManager.cpp).
   static void      handleApiSoundFiles();
   static void      handleApiSoundDelete();
+  // v0.12: Sound-Zuordnung - alle Dateien + Zuordnung lesen, Platz belegen
+  static void      handleApiSoundLib();
+  static void      handleApiSoundMap();
   // Firmware-Update direkt per WLAN (OTA) - .bin-Datei per
   // multipart/form-data hochladen, ueber die Arduino-"Update"-Bibliothek
   // ins jeweils inaktive OTA-Flash-Segment schreiben, dann neu starten
