@@ -1,7 +1,7 @@
 # Gehaeuse fuer das ESP32 Sound Mini C3 (ESP32-C3 Pro Mini, MAX98357A umgedreht auf der Versorgungsreihe)
 # Parametrisch mit CadQuery. Aufruf: python gehaeuse.py [Ordner] [--pruefen]  -> STL/STEP
 #
-# Aufbau (Martins Foto vom 12.11.2026): Der MAX98357A sitzt mit der Bauteilseite zum ESP auf dessen
+# Aufbau (Foto vom 12.11.2026): Der MAX98357A sitzt mit der Bauteilseite zum ESP auf dessen
 # Rueckseite, seine 7-polige Stiftleiste steckt in 5V, GND, 3V3, IO4..IO1 (IO0 frei). 2,5 mm Abstand
 # (Kunststoff der Stiftleiste). Der MAX deckt die ganze Rueckseite bis IO1 ab, deshalb sind alle
 # Kabel (Port A: 5V, GND, IO20, IO21; Port B: IO5, IO6) auf der Bauteilseite des ESP angeloetet.

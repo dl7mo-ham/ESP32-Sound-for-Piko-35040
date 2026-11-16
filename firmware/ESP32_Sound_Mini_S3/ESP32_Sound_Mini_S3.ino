@@ -16,6 +16,8 @@
    Seit v0.04 liegen Einstellungs-Backups im Flash (RC_Common 1.2.0,
    config_backup), das Mini hat keine SD-Karte.
 
+   Versionsgeschichte: siehe CHANGELOG.md im Hauptordner des Repos.
+
    ── Quellen (Motor EIN und Sound 1-4) ─────────────────────────────────
    BUS Kanal Low/High (1-16), Einkanal (1-8, Schalter an der eigenen
    WM-Adresse), MKan (1-16, zwei frei waehlbare CRSF-Gruppenadressen),
@@ -84,43 +86,6 @@
 #include "sound_map.h"
 
 uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
-// v0.13: Status-LED mit demselben Farbschema wie alle Module (RC_Common
-//        1.4.0): gruen langsam = OK, rot schnell = Failsafe / kein RC-Link,
-//        rot Aufblitzen = kein Signal (vorher aus), blau Doppelblitz =
-//        Adresskonflikt (neu angezeigt), gelb Doppelblitz = Port C mit
-//        doppelter Rolle, violett statt gruen/rot = WLAN an. Lua
-//        Einstellungen > "LED Farbfolge" (Feld 62, NVS "ledrgb", S3-Zero
-//        Vorgabe RGB). BOOT-Taste im Betrieb 2 s halten = WLAN an/aus.
-// v0.12: Sound-Zuordnung: Dateien behalten ihren Namen (sound_map.h). Neuer
-//        Web-Tab "Speicher" (alle Sounds, Auswahlliste je Platz, Hochladen,
-//        Loeschen) und Lua-Ordner "Sound-Zuordnung" (Felder 58-61).
-//        Vorhandene loop.wav ... sound4.wav bleiben auf ihrem Platz.
-// v0.11: Lua uebersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):
-//        Chunk-Fix fuer lange Auswahlfelder (Port-Baudrate), Quelle bzw.
-//        Adresse in Ordnernamen, Kanal Nr bei Aus/Dauer, Kanal Speed bei
-//        Deaktiviert, Baudrate bei Port "Aus" und beim C3 Port C ausgeblendet.
-// v0.10: Lua: "Kanal Nr" (Motor, Sounds) und "Kanal Nr Speed" bleiben immer
-//        Zahlenfelder (bei Aus/Dauer gesperrt). Vorher wurden sie zum
-//        Info-Feld "Deaktiviert" und liessen sich nach Wechsel der Quelle
-//        (z. B. auf EK) erst nach Verlassen des Menues aendern.
-// v0.09: zweites Board ESP32-C3 Pro Mini (pins.h, Auswahl automatisch
-//        ueber das Board in der Arduino IDE). C3: Port A auf UART0,
-//        kein Port C (nur zwei UARTs), Audio-Tasks ohne festen Kern.
-// v0.08: Belegung des Sound-Speichers selbst aus den Dateien berechnet
-//        (4-KB-Bloecke), statt LittleFS.usedBytes() - das zeigte im Web
-//        dauerhaft 100 %. Web und Lua zeigen denselben Wert.
-// v0.07: Web-Tab Debug: WAV-Liste zeigt, ob die Datei im Flash liegt (mit
-//        Groesse) statt "gerade geoeffnet"; RAM-Zeile eindeutig (belegt/
-//        frei/min frei); neue Karte "Dateien im Flash" mit allen Dateien.
-// v0.06: Speicherbelegung (Firmware, Sounds, RAM, PSRAM) im Web-Tab Debug
-//        und im Lua-Ordner "Speicher" (Felder 53-57).
-// v0.05: WLAN-Taste statt WLAN-Bruecke: BOOT-Taste (GPIO0) nach dem
-//        Einschalten innerhalb von 3 s druecken = WLAN an. GPIO9 ist frei.
-// v0.04: Einstellungs-Backup im Flash (RC_Common 1.2.0) statt auf SD-Karte,
-//        automatisch vor Import und Firmware-Update. Keine SD-Karte mehr:
-//        Sounds nur im Flash, Lua-Feld 50 (Sound-Speicher) nur noch Anzeige.
-// v0.02: Port C ist ein Hardware-UART mit waehlbarer Rolle wie Port B
-//        (Aus/CRSF/S.Port/Raw/GPS), GPS ohne SoftwareSerial.
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren (CRSF-only). Die
 // Variable bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
