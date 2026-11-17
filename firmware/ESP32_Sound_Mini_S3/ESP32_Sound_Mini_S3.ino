@@ -93,7 +93,7 @@
 #include "reed_trigger.h"   // v0.14: Reed-Trigger je Port/Pin
 #include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
 
-uint16_t Version = 14; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (14 -> "0.14")
+uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren. Die Variable
 // bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
@@ -946,10 +946,10 @@ void loop() {
     if(config.shutdowndelay>0&&Sound_play[0]&&(millis()-shutdown_timer)>((unsigned long)config.shutdowndelay*1000UL)){Sound_play[0]=false;engine_break=true;}
 
     switch(engine_State){
-        case OFF:    if(Sound_play[0]){Sound_start.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_start,true,config.Volumen_Sound[0]);engine_State=STARTING;} break;
-        case STARTING: if(!Sound_start.Playing){throttle=0;last_throttle=0;Sound_loop.RepeatForever=true;Sound_loop.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_loop,true,config.Volumen_Sound[0]);engine_State=RUNNING;} break;
+        case OFF:    if(Sound_play[0]){I2SAudio.Play(&Sound_start,true,config.Volumen_Sound[0]);engine_State=STARTING;} break;
+        case STARTING: if(!Sound_start.Playing){throttle=0;last_throttle=0;Sound_loop.RepeatForever=true;I2SAudio.Play(&Sound_loop,true,config.Volumen_Sound[0]);engine_State=RUNNING;} break;
         case RUNNING:  Sound_loop.Volume=config.Volumen_Sound[0]; if(!Sound_play[0]){throttle=0;if(last_throttle==0){Sound_loop.RepeatForever=false;I2SAudio.Stop(&Sound_loop);engine_State=STOPPING;}} break;
-        case STOPPING: if(!Sound_loop.Playing){Sound_shut.Volume=config.Volumen_Sound[0];I2SAudio.Play(&Sound_shut,true,config.Volumen_Sound[0]);engine_State=OFF;} break;
+        case STOPPING: if(!Sound_loop.Playing){I2SAudio.Play(&Sound_shut,true,config.Volumen_Sound[0]);engine_State=OFF;} break;
     }
     throttle=ramp_throttle(throttle);
     if(config.Min_Speed_Sound_0!=config.Max_Speed_Sound_0)
@@ -969,7 +969,6 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd) {
         if(!Sound_play[idx]){
             Sound_play[idx]=true;
             snd->LoadWavFile();
-            snd->Volume=config.Volumen_Sound[idx];
             if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;
             I2SAudio.Play(snd,true,config.Volumen_Sound[idx]);
         }else{

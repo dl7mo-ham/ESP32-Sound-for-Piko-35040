@@ -3,34 +3,36 @@
 ## 1. Trigger-Quellen
 
 ```
-CRSF-Bus (Port A, Default)   Reed-Trigger (Port A/B/C)      Web / Lua-Menü
-        │                        │                            │
-   Config()                reedUpdate() + debounce      Sound_on_web[i]=true
-   wertet Kanäle aus       Pin RX/TX -> Aktion          enqueueCommand(action)
-        │                        │                            │
-   Sound_on[i] = true/false      └──────────┬─────────────────┘
-        │                                   │
-        └───────────────────────────────────┤
-                                            ▼
-                                   Command-Queue (16)
-                                            │
-                                   executeCommand() in loop()
+CRSF-Bus (Port A, Default)  Reed-Trigger (A/B/C)   Web /api/reed/test   Lua "Test Sound"
+        │                        │                      │                    │
+   Config()              reedUpdate()+debounce   enqueueCommand()     Sound_on_web[i]=true
+   wertet Kanäle aus     Pin RX/TX -> Aktion            │                    │ (direkt, keine Queue)
+        │                        │                      ▼                    │
+        │                        └──────────┬───── Command-Queue (16)         │
+        │                                   │              │                  │
+        └───────────────────────────────────┼──────────────┼──────────────────┘
+                                            ▼              ▼
+                                   processCommandQueue() in loop()
+                                   (intern: executeCommand())
                                             │
                    Sound_on_web[i] / toggleMotorSound() / flameToggle()
                                             │
                                        handleSound(i)
 ```
 
-Reed-Aktionen und Testbuttons des Web-Tabs „Reed“ benutzen dieselbe Queue;
-`handleSound(i)` verarbeitet danach One-Shot-Flags wie beim Web-Test.
+Reed-Impulse und die Testbuttons des Web-Tabs „Reed“ benutzen dieselbe Queue
+(`enqueueCommand()` → `processCommandQueue()` → `executeCommand()`). Der Lua-Test
+setzt `Sound_on_web[i]` direkt – er läuft **nicht** über die Queue. `handleSound(i)`
+verarbeitet danach die One-Shot-Flags.
 
 > [!NOTE]
 > `Sound_on[]` wird jeden Loop-Durchlauf neu gesetzt (dauerhaft, solange Quelle aktiv).
 > `Sound_on_web[]` ist ein **One-Shot-Flag**: `handleSound` setzt es sofort wieder auf `false`.
 
 > [!NOTE]
-> Seit v0.14 ist Reed eine Port-Rolle (nicht mehr `REED_TRIGGER_ENABLED`). Ein Reed-Port liest
-> RX und TX mit Pull-up; ein Impuls (HIGH → LOW, nach Entprellzeit) löst die konfigurierte Aktion
+> Seit v0.14 ist Reed eine Port-Rolle (nicht mehr `REED_TRIGGER_ENABLED`). Seit v0.15 ist sie
+> projektlokal `APP_UROLE_REED` = 100 (`reed_roles.h`); RC_Common 1.4.0 bleibt upstream-identisch.
+> Ein Reed-Port liest RX und TX mit Pull-up; ein Impuls (HIGH → LOW, nach Entprellzeit) löst die konfigurierte Aktion
 > aus: Sound 1–4, Motor Ein/Aus oder Flamme Ein/Aus. Aktionen sind pro Pin frei wählbar und im
 > Web-Tab „Reed“ einzeln testbar. Rollenwechsel brauchen einen Neustart, Aktionen/Entprellzeit
 > gelten sofort.

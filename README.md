@@ -5,7 +5,7 @@
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Version in diesem Repo:** v0.14 (RC_Common 1.5.0; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version in diesem Repo:** v0.15 (RC_Common 1.4.0 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
@@ -43,7 +43,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.14 (RC_Common 1.5.0; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.15 (RC_Common 1.4.0 upstream-identisch; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -249,6 +249,7 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 | Version | Änderung |
 |---|---|
+| 0.15 | **Upstream-Konfliktminimierung:** `src/RC_Common/` wieder upstream-identisch (1.4.0); Reed als projektlokale Rolle `APP_UROLE_REED` = 100 in `reed_roles.h`, inklusive Migration alter Werte 5 → 100. Lua/Web zeigen Reed als letzten Eintrag (Index 5 ↔ 100). Reed-Tests liegen jetzt in `firmware/ESP32_Sound_Mini_S3/tests/`. |
 | 0.14 | **Reed-Trigger pro Port (RC_Common 1.5.0):** Port A ist jetzt rollenfähig (Aus/CRSF/Reed, Default CRSF); B/C zusätzlich `Reed`. Im Reed-Modus liest der Port beide Pins mit Pull-up, Baudrate entfällt. Neuer Web-Tab „Reed“ mit Aktion je Pin (Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und Testbutton; konfigurierbare Entprellzeit (5–500 ms). Reed-Impulse und Testbuttons laufen über dieselbe Kommando-Queue. Aktionen/Entprellzeit wirken sofort, Rollenwechsel erst nach Neustart. Export/Backup bleiben rückwärtskompatibel. Noch nicht auf Hardware getestet. |
 | 0.13 | Status-LED-Modi und Lua-Feld 62 „LED Farbfolge“ (RGB/GRB); BOOT-Taste im Betrieb 2 s = WLAN an/aus. |
 | 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |

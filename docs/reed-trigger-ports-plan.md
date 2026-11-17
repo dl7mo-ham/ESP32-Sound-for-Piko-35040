@@ -172,3 +172,9 @@ Anpassung. Neue Konfigurationsfelder: `porta_role`, `reed_debounce_ms`,
 (Hardware-Test am Piko 35040); die Builds für S3/C3 und die RC_Common-
 Hosttests laufen fehlerfrei. Details zu den Entscheidungen stehen in
 [`CHANGELOG.md`](../CHANGELOG.md) und im README-Abschnitt „Reed-Betrieb“.
+
+> [!NOTE]
+> Der historische Plan verwendet `UROLE_REED` = 5. Seit v0.15 heisst die Rolle
+> `APP_UROLE_REED` = 100 und liegt in `reed_roles.h`; `src/RC_Common/` ist wieder
+> upstream-identisch (1.4.0). Gespeicherte Werte 5 werden beim Laden nach 100
+> migriert. Siehe [`upstream-konfliktminimierung-plan.md`](upstream-konfliktminimierung-plan.md).
