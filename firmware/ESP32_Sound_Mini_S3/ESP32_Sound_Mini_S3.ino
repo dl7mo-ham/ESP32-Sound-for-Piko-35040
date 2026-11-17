@@ -82,6 +82,8 @@
 #include "reed_roles.h"     // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "command_queue.h"  // v0.15: Reed-/Web-Kommandos
 #include "crsf_bridge.h"    // v0.15: CRSF-Loop-Aufgaben ausgelagert
+#include "motor_control.h"  // v0.15: Motor-Toggle / Direktsteuerung
+#include "sound_trigger.h"  // v0.15: handleSound()/One-Shot
 #include "pins.h"
 #include "WebServerManager.h"
 #include "src/RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
@@ -114,20 +116,10 @@ unsigned long shutdown_timer = 0;
 enum Engine_State : uint8_t { OFF, STARTING, RUNNING, STOPPING };
 volatile uint8_t engine_State = OFF;
 
-// Direktsteuerung Motorsound (Web-UI/Reed-Trigger). In reinem CRSF-Betrieb
-// folgt Sound_on_Motor weiter den Kanaelen; der manuelle Zustand bleibt
-// trotzdem erhalten, wenn kein CRSF-Motorsignal anliegt.
-void setMotorSound(bool on) {
-    Sound_on_Motor = on;
-    Sound_on_web[0] = false;   // alten Legacy-Trigger nicht dagegenlaufen lassen
-    Serial.printf("[Motor] Direktsteuerung -> %s\n", on ? "EIN (Start->Loop)" : "AUS (Shut)");
-}
-void toggleMotorSound() {
-    setMotorSound(!Sound_on_Motor);
-}
-bool motorSoundIsOn() {
-    return Sound_on_Motor;
-}
+// Direktsteuerung Motorsound (Web-UI/Reed-Trigger): setMotorSound(),
+// toggleMotorSound() und motorSoundIsOn() liegen seit v0.15 in
+// motor_control.cpp. In reinem CRSF-Betrieb folgt Sound_on_Motor weiter
+// den Kanaelen; der manuelle Zustand bleibt trotzdem erhalten.
 
 // Boot-Snapshot: Rolle/Baudrate von Port A, Port B und Port C werden
 // einmalig in setup() aus config uebernommen. Aendern ueber Web/Lua schreibt
@@ -214,7 +206,7 @@ void AllocateSoundBuffers(); // reserviert die Sample-Puffer erst in setup() NAC
 void einkanalFunctionCRSF(); uint8_t compressSwitches(uint16_t state);
 static void updateGroupFromAddress(uint8_t addr, uint8_t bits);
 float ramp_throttle(float t); float floatMap(float x,float a,float b,float c,float d);
-void handleSound(uint8_t idx, XT_Wav_Class* snd);
+// handleSound() kommt seit v0.15 aus sound_trigger.h.
 
 // ======== CRSF-Parametersystem ==========================================
 //
@@ -306,7 +298,9 @@ static uint8_t einMaxNr(uint8_t t) {
 // ── Quelle Speed: 0-15 = CRSF-Kanal, 999 = Deaktiviert ────────────────
 static bool spdActive(int c) { return c>=0&&c<=15; }
 
-static bool testSoundActive[RCSOUND_NUM_SLOTS]={};
+// Nicht static: sound_trigger.cpp setzt den Lua-"Test Sound" nach Ende der
+// Wiedergabe zurueck (v0.15 aus der .ino ausgelagert).
+bool testSoundActive[RCSOUND_NUM_SLOTS]={};
 
 // ── CRSF Quelle EIN: Auswahl L/H/EK/MKan/Dauer/Aus ────────────────────
 static const char* EIN_SEL_STR = "L;H;EK;MKan;Dauer;Aus";
@@ -855,11 +849,7 @@ void loop() {
 
     // Motor Toggle (nur mit CRSF; ohne RC-Bus steuert Web/Reed den Zustand
     // direkt ueber setMotorSound()/toggleMotorSound()).
-    if (crsfActive) {
-        if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
-        else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;
-        else if(!config.engine_on_toggle) Sound_on_Motor=Sound_on[0];
-    }
+    motorControlLoop();
 
     bool mw=Sound_on_Motor||Sound_on_web[0];
     if((mw&&!engine_break&&!Sound_play[0])||(throttle>0&&engine_break&&!Sound_play[0])||(throttle>0&&Sound_play[0])){Sound_play[0]=true;shutdown_timer=millis();}
@@ -878,34 +868,7 @@ void loop() {
 }
 
 // ======== Sound ======================================================
-void handleSound(uint8_t idx, XT_Wav_Class* snd) {
-    if(!snd)return;
-    // One-Shot-Trigger sofort verbrauchen - auch wenn der Sound bereits
-    // laeuft. Sonst bleibt Sound_on_web[idx] true, der Slot haengt nach dem
-    // Wiedergabe-Ende dauerhaft im "laeuft bereits"-Zweig und startet nie
-    // wieder (siehe docs/audio-ablauf.md).
-    bool webTrigger = Sound_on_web[idx];
-    Sound_on_web[idx] = false;
-    if(Sound_on[idx]||webTrigger){
-        if(!Sound_play[idx]){
-            Sound_play[idx]=true;
-            snd->LoadWavFile();
-            if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;
-            I2SAudio.Play(snd,true,config.Volumen_Sound[idx]);
-        }else{
-            snd->Volume=config.Volumen_Sound[idx];
-        }
-    }else{
-        snd->RepeatForever=false;
-        // Lautstaerke auch waehrend des Nachspielens aktualisieren (der
-        // One-Shot-Trigger wird oben bereits verbraucht).
-        if(Sound_play[idx]) snd->Volume=config.Volumen_Sound[idx];
-        if(config.Mode_Sound[idx]==2&&Sound_play[idx])I2SAudio.Stop(snd);
-        // testSoundActive (Lua "Test Sound") zuruecksetzen, sobald die
-        // Wiedergabe endet. Im Loop-Mode bleibt "Ein" bewusst stehen.
-        if(!snd->Playing&&Sound_play[idx]){snd->UnLoadWavFile();Sound_play[idx]=false;testSoundActive[idx]=false;}
-    }
-}
+// handleSound()/One-Shot-Logik liegt seit v0.15 in sound_trigger.cpp.
 
 // ======== Config: Quellen auswerten ==================================
 void Config() {
