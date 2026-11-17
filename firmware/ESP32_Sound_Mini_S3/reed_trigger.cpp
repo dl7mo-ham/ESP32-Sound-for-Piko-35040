@@ -8,6 +8,7 @@
 
 #include "reed_trigger.h"
 #include "reed_roles.h"
+#include "config_reed.h"   // reedDebounceClamp()
 #include "pins.h"
 
 struct ReedPinState {
@@ -42,10 +43,6 @@ const char* reedActionOptions() {
 
 uint8_t reedActionClamp(int raw) {
     return (raw >= 0 && raw < REED_ACTION_COUNT) ? (uint8_t)raw : REED_ACTION_NONE;
-}
-
-static uint16_t reedDebounceClamp(int raw) {
-    return (uint16_t)constrain(raw, REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
 }
 
 bool reedPortPresent(uint8_t port) {

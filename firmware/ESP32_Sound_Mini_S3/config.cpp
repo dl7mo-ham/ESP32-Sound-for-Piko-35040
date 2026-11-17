@@ -11,7 +11,7 @@
 #include <Preferences.h>
 #include "src/RC_Common/settings_common.h"
 #include "sound_map.h"
-#include "reed_trigger.h"   // reedActionClamp(): einzige Definition liegt dort
+#include "config_reed.h"    // Reed-NVS (Debounce + Aktionen), projektlokal
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -176,20 +176,7 @@ void loadConfig() {
     uint8_t appRoleC = appRoleClamp(p.isKey("approlec") ? p.getInt("approlec", rawRoleC) : rawRoleC);
     bool roleMigrated = (rawRoleB == APP_UROLE_REED_LEGACY || rawRoleC == APP_UROLE_REED_LEGACY
                          || !p.isKey("approleb") || !p.isKey("approlec"));
-    config.ReedDebounceMs         = (uint16_t)constrain(p.getInt("reeddb", REED_DEBOUNCE_DEFAULT_MS),
-                                                        REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
-    if (p.getBytesLength("reedact") == sizeof(config.ReedAction)) {
-        p.getBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
-    }
-    for (int pi = 0; pi < REED_PORTS; pi++) {
-        for (int i = 0; i < REED_PINS; i++) {
-            uint8_t a = reedActionClamp(config.ReedAction[pi][i]);
-            if (a != config.ReedAction[pi][i]) {
-                config.ReedAction[pi][i] = a;
-                configDirty = true;
-            }
-        }
-    }
+    if (reedConfigLoad(p)) configDirty = true;
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
     // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
     // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
@@ -249,8 +236,7 @@ void saveConfigForce() {
     p.putInt("parole", (int)config.PortA_Role);
     p.putInt("approleb", (int)config.PortB_Role);
     p.putInt("approlec", (int)config.PortC_Role);
-    p.putInt("reeddb", (int)config.ReedDebounceMs);
-    p.putBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
+    reedConfigSave(p);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
     RcCommonSettings cs;
     configToCommon(cs);

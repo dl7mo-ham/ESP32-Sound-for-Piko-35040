@@ -18,6 +18,7 @@
 #include "sound_map.h"       // v0.12: Sound-Zuordnung
 #include "reed_trigger.h"    // v0.14: Reed-Aktionen/Testbuttons
 #include "reed_roles.h"      // v0.15: APP_UROLE_REED = 100 (projektlokal)
+#include "config_reed.h"     // Reed-JSON/POST/NVS (projektlokal)
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -30,17 +31,6 @@ extern uint8_t PortA_Role_boot;
 extern uint8_t PortB_Role_boot;
 extern uint8_t PortC_Role_boot;
 extern bool PortC_Duplicate_boot;
-
-// v0.14: Schluessel der Reed-Aktionen fuer /api/config (POST) und das JSON-
-// Exportformat. Ports A/B/C, Pins 0=RX, 1=TX (siehe config.h/reed_trigger.h).
-static const char* const REED_CONFIG_KEYS[REED_PORTS][REED_PINS] = {
-    {"reed_a_rx", "reed_a_tx"},
-    {"reed_b_rx", "reed_b_tx"},
-    {"reed_c_rx", "reed_c_tx"},
-};
-static const char* const REED_PORT_KEYS[REED_PORTS]   = {"a", "b", "c"};
-static const char* const REED_PORT_LABELS[REED_PORTS] = {"Port A", "Port B", "Port C"};
-static const char* const REED_PIN_KEYS[REED_PINS]     = {"rx", "tx"};
 
 // ── PROGMEM HTML ─────────────────────────────────────────────────────────
 // Das komplette UI liegt im Flash (PROGMEM). server.send_P() streamt es
@@ -1974,18 +1964,7 @@ void WebServerManager::handleApiConfigPost() {
   // v0.14: Reed-Trigger - Entprellzeit und Aktion je Port/Pin. Beides wirkt
   // sofort (reedUpdate() liest config bei jedem Impuls frisch), im Gegensatz
   // zur Port-Rolle oben.
-  if (jsonGetInt(body, "reed_debounce_ms", v)) {
-    config.ReedDebounceMs = (uint16_t)constrain(v, REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
-    changed = true;
-  }
-  for (uint8_t p = 0; p < REED_PORTS; p++) {
-    for (uint8_t i = 0; i < REED_PINS; i++) {
-      if (jsonGetInt(body, REED_CONFIG_KEYS[p][i], v)) {
-        config.ReedAction[p][i] = reedActionClamp(v);
-        changed = true;
-      }
-    }
-  }
+  if (reedConfigApplyPost(body)) changed = true;
 
   // WiFi
   { char tmp[64];
@@ -2100,36 +2079,7 @@ String WebServerManager::buildConfigJson() {
   j += "\"mkan_adr0\":"  + String(config.EK_Gruppen_Adresse[0])   + ",";
   j += "\"mkan_adr1\":"  + String(config.EK_Gruppen_Adresse[1])   + "},";
 
-  // v0.14: Reed-Trigger. actions ist ein flaches Objekt (a_rx, a_tx, ...),
-  // ports liefert Praesenz, gespeicherte Rolle und die beim Start aktive
-  // Rolle - damit die Web-UI den Neustart-Hinweis anzeigen kann.
-  j += "\"reed\":{";
-  j += "\"debounce_ms\":"  + String(config.ReedDebounceMs)        + ",";
-  j += "\"debounce_min\":" + String(REED_DEBOUNCE_MIN_MS)         + ",";
-  j += "\"debounce_max\":" + String(REED_DEBOUNCE_MAX_MS)         + ",";
-  j += "\"action_options\":\"" + String(reedActionOptions())      + "\",";
-  j += "\"actions\":{";
-  for (uint8_t p = 0; p < REED_PORTS; p++) {
-    for (uint8_t i = 0; i < REED_PINS; i++) {
-      if (p || i) j += ",";
-      j += "\"" + String(REED_PORT_KEYS[p]) + "_" + String(REED_PIN_KEYS[i]) + "\":";
-      j += String(config.ReedAction[p][i]);
-    }
-  }
-  j += "},\"ports\":[";
-  for (uint8_t p = 0; p < REED_PORTS; p++) {
-    if (p) j += ",";
-    bool present = reedPortPresent(p);
-    uint8_t role = (p == 0) ? config.PortA_Role
-                 : (p == 1) ? config.PortB_Role : config.PortC_Role;
-    bool configured = present && role == APP_UROLE_REED;
-    j += "{\"key\":\"" + String(REED_PORT_KEYS[p]) + "\",";
-    j += "\"label\":\"" + String(REED_PORT_LABELS[p]) + "\",";
-    j += "\"present\":"    + String(present ? 1 : 0)    + ",";
-    j += "\"configured\":" + String(configured ? 1 : 0) + ",";
-    j += "\"active\":"     + String(reedPortActive(p) ? 1 : 0) + "}";
-  }
-  j += "]},";
+  reedConfigAppendJson(j);
 
   // S.Port Poll-IDs
   char p0[4], p1[4];
