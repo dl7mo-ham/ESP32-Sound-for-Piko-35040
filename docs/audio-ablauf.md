@@ -209,23 +209,27 @@ LittleFS  ──►  BackSamples[]  ──(memcpy)──►  Samples[]  ──�
 
 ## 5. Zusammenspiel im loop()
 
+Seit v0.15 sind die Blöcke in projektlokale Dateien ausgelagert; `loop()` enthält nur
+noch die Aufrufe (Dateiname in Klammern):
+
 ```
-loop()
-  ├─ WebServerManager::Webpage()       (nur wenn AP aktiv)
-  ├─ uartPortsUpdate()                 (Port B/C: S.Port, GPS)
-  ├─ reedUpdate()                      (aktive Reed-Ports: RX/TX, Entprellung)
-  ├─ processCommandQueue()             (Reed + Web-Testbuttons, gemeinsamer Pfad)
+loop()                                  (ESP32_Sound_Mini_S3.ino)
+  ├─ WebServerManager::Webpage()        (nur wenn AP aktiv)
+  ├─ uartPortsUpdate()                  (Port B/C: S.Port, GPS)
+  ├─ reedUpdate()                       (reed_trigger.cpp: RX/TX, Entprellung)
+  ├─ processCommandQueue()              (command_queue.cpp: Reed + Web-Test)
   │    ├─► Sound_on_web[1..4] = true
-  │    ├─► toggleMotorSound()
-  │    └─► flameToggle()
-  ├─ crsf.read_packets()               (nur wenn Port A = CRSF)
-  │    └─► BUS_OK, channel_output[], uartPortsTelemetry()
-  ├─ updateLed() / flameUpdate()       (Flamme hat Vorrang, solange sie an ist)
-  ├─ CRSF Lua-Menü (Read/Write/Command) (nur wenn Port A = CRSF)
-  ├─ saveConfigForce()                 (500ms nach letzter Änderung)
+  │    ├─► toggleMotorSound()           (motor_control.cpp)
+  │    └─► flameToggle()                (flame_led.cpp)
+  ├─ crsfLoopTasks()                    (crsf_bridge.cpp, nur bei Port A = CRSF)
+  │    ├─► Pakete/Router, BUS_OK, channel_output[], uartPortsTelemetry()
+  │    └─► Lua-Menü: Ping/Read/Write/Command-Replies
+  ├─ ledArbiterUpdate(updateLed)        (status_led_arbiter.cpp: Flamme vor Status)
+  ├─ saveConfigForce()                  (500ms nach letzter Änderung)
   ├─ wifiFailsafeCheck()
-  ├─ Config()                          ← Sound_on[] aus CRSF-Kanälen setzen
-  ├─ handleSound(1..4)                 ← One-Shot / Dauerbetrieb auswerten
+  ├─ Config()                           ← Sound_on[] aus CRSF-Kanälen setzen
+  ├─ handleSound(1..4)                  (sound_trigger.cpp: One-Shot / Dauerbetrieb)
+  ├─ motorControlLoop()                 (motor_control.cpp: CRSF-Toggle)
   └─ Motor-State-Machine + Throttle-Rampe
 ```
 
