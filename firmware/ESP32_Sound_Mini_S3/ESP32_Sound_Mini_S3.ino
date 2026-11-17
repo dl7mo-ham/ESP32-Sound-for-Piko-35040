@@ -81,6 +81,7 @@
 #include "config.h"
 #include "reed_roles.h"     // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "command_queue.h"  // v0.15: Reed-/Web-Kommandos
+#include "crsf_bridge.h"    // v0.15: CRSF-Loop-Aufgaben ausgelagert
 #include "pins.h"
 #include "WebServerManager.h"
 #include "src/RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
@@ -187,12 +188,7 @@ CRSF crsf;       // Port A - der Haupt-RC-Bus; mit Port B/C = CRSF zugleich Rout
 #define MWset4m     0x09
 #define Multiswitch 0xA1
 
-static constexpr unsigned long CRSF_TIMEOUT_MS = 2000;
-static unsigned long lastCrsfPacket = 0;
-
-static void checkCrsfTimeout() {
-    if (millis() - lastCrsfPacket > CRSF_TIMEOUT_MS) BUS_OK = false;
-}
+// CRSF-Timeout und Ping-Slot liegen seit v0.15 in crsf_bridge.cpp.
 
 uint16_t channel_output[16] = {};
 
@@ -265,9 +261,8 @@ static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SO
 // Adresse = 0xC0 + WM-Adresse, Slot = WM-Adresse * 2. Die Ping-Antwort wird
 // erst im eigenen Zeit-Slot gesendet, damit sich mehrere Module nicht
 // ueberlappen.
-#define CRSF_SLOT_MS 5
 static inline uint8_t  crsfAddrFromWM()  { return 0xC0 + (uint8_t)constrain(config.modul_adress, 0, 15); }
-static inline uint16_t crsfSlotDelayMs() { return (uint16_t)((uint8_t)constrain(config.modul_adress, 0, 15) * 2) * CRSF_SLOT_MS; }
+// crsfSlotDelayMs() (Ping-Slot) liegt seit v0.15 in crsf_bridge.cpp.
 
 // ── Typ-Mapping Quelle Motor/Sound EIN ───────────────────────────────
 // Typ: 0=BUS-L(0-15) 1=BUS-H(20-35) 5=Einkanal(70-77) 6=MKan(80-95)
@@ -334,7 +329,9 @@ static int einSelWrite(uint8_t val, int oldCfg) {
 // laufen generisch ueber RC_Common/lua_menu.h. Feld-IDs unveraendert (Liste
 // oben). Die Kinderlisten der Ordner ergeben sich aus der Reihenfolge.
 static LuaItem luaItems[CRSF_PARAM_COUNT + 1];   // + Root
-static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
+// Nicht static: crsf_bridge.cpp schickt die Parameter-Replies und braucht
+// Zugriff auf das Menue (v0.15 aus loop() ausgelagert).
+LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
 static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
     snprintf(buf, LUA_VIEW_BUF, "%s Mini " BOARD_SHORT, versionString);
@@ -836,52 +833,13 @@ void loop() {
     reedUpdate();
     processCommandQueue();
 
-    if (crsfActive) {
-        // Port A: CRSF
-        crsf.read_packets(0);
-        crsf.route_packets();   // Modulkette Port A <-> Port B/C (nur bei Rolle CRSF aktiv)
-        for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
-        // BUS_OK haengt daran, ob gerade ein gueltiger CRSF-Frame geparst
-        // wurde (Zaehler validFrames), nicht an einem Kanalwert.
-        static uint32_t lastValidFrameCount = 0;
-        uint32_t vf = crsf.getValidFrames();
-        if (vf != lastValidFrameCount) { lastValidFrameCount = vf; BUS_OK = true; lastCrsfPacket = millis(); }
-        checkCrsfTimeout();
-
-        // Alle 100 ms Zellspannungen (S.Port) und GPS als CRSF-Telemetrie,
-        // kein Batterie-Frame (0x08) - sonst wuerde die RxBt des Empfaengers
-        // ueberschrieben.
-        uartPortsTelemetry(crsf);
-    }
+    // CRSF: Pakete/Router/Telemetrie UND Ping-/Lua-Replies (v0.15 in
+    // crsf_bridge.cpp). crsfActive schuetzt alle CRSF-Zugriffe.
+    if (crsfActive) crsfLoopTasks();
 
     // Flamme hat Vorrang vor der Status-LED (gleiche LED, siehe flame_led.h).
     if (flameIsOn()) flameUpdate(); else updateLed();
     checkWifiButton(currentTime);   // v0.13
-    if (crsfActive) {
-        if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
-            // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
-            crsf.setDeviceInfoReplyPending(false);
-            char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
-            // Firmware-Version als "Parameter Version Number", damit Konfiguratoren
-            // eine geaenderte Parameterstruktur neu einlesen.
-            crsf.send_device_info(dn,luaMenu.maxId(),(uint8_t)(Version & 0xFF));
-        }
-        if(crsf.getDeviceReadReplyPending()){
-            uint8_t pi=crsf.getParamReadIndex();
-            crsf.setDeviceReadReplyPending(false);
-            luaMenu.send(crsf,pi);
-        }
-        if(crsf.getDeviceWriteReplyPending()){
-            uint8_t wi=crsf.getParamWriteIndex(),wv=crsf.getParamWriteValue();
-            crsf.setDeviceWriteReplyPending(false);
-            luaMenu.write(wi,wv); luaMenu.send(crsf,wi);
-        }
-        if(crsf.getDeviceCommandReplyPending()){
-            crsf.setDeviceCommandReplyPending(false);
-            einkanalFunctionCRSF();
-        }
-    }
-
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
     // waehrend des Cooldowns nach einer SD-Schreibaktivitaet (Brownout-Schutz,
     // siehe WebServerManager::sdActivityCooldownActive()). Einzige Stelle, an
