@@ -29,19 +29,12 @@
 // v0.14: 5 = Reed) werden beim Laden umgerechnet.
 #include "src/RC_Common/uart_roles.h"
 #include "reed_roles.h"
+#include "command_queue.h"   // REED_ACTION_*: IDs der Reed-Aktionen/Queue
 
 // v0.14: Reed-Trigger. Pro Port (A/B/C) und Pin (RX/TX) eine Aktion. Die IDs
-// sind zugleich die Kommando-IDs der Queue im Hauptsketch.
+// stehen jetzt in command_queue.h (zugleich Kommando-IDs der Queue).
 static constexpr int REED_PORTS = 3;
 static constexpr int REED_PINS  = 2;
-static constexpr uint8_t REED_ACTION_NONE          = 0;
-static constexpr uint8_t REED_ACTION_PLAY_SOUND_1  = 1;
-static constexpr uint8_t REED_ACTION_PLAY_SOUND_2  = 2;
-static constexpr uint8_t REED_ACTION_PLAY_SOUND_3  = 3;
-static constexpr uint8_t REED_ACTION_PLAY_SOUND_4  = 4;
-static constexpr uint8_t REED_ACTION_TOGGLE_MOTOR  = 5;
-static constexpr uint8_t REED_ACTION_TOGGLE_FLAME  = 6;
-static constexpr uint8_t REED_ACTION_COUNT         = 7;
 
 static constexpr int REED_DEBOUNCE_MIN_MS = 5;
 static constexpr int REED_DEBOUNCE_MAX_MS = 500;

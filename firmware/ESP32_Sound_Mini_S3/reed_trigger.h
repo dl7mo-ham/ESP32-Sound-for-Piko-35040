@@ -23,6 +23,7 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "command_queue.h"   // enqueueCommand(): Header statt extern-Deklaration
 
 // Einmalig in setup() nach dem Setzen der Pins/des UARTs aufrufen.
 void reedBegin(uint8_t roleA, uint8_t roleB, uint8_t roleC);
@@ -46,8 +47,7 @@ uint8_t     reedActionClamp(int raw);
 // Impulszaehler seit dem Start (Diagnose/Web-UI).
 uint32_t reedTriggerCount(uint8_t port, uint8_t pin);
 
-// Im Hauptsketch definiert: legt eine Kommando-ID (REED_ACTION_*) in die
-// Queue. Wird von reedUpdate() und vom Web-Testbutton genutzt.
-extern void enqueueCommand(uint8_t cmd);
+// enqueueCommand() (command_queue.h) wird von reedUpdate() und vom
+// Web-Testbutton genutzt.
 
 #endif // REED_TRIGGER_H
