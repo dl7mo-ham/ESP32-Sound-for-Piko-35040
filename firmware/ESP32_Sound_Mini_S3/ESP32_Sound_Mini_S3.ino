@@ -96,6 +96,7 @@
 #include "sound_map.h"
 #include "reed_trigger.h"   // v0.14: Reed-Trigger je Port/Pin
 #include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
+#include "status_led_arbiter.h" // v0.15: Prioritaet Flamme vs. Status-LED
 
 uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
 char versionString[6];
@@ -831,8 +832,9 @@ void loop() {
     // crsf_bridge.cpp). crsfActive schuetzt alle CRSF-Zugriffe.
     if (crsfActive) crsfLoopTasks();
 
-    // Flamme hat Vorrang vor der Status-LED (gleiche LED, siehe flame_led.h).
-    if (flameIsOn()) flameUpdate(); else updateLed();
+    // Flamme hat Vorrang vor der Status-LED (Prioritaetsregel jetzt in
+    // status_led_arbiter.cpp, eine Call-Site statt if/else).
+    ledArbiterUpdate(updateLed);
     checkWifiButton(currentTime);   // v0.13
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
     // waehrend des Cooldowns nach einer SD-Schreibaktivitaet (Brownout-Schutz,
