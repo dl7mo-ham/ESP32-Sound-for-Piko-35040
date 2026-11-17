@@ -6,6 +6,7 @@ Die Version wird bei jeder Änderung erhöht, weil sie als CRSF „Parameter Ver
 - Reed ist jetzt eine **projektlokale Rolle** `APP_UROLE_REED` = 100 (`reed_roles.h`). `src/RC_Common/` wurde auf den upstream-Stand 1.4.0 zurückgesetzt; die bisherigen Änderungen (Rolle 5, Manifest, Version, Tests, README) sind daraus entfernt. Damit bleiben künftige Upstream-Merges weitgehend konfliktfrei.
 - NVS-Migration: gespeicherte Rollenwerte 5 aus v0.14 werden beim Laden auf 100 umgerechnet. Port B/C liegen in eigenen App-Schlüsseln (`approleb`/`approlec`); RC_Common sieht für Reed weiterhin `UROLE_OFF`. Lua/Web zeigen Reed als letzten Dropdown-Eintrag (Index 5 ↔ Wert 100), inklusive Baudrate-Ausblendung.
 - Reed-Tests in projektlokale Host-Tests ausgelagert (`firmware/ESP32_Sound_Mini_S3/tests/`); RC_Common-Hosttests, Manifest-Prüfung und Builds für S3/C3 grün. Noch nicht auf Hardware getestet.
+- Die verbleibende Reed-Sonderlogik (Lua-Mapping 5 ↔ 100, Rollen-Dropdown, UART-Mapping, Boot-Log) steckt jetzt in `app_roles_bridge.*`. Die `.ino` enthält nur noch duenne Aufrufe; `buildLuaMenu()` ist wieder upstream-identisch.
 
 ## v0.14 (RC_Common 1.5.0)
 - Reed-Trigger ist jetzt eine Port-Rolle statt einer Compile-Option: Port A (Default CRSF) ist um Aus/Reed erweiterbar, Port B/C zusätzlich um Reed. Alle Pins eines Reed-Ports laufen als Eingänge mit Pull-up, ohne UART; die Baudrate wird dafür ausgeblendet.

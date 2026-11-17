@@ -79,7 +79,7 @@
 #include "src/RC_Common/rc_common.h"
 #include "src/RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "config.h"
-#include "reed_roles.h"     // v0.15: APP_UROLE_REED = 100 (projektlokal)
+#include "app_roles_bridge.h" // v0.15: Reed-Rolle 100 an Lua/UART anbinden (lokal)
 #include "command_queue.h"  // v0.15: Reed-/Web-Kommandos
 #include "crsf_bridge.h"    // v0.15: CRSF-Loop-Aufgaben ausgelagert
 #include "motor_control.h"  // v0.15: Motor-Toggle / Direktsteuerung
@@ -457,25 +457,15 @@ static void    luaSetGroupAdr(uint8_t a, uint8_t v) { config.EK_Gruppen_Adresse[
 // Port B (arg 0) / Port C (arg 1) wirken erst nach einem Neustart
 static uint8_t&  luaPortRole(uint8_t a)             { return a ? config.PortC_Role : config.PortB_Role; }
 static uint32_t& luaPortBaud(uint8_t a)             { return a ? config.PortC_Baud : config.PortB_Baud; }
-// Lua sieht nur die Dropdown-Indizes 0..5; Reed (App-Wert 100) ist Index 5.
-static uint8_t luaGetPortRole(uint8_t a)            { return appRoleUiIndex(appRoleClamp(luaPortRole(a))); }
-static void    luaSetPortRole(uint8_t a, uint8_t v) {
-    uint8_t role = appRoleClamp(v);   // UI-Index 5 (und Legacy 5) -> 100
-    if (role != luaPortRole(a)) {
-        // Baudrate auf den Standard der Rolle vorbelegen (Aus/Raw: unveraendert)
-        uint32_t def = appRoleDefaultBaud(role);
-        if (def != 0 && role != UROLE_RAW) luaPortBaud(a) = def;
-    }
-    luaPortRole(a) = role; markDirty();
-    Serial.printf("!!! Port %c Rolle -> %s (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",
-                  a ? 'C' : 'B', appRoleName(role));
-}
+// Reed-Mapping (100 <-> Lua-Index 5, Baud ausblenden) liegt in
+// app_roles_bridge.cpp; hier nur die duennen Callbacks der Lua-Tabelle.
+static uint8_t luaGetPortRole(uint8_t a)            { return appRolesUiRole(luaPortRole(a)); }
+static void    luaSetPortRole(uint8_t a, uint8_t v) { appRolesApplyUiRole(a, luaPortRole(a), luaPortBaud(a), v); }
 static uint8_t luaGetPortBaud(uint8_t a)            { return uartBaudToIndex(luaPortBaud(a)); }
 // v0.11: Baudrate nur bei aktivem Port sichtbar. v0.14: Reed braucht keine
 // Baudrate, das Feld wird dort ebenfalls ausgeblendet.
 static void    luaViewPortBaud(uint8_t a, LuaView& v, char*) {
-    uint8_t r = appRoleClamp(luaPortRole(a));
-    if (r == UROLE_OFF || r == APP_UROLE_REED) v.hidden = true;
+    if (appRolesHideBaud(luaPortRole(a))) v.hidden = true;
 }
 #if !HAS_PORT_C
 static void    luaHideAlways(uint8_t, LuaView& v, char*) { v.hidden = true; }   // C3: kein Port C
@@ -600,10 +590,10 @@ static void buildLuaMenu() {
     m.u8(40, SETTINGS_FI, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
     m.u8(41, SETTINGS_FI, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
     m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
-    m.select(43, SETTINGS_FI, "Port B Rolle", appRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
+    m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
     m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0)->view = luaViewPortBaud;
 #if HAS_PORT_C
-    m.select(45, SETTINGS_FI, "Port C Rolle", appRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
+    m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
     m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1)->view = luaViewPortBaud;
 #else
     // ESP32-C3: kein Port C. Felder bleiben als Anzeige, damit die
@@ -713,8 +703,7 @@ void setup() {
                       PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
                       (uint8_t)constrain(config.modul_adress,0,15) * 2);
     } else {
-        Serial.printf("Port A: %s (RX=%d, TX=%d), kein CRSF-Eingang\n",
-                      appRoleName(PortA_Role_boot), PIN_CRSF_RX, PIN_CRSF_TX);
+        appRolesLogPortABoot(PortA_Role_boot);
     }
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
@@ -759,10 +748,8 @@ void setup() {
     sportLipoUsePollIds(config.sport_poll_id);
     // RC_Common kennt nur 0..4: Reed (100) wird dort als "Aus" angemeldet,
     // die Pull-ups setzt reedBegin() direkt auf den Pins.
-    uartPorts[0].role = PortB_Role_boot == APP_UROLE_REED ? UROLE_OFF : PortB_Role_boot;
-    uartPorts[0].baud = PortB_Baud_boot;
-    uartPorts[1].role = PortC_Role_boot == APP_UROLE_REED ? UROLE_OFF : PortC_Role_boot;
-    uartPorts[1].baud = PortC_Baud_boot;
+    appRolesApplyUartRoles(uartPorts, 2, PortB_Role_boot, PortB_Baud_boot,
+                           PortC_Role_boot, PortC_Baud_boot);
     uartPortsBegin(uartPorts, 2, crsf, crsfActive);
     PortC_Duplicate_boot = uartPorts[1].duplicate;
     // Reed-Pins (auch Port A) endgueltig als Pull-up-Eingaenge setzen und
@@ -770,6 +757,8 @@ void setup() {
     reedBegin(PortA_Role_boot, PortB_Role_boot, PortC_Role_boot);
 
     buildLuaMenu();
+    // Die Rollen-Dropdowns in der Lua-Tabelle um den Eintrag "Reed" ergaenzen.
+    appRolesPatchLuaOptions(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
     Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
     Serial.printf("Soundmodul Mini %s (" BOARD_NAME ")\n", versionString);
 }

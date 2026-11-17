@@ -126,6 +126,7 @@ Reihenfolge nach Konfliktgewinn:
 | 4 | `crsf_bridge.cpp/.h` | `crsfLoopTasks()` (Pakete, Telemetrie, Replies) | `loop()` 1 Zeile |
 | 5 | `motor_control.cpp/.h`, `sound_trigger.cpp/.h` | Motor-Toggle, `handleSound()`/One-Shot | `loop()` 2 Aufrufe |
 | 6 | `status_led_arbiter` oder `flameUpdate() → bool ownsLed` | LED-Priorität Flamme vs. Status | `loop()` 1 Aufruf |
+| 7 | `app_roles_bridge.cpp/.h` | Reed-Mapping an der Lua-Grenze (Optionsliste, 5 ↔ 100, Baud ausblenden), `uartPorts[]`-Mapping, Boot-Log Port A | `.ino` 6 duenne Call-Sites, `buildLuaMenu()` wieder upstream-identisch |
 
 ### Quick Wins (unabhängig von den Auslagerungen)
 
