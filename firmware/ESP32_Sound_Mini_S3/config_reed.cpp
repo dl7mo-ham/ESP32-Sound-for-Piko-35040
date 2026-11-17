@@ -65,7 +65,7 @@ static bool reedJsonFindKey(const String& body, const char* key, int& valueStart
         searchFrom = pos + 1;
     }
 }
-static bool reedJsonGetInt(const String& body, const char* key, int& out) {
+bool reedJsonGetInt(const String& body, const char* key, int& out) {
     int vs;
     if (!reedJsonFindKey(body, key, vs)) return false;
     out = body.substring(vs).toInt();

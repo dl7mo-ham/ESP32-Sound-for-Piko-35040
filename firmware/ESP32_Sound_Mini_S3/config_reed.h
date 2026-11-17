@@ -18,6 +18,10 @@
 // Entprellzeit auf den erlaubten Bereich begrenzen (5..500 ms).
 uint16_t reedDebounceClamp(int raw);
 
+// Gemeinsame Mini-JSON-Key-Suche fuer die Reed-REST-Endpunkte (Wortgrenze
+// wie jsonFindKey() in WebServerManager.cpp, kein eigener JSON-Parser noetig).
+bool reedJsonGetInt(const String& body, const char* key, int& out);
+
 // Rueckgabe: true, wenn ein Wert korrigiert wurde (configDirty setzen).
 bool reedConfigLoad(Preferences& p);
 void reedConfigSave(Preferences& p);

@@ -43,9 +43,6 @@ private:
   static void      handleApiConfigPost();
   static void      handleApiDebug();
   static void      handleApiSound();
-  // v0.14: Testbutton der Web-UI - legt die gewaehlte Reed-Aktion in dieselbe
-  // Kommando-Queue wie ein echter Reed-Impuls (POST /api/reed/test).
-  static void      handleApiReedTest();
   static String    buildConfigJson();
   // Sound-WAV-Dateien per WLAN direkt auf die SD-Karte hochladen
   // (multipart/form-data, siehe Kommentare in WebServerManager.cpp).

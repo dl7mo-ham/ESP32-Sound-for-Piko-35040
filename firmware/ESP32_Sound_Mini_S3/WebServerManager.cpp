@@ -16,9 +16,9 @@
 #include "sound_store.h"     // Sound-Speicher (Flash)
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
 #include "sound_map.h"       // v0.12: Sound-Zuordnung
-#include "reed_trigger.h"    // v0.14: Reed-Aktionen/Testbuttons
 #include "reed_roles.h"      // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "config_reed.h"     // Reed-JSON/POST/NVS (projektlokal)
+#include "reed_web.h"        // Reed-Tab HTML, /reed_ui.js, /api/reed/test
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -470,34 +470,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 </div>
 
-<!-- ═══ REED-TRIGGER ════════════════════════════════════════════════════ -->
-<div id="tab-reed" class="hidden">
-  <div class="card">
-    <div class="card-title">Reed-Trigger</div>
-    <div style="font-size:12px;color:var(--sub);margin-bottom:10px">
-      Ist ein Port auf die Rolle &quot;Reed&quot; gestellt, werden beide Pins als
-      Eingaenge mit Pull-up gelesen. Ein Impuls (Kontakt gegen GND) loest die
-      hier gewaehlte Aktion aus - genau wie der Testbutton daneben.
-    </div>
-    <div id="reed-restart" class="hidden" style="color:var(--yellow);font-size:12px;margin-bottom:10px"></div>
-    <div id="reed-ports"></div>
-    <div id="reed-empty" class="hidden" style="font-size:12px;color:var(--sub)">
-      Noch kein Port auf &quot;Reed&quot; gestellt. Unter Einstellungen bei Port A/B/C
-      die Rolle &quot;Reed&quot; waehlen und das Modul neu starten.
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-title">Entprellzeit</div>
-    <div class="sl-wrap">
-      <div class="sl-head"><span>Stabilzeit pro Impuls</span><span id="lv-reed-db">-</span></div>
-      <input type="range" id="reed-db" min="5" max="500" step="5" oninput="slUpd('reed-db','lv-reed-db')">
-    </div>
-    <div style="font-size:11px;color:var(--sub);margin-bottom:10px">
-      Kuerzer reagiert schneller, laenger unterdrueckt Prellen und Stoerungen.
-    </div>
-    <button class="btn btn-p" onclick="saveReed()">Speichern</button>
-  </div>
-</div>
+)HTML" REED_TAB_HTML R"HTML(
 
 <!-- ═══ WIFI ════════════════════════════════════════════════════════════ -->
 <div id="tab-wifi" class="hidden">
@@ -661,6 +634,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 
 </main>
 <script src="/rc_common.js"></script>
+<script src="/reed_ui.js"></script>
 <script>
 var cfg={}, dbg={}, curSnd=1, lipoTmr=0;
 var TABS=['motor','sounds','store','settings','reed','wifi','lipo','debug'];
@@ -1307,96 +1281,6 @@ function saveSettings(){
   });
 }
 
-// ─── Reed-Trigger (v0.14) ────────────────────────────────────────────────
-// Aktionen/Entprellzeit kommen aus cfg.reed (GET /api/config). Die Testbuttons
-// rufen POST /api/reed/test auf - derselbe Kommando-Queue-Pfad wie ein echter
-// Reed-Impuls.
-function reedActionLabel(action){
-  var names=((cfg.reed&&cfg.reed.action_options)||'').split(';');
-  return names[action]||('Aktion '+action);
-}
-function renderReed(){
-  var r=cfg.reed;
-  var box=document.getElementById('reed-ports');
-  var empty=document.getElementById('reed-empty');
-  var restart=document.getElementById('reed-restart');
-  if(!box) return;
-  box.innerHTML='';
-  if(!r){
-    if(empty) empty.className='';
-    if(restart) restart.className='hidden';
-    return;
-  }
-  var db=document.getElementById('reed-db');
-  if(db){
-    db.min=r.debounce_min||5; db.max=r.debounce_max||500;
-    db.value=r.debounce_ms;
-    var lv=document.getElementById('lv-reed-db');
-    if(lv) lv.textContent=r.debounce_ms+' ms';
-  }
-  var shown=0, changed=[];
-  (r.ports||[]).forEach(function(p){
-    if(!p.present) return;
-    if(!!p.configured!==!!p.active) changed.push(p.label);
-    if(!p.configured) return;
-    shown++;
-    var head=document.createElement('div');
-    head.style.cssText='font-weight:600;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px';
-    head.textContent=p.label;
-    box.appendChild(head);
-    ['rx','tx'].forEach(function(pin){
-      var row=document.createElement('div'); row.className='row';
-      var lab=document.createElement('span'); lab.className='lbl';
-      lab.style.flex='0 0 56px'; lab.textContent=pin.toUpperCase();
-      row.appendChild(lab);
-      var sel=document.createElement('select');
-      sel.id='reed-'+p.key+'-'+pin;
-      fillSelNames(sel,r.action_options,null);
-      sel.value=(r.actions&&r.actions[p.key+'_'+pin]!==undefined)?r.actions[p.key+'_'+pin]:0;
-      row.appendChild(sel);
-      var btn=document.createElement('button');
-      btn.className='btn btn-s'; btn.textContent='Test';
-      btn.style.cssText='width:auto;padding:6px 12px;margin:0;flex:0 0 auto;font-size:12px';
-      btn.onclick=function(){
-        var a=parseInt(sel.value)||0;
-        testReed(a,reedActionLabel(a));
-      };
-      row.appendChild(btn);
-      box.appendChild(row);
-    });
-  });
-  if(empty) empty.className=shown?'hidden':'';
-  if(restart){
-    if(changed.length){
-      restart.textContent='\u26A0 '+changed.join(', ')+': Rollenaenderung wirkt erst nach einem Neustart des Moduls.';
-      restart.className='';
-    } else {
-      restart.className='hidden';
-    }
-  }
-}
-function testReed(action){
-  if(!action){ toast('Keine Aktion gewaehlt',1); return; }
-  xpost('/api/reed/test',{action:action},function(resp){
-    var d=null; try{ d=JSON.parse(resp); }catch(e){}
-    if(d&&d.ok) toast('Test: '+reedActionLabel(action));
-    else toast('Test fehlgeschlagen',1);
-  });
-}
-function saveReed(){
-  var d={reed_debounce_ms:gi('reed-db')};
-  var r=cfg.reed||{};
-  (r.ports||[]).forEach(function(p){
-    if(!p.present||!p.configured) return;
-    d['reed_'+p.key+'_rx']=gi('reed-'+p.key+'-rx');
-    d['reed_'+p.key+'_tx']=gi('reed-'+p.key+'-tx');
-  });
-  xpost('/api/config',d,function(resp){
-    try{var q=JSON.parse(resp);if(q.ok){ loadConfig(); toast('Reed-Einstellungen gespeichert');return;}}catch(e){}
-    toast('Fehler',1);
-  });
-}
-
 // ─── Konfiguration Export/Import ─────────────────────────────────────────
 // Export: liest /api/config (dieselbe JSON-Struktur, die auch loadConfig()
 // nutzt) und bietet sie als Datei zum Download an - ganz normaler Download
@@ -1737,9 +1621,9 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   server.on("/api/config", HTTP_POST, []() { WebServerManager::handleApiConfigPost(); });
   server.on("/api/debug",     []() { WebServerManager::handleApiDebug();  });
   server.on("/api/sound",     []() { WebServerManager::handleApiSound();  });
-  // v0.14: Reed-Testbutton - nutzt denselben Kommando-Queue-Pfad wie ein
-  // echter Impuls (siehe reed_trigger.cpp/ESP32_Sound_Mini_S3.ino).
-  server.on("/api/reed/test", HTTP_POST, []() { WebServerManager::handleApiReedTest(); });
+  // v0.14: Reed-UI (/reed_ui.js, /api/reed/test) - projektlokal, siehe
+  // reed_web.cpp. Nutzt denselben Kommando-Queue-Pfad wie ein echter Impuls.
+  reedWebRegister(server);
   // Sound-WAV per WLAN hochladen - zweiter Handler-Parameter ist der
   // eigentliche Upload-Callback (mehrfach pro Request, siehe HTTPUpload-
   // Status in handleApiSoundUploadData()); der erste wird einmal am Ende
@@ -2733,22 +2617,6 @@ void WebServerManager::handleApiSound() {
   }
 
   if (changed) markDirty();
-  sendOk(server);
-}
-
-// ── POST /api/reed/test  {"action":1..6} ──────────────────────────────────
-// Testbutton der Web-UI. Prueft die Aktion nur und legt sie in die Queue;
-// ausgefuehrt wird sie - wie ein echter Reed-Impuls - in loop() ueber den
-// gemeinsamen Command-Executor (ESP32_Sound_Mini_S3.ino).
-void WebServerManager::handleApiReedTest() {
-  if (!server.hasArg("plain")) { sendErr(server); return; }
-  const String& body = server.arg("plain");
-  int v;
-  if (!jsonGetInt(body, "action", v)) { sendErr(server); return; }
-  uint8_t action = reedActionClamp(v);
-  if (action == REED_ACTION_NONE) { sendErr(server); return; }
-  enqueueCommand(action);
-  Serial.printf("[API] Reed-Test -> %s\n", reedActionName(action));
   sendOk(server);
 }
 
