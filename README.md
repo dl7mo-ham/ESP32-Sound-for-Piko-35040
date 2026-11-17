@@ -5,7 +5,7 @@
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Version in diesem Repo:** v0.12 (Reed-Modus: einfache Impulse für IO5/IO6, Motorsound und Flammen-LED über Web-UI; übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version in diesem Repo:** v0.14 (RC_Common 1.5.0; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
@@ -13,16 +13,20 @@ steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von htt
 
 ![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
 
-Mit `REED_TRIGGER_ENABLED` (Standard) werden IO5 und IO6 als Reed-/Tasteneingänge genutzt statt CRSF. Beide reagieren nur auf einfache Impulse:
+Seit v0.14 ist Reed keine feste Compile-Option mehr, sondern eine **Port-Rolle**: Unter „Einstellung“ kann Port A (und auf dem S3 auch B/C) auf `Aus`, `CRSF` oder `Reed` gestellt werden. Im Reed-Modus werden **beide Pins des Ports als Eingänge mit Pull-up** gelesen (kein UART); ein Kontakt gegen GND löst einen Impuls aus. Rollenwechsel wirken erst nach einem Neustart.
 
-| Eingang | Impuls | Aktion |
-|---|---|---|
-| IO6 | einfach | `sound1.wav` (Sound 1) |
-| IO5 | einfach | `sound2.wav` (Sound 2) |
+Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewählt und einzeln getestet:
 
-Lange Tastendrücke werden nicht mehr ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. **Motorsound und Flammen-LED** der Status-LED werden stattdessen im Web-Tab „Motor“ unter „Direktsteuerung (Reed-Modus)“ geschaltet. Die Entprellzeit steht unter „Einstellung → Reed-Kontakte“.
+| Aktion | Wirkung |
+|---|---|
+| Keine | kein Trigger |
+| Sound 1–4 | spielt den entsprechenden Sound-Slot (One-Shot, wie ein Web-Test) |
+| Motor Ein/Aus | schaltet den Motorsound ein/aus (Toggle) |
+| Flamme Ein/Aus | schaltet den Flammeneffekt der Status-LED ein/aus (Toggle) |
 
-Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO7/IO8 zu schalten. Dafür muss die Rolle von Port B auf „Aus“ stehen, da IO7/IO8 sonst als UART-Pins belegt sind.
+Ein Reed-Impuls legt die Aktion in dieselbe kleine Kommando-Queue wie die Web-Testbuttons; ausgeführt wird sie zentral in `loop()`. Die Entprellzeit (5–500 ms, Default 50 ms) und alle Aktionen werden sofort übernommen und in der Konfiguration gespeichert (auch in Export/Backup).
+
+Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr: Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
 
 ---
 
@@ -31,15 +35,15 @@ Geplant ist, dieselben beiden Funktionen zusätzlich über Taster/Schalter an IO
 Kompaktes Soundmodul für Motorgeräusche und Effekte auf Basis ESP32-S3-Zero (ESP32-S3FH4R2, 4 MB Flash, 2 MB PSRAM). Seit v0.09 läuft derselbe Code auch auf dem **ESP32-C3 Pro Mini** (4 MB Flash, kein PSRAM), siehe [ESP32-C3 Pro Mini](#esp32-c3-pro-mini).
 Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-Sound-bidirectional_code), reduziert auf:
 
-- **Eingang:** nur CRSF (Port A), busbasiert
+- **Eingang:** CRSF (Port A, Default) oder Reed-Trigger (Port A/B/C, Rolle in Web/Lua wählbar)
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), keine SD-Karte
-- **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
-- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link
+- **Ports:** Port A (Default CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS, Raw oder Reed (nur Web/Lua für B/C)
+- **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link; Flammeneffekt kann ihn überlagern
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
 - **Verstärker:** MAX98357A (I2S)
 
-**Aktuelle Version:** v0.11 (übersichtlicheres Lua-Menü; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Version:** v0.14 (RC_Common 1.5.0; v0.07 getestet am 29.10.2026)
 
 Die Firmware ist eine Arduino-Skizze: `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino`. Gemeinsamer Code mit Multiswitch und Soundmodul V7 liegt in `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` (identische Kopie, siehe README dort). Gebaut wird mit dem Arduino-ESP32-Core 3.0.7 (Arduino IDE oder PlatformIO).
 
@@ -214,10 +218,10 @@ Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
 | Funktion | GPIO |
 |---|---|
 | MAX98357A direkt auf 5V, GND, 3V3, IO1..IO4 | GAIN 1, DIN 2, BCLK 3, LRC 4 |
-| Port A CRSF RX / TX | 5 / 6 |
-| Port B RX / TX | 7 / 8 |
+| Port A RX / TX (CRSF oder Reed) | 5 / 6 |
+| Port B RX / TX (UART oder Reed) | 7 / 8 |
 | WLAN-Taste = BOOT-Taste auf dem S3-Zero | 0 |
-| Port C RX / TX | 44 / 43 |
+| Port C RX / TX (UART oder Reed) | 44 / 43 |
 | Status-LED (WS2812 auf dem S3-Zero) | 21 |
 
 ### ESP32-C3 Pro Mini
@@ -227,13 +231,13 @@ Der MAX98357A wird **umgedreht** (Bauteilseite zum ESP) direkt auf die Versorgun
 | Funktion | GPIO |
 |---|---|
 | MAX98357A direkt auf 5V, GND, 3V3 (SD offen), IO4..IO1 | GAIN 4, DIN 3, BCLK 2, LRC 1 |
-| Port A CRSF RX / TX | 20 / 21 |
-| Port B RX / TX | 5 / 6 |
+| Port A RX / TX (CRSF oder Reed) | 20 / 21 |
+| Port B RX / TX (UART oder Reed) | 5 / 6 |
 | WLAN-Taste = BOOT-Taste | 9 |
 | Status-LED (vorläufig WS2812, am Board prüfen) | 8 |
 
 Unterschiede zum S3:
-- **Kein Port C**: Der C3 hat nur zwei Hardware-UARTs (Port A und Port B). Port B bleibt frei wählbar (CRSF, S.Port, GPS, Raw). Web-UI blendet Port C aus, im Lua-Menü steht „nicht vorhanden“.
+- **Kein Port C**: Der C3 hat nur zwei Hardware-UARTs (Port A und Port B). Port B bleibt frei wählbar (CRSF, S.Port, GPS, Raw, Reed). Web-UI blendet Port C aus, im Lua-Menü steht „nicht vorhanden“.
 - **IO2 (BCLK)** ist ein Strapping-Pin und muss beim Start HIGH sein. Sicher ist ein 10k-Widerstand von IO2 nach 3V3.
 - Kein PSRAM, ein CPU-Kern. Sound-Speicher wie beim S3 (ca. 1,3 MB, rund 30 s bei 22050 Hz mono).
 
@@ -245,6 +249,8 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 | Version | Änderung |
 |---|---|
+| 0.14 | **Reed-Trigger pro Port (RC_Common 1.5.0):** Port A ist jetzt rollenfähig (Aus/CRSF/Reed, Default CRSF); B/C zusätzlich `Reed`. Im Reed-Modus liest der Port beide Pins mit Pull-up, Baudrate entfällt. Neuer Web-Tab „Reed“ mit Aktion je Pin (Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und Testbutton; konfigurierbare Entprellzeit (5–500 ms). Reed-Impulse und Testbuttons laufen über dieselbe Kommando-Queue. Aktionen/Entprellzeit wirken sofort, Rollenwechsel erst nach Neustart. Export/Backup bleiben rückwärtskompatibel. Noch nicht auf Hardware getestet. |
+| 0.13 | Status-LED-Modi und Lua-Feld 62 „LED Farbfolge“ (RGB/GRB); BOOT-Taste im Betrieb 2 s = WLAN an/aus. |
 | 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |
 | 0.10 | Lua: „Kanal Nr“ (Motor und Sounds) und „Kanal Nr Speed“ bleiben immer Zahlenfelder, bei Quelle „Aus“ oder „Dauer“ gesperrt. Vorher wurden sie dann zum Info-Feld „Deaktiviert“. Das ELRS-Lua-Skript lädt nach einer Änderung der Quelle nur Zahlen- und Auswahlfelder neu, deshalb ließ sich der Kanal nach dem Umstellen (z. B. auf EK) erst nach Verlassen des Menüs ändern. Gilt für S3 und C3. |
 | 0.09 | Zweites Board **ESP32-C3 Pro Mini** im selben Code (`pins.h` wählt nach dem Board in der Arduino IDE). C3: Port A auf UART0 (IO20/21), Port B auf IO5/6, kein Port C, Audio-Tasks ohne festen CPU-Kern, CI baut S3 und C3. Für den S3 ändert sich nichts. |

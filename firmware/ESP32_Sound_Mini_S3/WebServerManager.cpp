@@ -16,6 +16,7 @@
 #include "sound_store.h"     // Sound-Speicher (Flash)
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
 #include "sound_map.h"       // v0.12: Sound-Zuordnung
+#include "reed_trigger.h"    // v0.14: Reed-Aktionen/Testbuttons
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -24,9 +25,21 @@ extern bool gpsPinConflict; // beim Mini immer false (kein SBUS), bleibt fuer da
 // Werte - koennen von config.PortB_Role/PortC_Role abweichen, wenn
 // seitdem ueber Web/Lua etwas geaendert, aber noch nicht neu gestartet
 // wurde (siehe Erklaerung in ESP32_Sound_Mini_S3.ino).
+extern uint8_t PortA_Role_boot;
 extern uint8_t PortB_Role_boot;
 extern uint8_t PortC_Role_boot;
 extern bool PortC_Duplicate_boot;
+
+// v0.14: Schluessel der Reed-Aktionen fuer /api/config (POST) und das JSON-
+// Exportformat. Ports A/B/C, Pins 0=RX, 1=TX (siehe config.h/reed_trigger.h).
+static const char* const REED_CONFIG_KEYS[REED_PORTS][REED_PINS] = {
+    {"reed_a_rx", "reed_a_tx"},
+    {"reed_b_rx", "reed_b_tx"},
+    {"reed_c_rx", "reed_c_tx"},
+};
+static const char* const REED_PORT_KEYS[REED_PORTS]   = {"a", "b", "c"};
+static const char* const REED_PORT_LABELS[REED_PORTS] = {"Port A", "Port B", "Port C"};
+static const char* const REED_PIN_KEYS[REED_PINS]     = {"rx", "tx"};
 
 // ── PROGMEM HTML ─────────────────────────────────────────────────────────
 // Das komplette UI liegt im Flash (PROGMEM). server.send_P() streamt es
@@ -129,6 +142,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <div class="tab" onclick="showTab('sounds')">Sounds</div>
   <div class="tab" onclick="showTab('store')">Speicher</div>
   <div class="tab" onclick="showTab('settings')">Einstellung</div>
+  <div class="tab" onclick="showTab('reed')">Reed</div>
   <div class="tab" onclick="showTab('wifi')">WiFi</div>
   <div class="tab" onclick="showTab('lipo')">LiPo</div>
   <div class="tab" onclick="showTab('debug')">Debug</div>
@@ -348,7 +362,18 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <!-- Port B (Hardware-UART1) und Port C (Hardware-UART0), Rolle je Port
        waehlbar, Pins siehe pins.h. -->
   <div class="card" id="c-portbc">
-    <div class="card-title">Port B / Port C</div>
+    <div class="card-title">Port A / Port B / Port C</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="lbl">Port A Rolle</span>
+      <!-- Nur Aus/CRSF/Reed. Die Options-/Wertelisten kommen vom Geraet
+           (s.porta_options/s.porta_values), weil die Werte nicht fortlaufend
+           sind (0/1/5). -->
+      <select id="porta-mode" onchange="onPortAMode()"></select>
+    </div>
+    <div id="porta-hint" class="hidden" style="color:var(--yellow);font-size:12px;margin:-2px 0 10px">
+      &#9888; Ohne CRSF auf Port A gibt es kein RC-Signal. Der Auto-WLAN-
+      Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein.
+    </div>
     <div class="row" style="margin-bottom:10px">
       <span class="lbl">Port B Rolle</span>
       <!-- Optionen kommen zur Laufzeit vom Geraet (s.portb_options in
@@ -373,7 +398,8 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       &#9888; Port C hatte dieselbe Rolle wie Port B und ist deshalb aus. S.Port, GPS und Raw laufen nur auf einem Port (CRSF darf auf beiden).
     </div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
-      &#9888; Aenderungen an Port B/C wirken erst nach einem Neustart des Moduls.
+      &#9888; Aenderungen an Port A/B/C wirken erst nach einem Neustart des Moduls.
+      Reed-Aktionen und Entprellzeit (Tab &quot;Reed&quot;) gelten dagegen sofort.
     </div>
   </div>
   <button class="btn btn-p" onclick="saveSettings()">Speichern</button>
@@ -450,6 +476,35 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
       automatisch neu und die WLAN-Verbindung bricht dabei kurz ab - das ist
       normal.
     </div>
+  </div>
+</div>
+
+<!-- ═══ REED-TRIGGER ════════════════════════════════════════════════════ -->
+<div id="tab-reed" class="hidden">
+  <div class="card">
+    <div class="card-title">Reed-Trigger</div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:10px">
+      Ist ein Port auf die Rolle &quot;Reed&quot; gestellt, werden beide Pins als
+      Eingaenge mit Pull-up gelesen. Ein Impuls (Kontakt gegen GND) loest die
+      hier gewaehlte Aktion aus - genau wie der Testbutton daneben.
+    </div>
+    <div id="reed-restart" class="hidden" style="color:var(--yellow);font-size:12px;margin-bottom:10px"></div>
+    <div id="reed-ports"></div>
+    <div id="reed-empty" class="hidden" style="font-size:12px;color:var(--sub)">
+      Noch kein Port auf &quot;Reed&quot; gestellt. Unter Einstellungen bei Port A/B/C
+      die Rolle &quot;Reed&quot; waehlen und das Modul neu starten.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Entprellzeit</div>
+    <div class="sl-wrap">
+      <div class="sl-head"><span>Stabilzeit pro Impuls</span><span id="lv-reed-db">-</span></div>
+      <input type="range" id="reed-db" min="5" max="500" step="5" oninput="slUpd('reed-db','lv-reed-db')">
+    </div>
+    <div style="font-size:11px;color:var(--sub);margin-bottom:10px">
+      Kuerzer reagiert schneller, laenger unterdrueckt Prellen und Stoerungen.
+    </div>
+    <button class="btn btn-p" onclick="saveReed()">Speichern</button>
   </div>
 </div>
 
@@ -617,7 +672,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 <script src="/rc_common.js"></script>
 <script>
 var cfg={}, dbg={}, curSnd=1, lipoTmr=0;
-var TABS=['motor','sounds','store','settings','wifi','lipo','debug'];
+var TABS=['motor','sounds','store','settings','reed','wifi','lipo','debug'];
 
 // ─── Toast ────────────────────────────────────────────────────────────────
 var toastTmr=0;
@@ -659,6 +714,7 @@ function showTab(t){
   // halten - z.B. wenn parallel per SD-Backup/-Karte etwas geaendert wurde.
   if(t==='motor'||t==='sounds') loadSoundFileStatus();
   if(t==='store') loadSoundLib();   // v0.12: Sound-Zuordnung
+  if(t==='reed') renderReed();      // v0.14: Reed-Aktionen/Testbuttons
 }
 
 // ─── XHR-Helfer ──────────────────────────────────────────────────────────
@@ -723,6 +779,22 @@ function fillSelFlat(id,namesStr){
     opt.value=i; opt.textContent=name; sel.appendChild(opt);
   });
 }
+// Wie fillSelFlat(), aber mit eigener Werteliste (";"-getrennt). Port A hat
+// die Rollenwerte Aus=0/CRSF=1/Reed=5, also keine fortlaufenden Indizes.
+function fillSelNames(sel,namesStr,valuesStr){
+  if(!sel)return;
+  sel.innerHTML='';
+  if(!namesStr)return;
+  var vals=(valuesStr||'').split(';');
+  namesStr.split(';').forEach(function(name,i){
+    var opt=document.createElement('option');
+    opt.value=(vals[i]!==undefined&&vals[i]!=='')?vals[i]:i;
+    opt.textContent=name; sel.appendChild(opt);
+  });
+}
+function fillSelFlatVals(id,namesStr,valuesStr){
+  fillSelNames(document.getElementById(id),namesStr,valuesStr);
+}
 function fillModAdr(){
   var sel=document.getElementById('mod-adr'); sel.innerHTML='';
   for(var i=0;i<=20;i++){var o=document.createElement('option');o.value=i;o.textContent=i;sel.appendChild(o);}
@@ -749,17 +821,25 @@ function slSet(sid,lid,v){sv(sid,v);if(lid)document.getElementById(lid).textCont
 // RC_Common/uart_roles.h), die Liste mit "Auto" aus /rc_common.js
 // (rcFillBaud, ein eigener Wert aus einer Sicherung bleibt erhalten).
 var PORTB_BAUD_DEFAULTS = {};
+// Reed (5) und Aus (0) nutzen keinen UART -> Baudrate ausblenden.
+function portBaudHidden(m){ return m===0 || m===5; }
 function onPortBMode(){
   var m = gi('portb-mode');
   if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portb-baud'), PORTB_BAUD_DEFAULTS[m]);
   var row = document.getElementById('row-portb-baud');
-  if (row) row.className = 'row'+(m===0?' hidden':'');
+  if (row) row.className = 'row'+(portBaudHidden(m)?' hidden':'');
+  syncPortAHint();
 }
 function onPortCMode(){
   var m = gi('portc-mode');
   if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portc-baud'), PORTB_BAUD_DEFAULTS[m]);
   var row = document.getElementById('row-portc-baud');
-  if (row) row.className = 'row'+(m===0?' hidden':'');
+  if (row) row.className = 'row'+(portBaudHidden(m)?' hidden':'');
+}
+function onPortAMode(){ syncPortAHint(); }
+function syncPortAHint(){
+  var el=document.getElementById('porta-hint');
+  if(el) el.className = (gi('porta-mode')===1) ? 'hidden' : '';
 }
 
 // ─── Sound-Tabs ──────────────────────────────────────────────────────────
@@ -808,13 +888,15 @@ function loadConfig(){
     // Port B/C laden: Options-Liste und Baudraten-Standardwerte kommen vom
     // Geraet (s.portb_options/s.portb_baud_defaults) - Dropdown wird deshalb
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
+    fillSelFlatVals('porta-mode', s.porta_options, s.porta_values);
+    sv('porta-mode', s.porta_role);
     fillSelFlat('portb-mode', s.portb_options);
     fillSelFlat('portc-mode', s.portb_options);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
     sv('portb-mode', s.portb_role); rcFillBaud(document.getElementById('portb-baud'), s.portb_baud);
     sv('portc-mode', s.portc_role); rcFillBaud(document.getElementById('portc-baud'), s.portc_baud);
-    var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(s.portb_role===0?' hidden':'');
-    var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(s.portc_role===0?' hidden':'');
+    var rb=document.getElementById('row-portb-baud'); if(rb) rb.className='row'+(portBaudHidden(s.portb_role)?' hidden':'');
+    var rc=document.getElementById('row-portc-baud'); if(rc) rc.className='row'+(portBaudHidden(s.portc_role)?' hidden':'');
     var pd=document.getElementById('portc-dup'); if(pd) pd.style.display=s.portc_dup?'block':'none';
     // v0.09: ESP32-C3 hat keinen Port C -> Zeilen ausblenden
     if(s.portc_present===0){ ['portc-mode','portc-baud'].forEach(function(id){var e=document.getElementById(id); if(e&&e.parentNode) e.parentNode.style.display='none';}); if(pd) pd.style.display='none'; }
@@ -838,6 +920,8 @@ function loadConfig(){
     onWifiAlwaysOnChange();
     var sp=cfg.sport;
     sv('pid0',sp.poll_id0); sv('pid1',sp.poll_id1);
+    onPortAMode();
+    renderReed();   // v0.14: Reed-Aktionen/Entprellzeit aus cfg.reed
   });
 }
 
@@ -1211,6 +1295,7 @@ function saveSettings(){
   var d={
     modul_adr:gi('mod-adr'),
     mkan_adr0:gi('mkan-adr0'), mkan_adr1:gi('mkan-adr1'),
+    porta_role:gi('porta-mode'),
     portb_role:gi('portb-mode'), portb_baud:gi('portb-baud'),
     portc_role:gi('portc-mode'), portc_baud:gi('portc-baud')
   };
@@ -1225,6 +1310,96 @@ function saveSettings(){
       // Server tatsaechlich uebernommenen (begrenzten) Werten entspricht.
       loadConfig();
       toast('Einstellungen gespeichert');return;}}catch(e){}
+    toast('Fehler',1);
+  });
+}
+
+// ─── Reed-Trigger (v0.14) ────────────────────────────────────────────────
+// Aktionen/Entprellzeit kommen aus cfg.reed (GET /api/config). Die Testbuttons
+// rufen POST /api/reed/test auf - derselbe Kommando-Queue-Pfad wie ein echter
+// Reed-Impuls.
+function reedActionLabel(action){
+  var names=((cfg.reed&&cfg.reed.action_options)||'').split(';');
+  return names[action]||('Aktion '+action);
+}
+function renderReed(){
+  var r=cfg.reed;
+  var box=document.getElementById('reed-ports');
+  var empty=document.getElementById('reed-empty');
+  var restart=document.getElementById('reed-restart');
+  if(!box) return;
+  box.innerHTML='';
+  if(!r){
+    if(empty) empty.className='';
+    if(restart) restart.className='hidden';
+    return;
+  }
+  var db=document.getElementById('reed-db');
+  if(db){
+    db.min=r.debounce_min||5; db.max=r.debounce_max||500;
+    db.value=r.debounce_ms;
+    var lv=document.getElementById('lv-reed-db');
+    if(lv) lv.textContent=r.debounce_ms+' ms';
+  }
+  var shown=0, changed=[];
+  (r.ports||[]).forEach(function(p){
+    if(!p.present) return;
+    if(!!p.configured!==!!p.active) changed.push(p.label);
+    if(!p.configured) return;
+    shown++;
+    var head=document.createElement('div');
+    head.style.cssText='font-weight:600;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px';
+    head.textContent=p.label;
+    box.appendChild(head);
+    ['rx','tx'].forEach(function(pin){
+      var row=document.createElement('div'); row.className='row';
+      var lab=document.createElement('span'); lab.className='lbl';
+      lab.style.flex='0 0 56px'; lab.textContent=pin.toUpperCase();
+      row.appendChild(lab);
+      var sel=document.createElement('select');
+      sel.id='reed-'+p.key+'-'+pin;
+      fillSelNames(sel,r.action_options,null);
+      sel.value=(r.actions&&r.actions[p.key+'_'+pin]!==undefined)?r.actions[p.key+'_'+pin]:0;
+      row.appendChild(sel);
+      var btn=document.createElement('button');
+      btn.className='btn btn-s'; btn.textContent='Test';
+      btn.style.cssText='width:auto;padding:6px 12px;margin:0;flex:0 0 auto;font-size:12px';
+      btn.onclick=function(){
+        var a=parseInt(sel.value)||0;
+        testReed(a,reedActionLabel(a));
+      };
+      row.appendChild(btn);
+      box.appendChild(row);
+    });
+  });
+  if(empty) empty.className=shown?'hidden':'';
+  if(restart){
+    if(changed.length){
+      restart.textContent='\u26A0 '+changed.join(', ')+': Rollenaenderung wirkt erst nach einem Neustart des Moduls.';
+      restart.className='';
+    } else {
+      restart.className='hidden';
+    }
+  }
+}
+function testReed(action){
+  if(!action){ toast('Keine Aktion gewaehlt',1); return; }
+  xpost('/api/reed/test',{action:action},function(resp){
+    var d=null; try{ d=JSON.parse(resp); }catch(e){}
+    if(d&&d.ok) toast('Test: '+reedActionLabel(action));
+    else toast('Test fehlgeschlagen',1);
+  });
+}
+function saveReed(){
+  var d={reed_debounce_ms:gi('reed-db')};
+  var r=cfg.reed||{};
+  (r.ports||[]).forEach(function(p){
+    if(!p.present||!p.configured) return;
+    d['reed_'+p.key+'_rx']=gi('reed-'+p.key+'-rx');
+    d['reed_'+p.key+'_tx']=gi('reed-'+p.key+'-tx');
+  });
+  xpost('/api/config',d,function(resp){
+    try{var q=JSON.parse(resp);if(q.ok){ loadConfig(); toast('Reed-Einstellungen gespeichert');return;}}catch(e){}
     toast('Fehler',1);
   });
 }
@@ -1310,17 +1485,25 @@ function importConfigData(data){
 }
 function importConfigRun(data){
   var s=data.settings||{}, w=data.wifi||{}, sp=data.sport||{}, m=data.motor||{};
+  var reed=data.reed||{}, reedAct=reed.actions||{};
 
   var settingsPost=stripUndef({
     modul_adr:s.modul_adr,
     mkan_adr0:s.mkan_adr0, mkan_adr1:s.mkan_adr1,
     // portb_mode/portc_mode: Sicherungen bis v0.02 (alte Nummern, Geraet
     // rechnet um); portc_gps: Sicherung von v0.01
+    porta_role:s.porta_role,
     portb_role:s.portb_role, portb_mode:(s.portb_role===undefined?s.portb_mode:undefined),
     portb_baud:s.portb_baud,
     portc_role:s.portc_role, portc_mode:(s.portc_role===undefined?s.portc_mode:undefined),
     portc_baud:s.portc_baud,
     portc_gps:(s.portc_role===undefined&&s.portc_mode===undefined?s.portc_gps:undefined),
+    // v0.14: Reed-Aktionen/Entprellzeit (fehlen in Sicherungen bis v0.13 ->
+    // bleiben unveraendert). Flache Schluessel, da /api/config keine Arrays kennt.
+    reed_debounce_ms:reed.debounce_ms,
+    reed_a_rx:reedAct.a_rx, reed_a_tx:reedAct.a_tx,
+    reed_b_rx:reedAct.b_rx, reed_b_tx:reedAct.b_tx,
+    reed_c_rx:reedAct.c_rx, reed_c_tx:reedAct.c_tx,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
     poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
   });
@@ -1561,6 +1744,9 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   server.on("/api/config", HTTP_POST, []() { WebServerManager::handleApiConfigPost(); });
   server.on("/api/debug",     []() { WebServerManager::handleApiDebug();  });
   server.on("/api/sound",     []() { WebServerManager::handleApiSound();  });
+  // v0.14: Reed-Testbutton - nutzt denselben Kommando-Queue-Pfad wie ein
+  // echter Impuls (siehe reed_trigger.cpp/ESP32_Sound_Mini_S3.ino).
+  server.on("/api/reed/test", HTTP_POST, []() { WebServerManager::handleApiReedTest(); });
   // Sound-WAV per WLAN hochladen - zweiter Handler-Parameter ist der
   // eigentliche Upload-Callback (mehrfach pro Request, siehe HTTPUpload-
   // Status in handleApiSoundUploadData()); der erste wird einmal am Ende
@@ -1737,11 +1923,15 @@ static String jsonEscape(const char* s) {
 // Schreibt Settings, WiFi und S.Port Poll-IDs.
 // Body: JSON mit beliebigen der folgenden Felder (alle optional):
 //   settings: { modul_adr, mkan_adr0, mkan_adr1,
-//               portb_role, portb_baud, portc_role, portc_baud }
+//               porta_role,
+//               portb_role, portb_baud, portc_role, portc_baud,
+//               reed_debounce_ms, reed_a_rx, reed_a_tx,
+//               reed_b_rx, reed_b_tx, reed_c_rx, reed_c_tx }
 //               (portb_mode/portc_mode aus Sicherungen bis
 //               v0.02 werden umgerechnet, portc_gps aus v0.01: 1 -> GPS)
 //   wifi:     { ssid, pass, ip, device }
 //   sport:    { poll_id0, poll_id1 }  (Hex-String, z.B. "A1")
+// Alle Felder liegen flach im Body (wie bisher), auch die Reed-Werte.
 void WebServerManager::handleApiConfigPost() {
   if (!server.hasArg("plain")) { sendErr(server); return; }
   const String& body = server.arg("plain");
@@ -1757,6 +1947,10 @@ void WebServerManager::handleApiConfigPost() {
   // erzwungen (siehe Kommentar in config.h/EK_Gruppen_Adresse).
   if (jsonGetInt(body, "mkan_adr0", v)) { config.EK_Gruppen_Adresse[0]       = constrain(v,0,255);  changed=true; }
   if (jsonGetInt(body, "mkan_adr1", v)) { config.EK_Gruppen_Adresse[1]       = constrain(v,0,255);  changed=true; }
+  // Port A: nur Aus/CRSF/Reed (Default CRSF). Wirkt wie Port B/C erst nach
+  // einem Neustart (Boot-Snapshot PortA_Role_boot in ESP32_Sound_Mini_S3.ino).
+  if (jsonGetInt(body, "porta_role", v)) { config.PortA_Role = portaRoleClamp(v); changed=true;
+    Serial.printf("[API] Port A Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortA_Role)); }
   // Port B / Port C - wirkt erst nach einem Neustart
   // (siehe setup() in ESP32_Sound_Mini_S3.ino, PortB_Role_boot/
   // PortC_Role_boot). Anders als im CRSF/Lua-Menue (1-Byte-
@@ -1773,6 +1967,22 @@ void WebServerManager::handleApiConfigPost() {
   else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Role = v ? UROLE_GPS : UROLE_OFF;
     config.PortC_Baud = uartRoleDefaultBaud(UROLE_GPS); changed=true; }
   if (jsonGetInt(body, "portc_baud", v)) { config.PortC_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
+
+  // v0.14: Reed-Trigger - Entprellzeit und Aktion je Port/Pin. Beides wirkt
+  // sofort (reedUpdate() liest config bei jedem Impuls frisch), im Gegensatz
+  // zur Port-Rolle oben.
+  if (jsonGetInt(body, "reed_debounce_ms", v)) {
+    config.ReedDebounceMs = (uint16_t)constrain(v, REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
+    changed = true;
+  }
+  for (uint8_t p = 0; p < REED_PORTS; p++) {
+    for (uint8_t i = 0; i < REED_PINS; i++) {
+      if (jsonGetInt(body, REED_CONFIG_KEYS[p][i], v)) {
+        config.ReedAction[p][i] = reedActionClamp(v);
+        changed = true;
+      }
+    }
+  }
 
   // WiFi
   { char tmp[64];
@@ -1853,6 +2063,11 @@ String WebServerManager::buildConfigJson() {
 
   // Einstellungen
   j += "\"settings\":{";
+  // Port A kennt nur Aus/CRSF/Reed; die Werteliste ist nicht fortlaufend
+  // (0/1/5), deshalb zusaetzlich porta_values fuer die Web-UI.
+  j += "\"porta_role\":"    + String(config.PortA_Role)           + ",";
+  j += "\"porta_options\":\"" + String(portaRoleOptions())        + "\",";
+  j += "\"porta_values\":\""  + String(portaRoleValues())         + "\",";
   j += "\"portb_role\":" + String(config.PortB_Role) + ",";
   j += "\"portb_baud\":" + String(config.PortB_Baud) + ",";
   // Rollenliste + Standard-Baudraten aus RC_Common (uart_roles.h), Index in
@@ -1878,6 +2093,37 @@ String WebServerManager::buildConfigJson() {
   // einstellbar).
   j += "\"mkan_adr0\":"  + String(config.EK_Gruppen_Adresse[0])   + ",";
   j += "\"mkan_adr1\":"  + String(config.EK_Gruppen_Adresse[1])   + "},";
+
+  // v0.14: Reed-Trigger. actions ist ein flaches Objekt (a_rx, a_tx, ...),
+  // ports liefert Praesenz, gespeicherte Rolle und die beim Start aktive
+  // Rolle - damit die Web-UI den Neustart-Hinweis anzeigen kann.
+  j += "\"reed\":{";
+  j += "\"debounce_ms\":"  + String(config.ReedDebounceMs)        + ",";
+  j += "\"debounce_min\":" + String(REED_DEBOUNCE_MIN_MS)         + ",";
+  j += "\"debounce_max\":" + String(REED_DEBOUNCE_MAX_MS)         + ",";
+  j += "\"action_options\":\"" + String(reedActionOptions())      + "\",";
+  j += "\"actions\":{";
+  for (uint8_t p = 0; p < REED_PORTS; p++) {
+    for (uint8_t i = 0; i < REED_PINS; i++) {
+      if (p || i) j += ",";
+      j += "\"" + String(REED_PORT_KEYS[p]) + "_" + String(REED_PIN_KEYS[i]) + "\":";
+      j += String(config.ReedAction[p][i]);
+    }
+  }
+  j += "},\"ports\":[";
+  for (uint8_t p = 0; p < REED_PORTS; p++) {
+    if (p) j += ",";
+    bool present = reedPortPresent(p);
+    uint8_t role = (p == 0) ? config.PortA_Role
+                 : (p == 1) ? config.PortB_Role : config.PortC_Role;
+    bool configured = present && role == UROLE_REED;
+    j += "{\"key\":\"" + String(REED_PORT_KEYS[p]) + "\",";
+    j += "\"label\":\"" + String(REED_PORT_LABELS[p]) + "\",";
+    j += "\"present\":"    + String(present ? 1 : 0)    + ",";
+    j += "\"configured\":" + String(configured ? 1 : 0) + ",";
+    j += "\"active\":"     + String(reedPortActive(p) ? 1 : 0) + "}";
+  }
+  j += "]},";
 
   // S.Port Poll-IDs
   char p0[4], p1[4];
@@ -2419,6 +2665,7 @@ void WebServerManager::handleApiDebug() {
   // S.Port Live-Daten
   // Der AKTIVE (Boot-)Wert, nicht der evtl. schon geaenderte, aber noch
   // nicht neu gestartete config.PortB_Role.
+  j += "\"porta_role\":" + String(PortA_Role_boot) + ",";
   j += "\"portb_role\":" + String(PortB_Role_boot) + ",";
   j += "\"portc_role\":" + String(PortC_Role_boot) + ",";
   j += "\"sport_active\":" + String(sportLipoIsActive() ? "true" : "false") + ",";
@@ -2530,6 +2777,22 @@ void WebServerManager::handleApiSound() {
   }
 
   if (changed) markDirty();
+  sendOk(server);
+}
+
+// ── POST /api/reed/test  {"action":1..6} ──────────────────────────────────
+// Testbutton der Web-UI. Prueft die Aktion nur und legt sie in die Queue;
+// ausgefuehrt wird sie - wie ein echter Reed-Impuls - in loop() ueber den
+// gemeinsamen Command-Executor (ESP32_Sound_Mini_S3.ino).
+void WebServerManager::handleApiReedTest() {
+  if (!server.hasArg("plain")) { sendErr(server); return; }
+  const String& body = server.arg("plain");
+  int v;
+  if (!jsonGetInt(body, "action", v)) { sendErr(server); return; }
+  uint8_t action = reedActionClamp(v);
+  if (action == REED_ACTION_NONE) { sendErr(server); return; }
+  enqueueCommand(action);
+  Serial.printf("[API] Reed-Test -> %s\n", reedActionName(action));
   sendOk(server);
 }
 

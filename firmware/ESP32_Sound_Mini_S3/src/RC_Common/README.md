@@ -16,8 +16,8 @@ Gemeinsame Basis aller ESP32-Firmwaren (RC-Multiswitch C3/S3, Multiswitch Basis 
 | Datei | Inhalt |
 |---|---|
 | `CRSF_ESP32/` | CRSF-Bibliothek 1.1.1 mit Router für die Modulkette (eigene README) |
-| `uart_roles.*` | Rollen der Zusatz-UARTs, überall gleich nummeriert: 0 Aus, 1 CRSF, 2 S.Port, 3 GPS, 4 Raw. Baudratenliste mit „Auto“, Umrechnung alter NVS-Werte |
-| `uart_ports.*` | Startet Port B/C nach Rolle (CRSF-Router, S.Port, GPS, Raw), erkennt doppelte Rollen, sendet die Telemetrie |
+| `uart_roles.*` | Rollen der Zusatz-UARTs, überall gleich nummeriert: 0 Aus, 1 CRSF, 2 S.Port, 3 GPS, 4 Raw, 5 Reed. Baudratenliste mit „Auto“, Umrechnung alter NVS-Werte |
+| `uart_ports.*` | Startet Port B/C nach Rolle (CRSF-Router, S.Port, GPS, Raw, Reed), erkennt doppelte Rollen, sendet die Telemetrie |
 | `sport_lipo.*` | FrSky S.Port Master für FLVSS/MLVSS → CRSF-Zellspannungen |
 | `gps_speed.*` | NMEA-GPS → CRSF-GPS-Telemetrie und Geschwindigkeit |
 | `gps_autobaud.*` | Baudrate „Auto“ für GPS: Suche 9600/115200/38400/57600/19200, Umstellung auf 115200 und 10 Hz (CASIC/ATGM336H und u-blox M8/M9/M10), neue Suche nach 3 s ohne Daten |
@@ -44,5 +44,6 @@ Im Namensraum des jeweiligen Projekts: `ssid pass wip dnam madr wfauto wftmo wfa
 | 1.2.2 | 1.1.1 | Adresskonflikt mit Port: `getDuplicatePorts()` (Bit 0 = B, Bit 1 = C), rein additiv. Zuerst im CRSF-Router S3 (v0.3.6), die anderen Kopien folgen |
 | 1.3.0 | 1.1.1 | Lua: Felder ausblenden. `LuaView.hidden` (in `view()` setzen) schickt das Feld mit Bit 7 im Datentyp (CRSF „hidden“), `CRSF::setNextParamHidden()`. Typ und Feld-ID bleiben, das ELRS-Lua lädt das Feld nach Änderungen im selben Ordner neu und blendet es wieder ein. Ein Lua ohne diese Kennung zeigt alles wie bisher. Enthält 1.2.1 und 1.2.2. Außerdem laufen CRSF_ESP32 und `lua_menu.*` ohne ESP32 (RP2350): `init_crsf()`/`init_router()` und `StatusLed` nur bei `ESP32`, `<initializer_list>` in `crsf_platform.h`. Der RP2350-Router trägt damit einen unveränderten Auszug. Zuerst im RC-Multiswitch-Sound-S3 (v1.05/v1.06), dann in allen Kopien |
 | 1.4.0 | 1.1.1 | Einheitliche Status-LED: `statusLedLook()` liefert Farbe und Muster (Farben wie beim CRSF-Router, „kein Signal“ jetzt rot Aufblitzen 100/900 ms statt aus), `StatusLed::update(mode, now, dupAddress, wifiOn)`, `setRgbOrder()` für LEDs mit RGB-Folge (ESP32-S3-Zero), `showBootWindow()`/`statusLedBootOn()` für das BOOT-Fenster. Einfache LEDs unverändert. Zuerst im RC-Multiswitch-Sound-S3, gleichzeitig in allen Kopien |
+| 1.5.0 | 1.1.1 | Rolle „Reed“ (5): beide Pins eines Ports als `INPUT_PULLUP`, kein UART. Reed darf auf mehreren Ports gleichzeitig laufen (`uartRoleSingleInstance` = false). `uartPortsBegin()` initialisiert die Pins und protokolliert Pull-up statt Baudrate. Rein additiv, alte Rollenwerte bleiben stabil. Zuerst im Soundmodul Mini S3 (v0.14) |
 
 Voraussetzung: ESP32 Arduino Core 3.x (Multiswitch: arduino-cli `esp32:esp32@3.0.7`, Soundmodule: PlatformIO pioarduino 51.03.07 = Core 3.0.7).

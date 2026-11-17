@@ -4,6 +4,17 @@ Nur Vorschlag, noch kein Repo und kein Code.
 
 Grundlage: Sound-Firmware v7.18 (`mnorden81-ESP32-Sound-bidirectional_code`, `main` @ `4d0f1df`) und die lokale Notiz `Sound/Mini/README.md` (MAX98357, CRSF, Board C3 oder S3-Zero offen).
 
+## Umgesetzte Erweiterung ab v0.14: Reed-Trigger pro Port
+
+Die ursprüngliche Planung sah nur CRSF als Eingang vor. Der Piko-35040-Sonderstand nutzte stattdessen feste Pins (IO5/IO6, `REED_TRIGGER_ENABLED`) und hatte keine Port-Rollen. Ab v0.14 ist beides in der regulären Port-Architektur zusammengeführt:
+
+- **Rolle `UROLE_REED`** (Wert 5, RC_Common 1.5.0) für Port A/B/C; Port A ist dafür von fest CRSF auf Aus/CRSF/Reed umgestellt (Default CRSF). Reed darf auf mehreren Ports gleichzeitig laufen.
+- **Pin-Modell:** pro Port RX und TX; im Reed-Modus `INPUT_PULLUP`, kein UART. Aktive Flanke HIGH → LOW, Entprellzeit 5–500 ms (Default 50 ms, NVS `reeddb`).
+- **Aktionen pro Pin** (`NVS reedact`, 6 Bytes): Keine, Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus. Konfigurierbar im Web-Tab „Reed“ mit Testbutton je Pin; Änderungen wirken sofort, Rollenwechsel erst nach Neustart.
+- **Kommando-Queue:** Reed-Impulse und Web-Testbuttons rufen `enqueueCommand()` auf; `loop()` führt die Einträge über einen zentralen Executor aus (gleicher Pfad wie die One-Shot-Sound-Trigger). Damit ist die Anforderung „Queue wie CRSF“ explizit erfüllt.
+- **Flamme:** nicht blockierender Effekt über die vorhandene `StatusLed`; überlagert die RC-Statusanzeige, solange sie an ist.
+- **Kompatibilität:** neue Konfigurationsfelder sind additiv (`porta_role`, `reed_*`, JSON-Objekt `reed`); alte Exporte/Backups werden mit Defaults geladen. Details siehe [`docs/reed-trigger-ports-plan.md`](reed-trigger-ports-plan.md).
+
 ## 1. Umfang
 
 | | Sound V7 | Mini |

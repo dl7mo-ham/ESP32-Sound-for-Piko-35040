@@ -3,27 +3,37 @@
 ## 1. Trigger-Quellen
 
 ```
-CRSF-Bus (Port A)        Reed-Trigger (IO5/IO6)        Web / Lua-Menü
-       │                        │                            │
-  Config()              reedTriggerUpdate()          Sound_on_web[i]=true
-  wertet Kanäle aus      IO6: Impuls -> sound1        (einmaliger Trigger)
-       │                 IO5: Impuls -> sound2              │
-  Sound_on[i] = true/false      │                            │
-       └────────────────────────┴────────────────────────────┘
-                                │
-                           handleSound(i)
-
-Web-Tab "Motor" (nur Reed-Modus)
-  Motorsound-Button  -> setMotorSound()  -> Sound_on_Motor
-  LED-Flammen-Button -> flameSet()       -> flame_led.cpp
+CRSF-Bus (Port A, Default)   Reed-Trigger (Port A/B/C)      Web / Lua-Menü
+        │                        │                            │
+   Config()                reedUpdate() + debounce      Sound_on_web[i]=true
+   wertet Kanäle aus       Pin RX/TX -> Aktion          enqueueCommand(action)
+        │                        │                            │
+   Sound_on[i] = true/false      └──────────┬─────────────────┘
+        │                                   │
+        └───────────────────────────────────┤
+                                            ▼
+                                   Command-Queue (16)
+                                            │
+                                   executeCommand() in loop()
+                                            │
+                   Sound_on_web[i] / toggleMotorSound() / flameToggle()
+                                            │
+                                       handleSound(i)
 ```
+
+Reed-Aktionen und Testbuttons des Web-Tabs „Reed“ benutzen dieselbe Queue;
+`handleSound(i)` verarbeitet danach One-Shot-Flags wie beim Web-Test.
 
 > [!NOTE]
 > `Sound_on[]` wird jeden Loop-Durchlauf neu gesetzt (dauerhaft, solange Quelle aktiv).
 > `Sound_on_web[]` ist ein **One-Shot-Flag**: `handleSound` setzt es sofort wieder auf `false`.
 
 > [!NOTE]
-> Im Reed-Modus reagieren IO5 und IO6 nur auf einfache Impulse: IO6 spielt Sound 1, IO5 Sound 2. Motorsound und Flammen-LED werden über den Web-Tab „Motor“ geschaltet (`POST /api/control`), nicht mehr über lange Reed-Impulse.
+> Seit v0.14 ist Reed eine Port-Rolle (nicht mehr `REED_TRIGGER_ENABLED`). Ein Reed-Port liest
+> RX und TX mit Pull-up; ein Impuls (HIGH → LOW, nach Entprellzeit) löst die konfigurierte Aktion
+> aus: Sound 1–4, Motor Ein/Aus oder Flamme Ein/Aus. Aktionen sind pro Pin frei wählbar und im
+> Web-Tab „Reed“ einzeln testbar. Rollenwechsel brauchen einen Neustart, Aktionen/Entprellzeit
+> gelten sofort.
 
 ---
 
@@ -131,7 +141,7 @@ Die Parameter können über die Weboberfläche (Tab *Motor*) oder das Lua-Menü 
 | **Motor EIN Modus** | `entog` | `0` | `0` = Taster/Schalter direkt; `1` = Toggle (Schalterimpuls schaltet ein/aus) |
 
 > [!NOTE]
-> Die Drehzahl-Variation erfordert das dynamische Gas-Signal eines RC-Empfängers (CRSF). Wird das Modul mit Reed-Kontakten betrieben (`REED_TRIGGER_ENABLED`), sind die UART-Pins für Reed-Eingänge belegt; der Motor läuft mangels Gaskanal dauerhaft mit der Mindestdrehzahl (`Drehzahl min`).
+> Die Drehzahl-Variation erfordert das dynamische Gas-Signal eines RC-Empfängers (CRSF). Steht Port A auf Reed/Aus, gibt es keinen Gaskanal; der Motor läuft dann mit der Mindestdrehzahl (`Drehzahl min`). Dennoch lässt sich der Motorsound per Reed-Aktion „Motor Ein/Aus“ oder dem Web-Testbutton schalten.
 
 ---
 
@@ -187,10 +197,11 @@ LittleFS  ──►  BackSamples[]  ──(memcpy)──►  Samples[]  ──�
 | Schritt | Dauer |
 |---|---|
 | Reed-Flanke → nächster `loop()`-Durchlauf | < 1 ms |
+| Entprellzeit (stabiler Pegel nötig) | 5–500 ms (Default 50 ms) |
 | `I2SAudio.Play()` → `Init()` → erster LittleFS-Read | ~1–5 ms |
 | I2SProducer füllt nächsten Slot | ~1 ms |
 | I2S-DMA → Lautsprecher | < 1 ms |
-| **Gesamt** | **~3–7 ms** |
+| **Gesamt (ohne Entprellzeit)** | **~3–7 ms** |
 
 ---
 
@@ -200,14 +211,15 @@ LittleFS  ──►  BackSamples[]  ──(memcpy)──►  Samples[]  ──�
 loop()
   ├─ WebServerManager::Webpage()       (nur wenn AP aktiv)
   ├─ uartPortsUpdate()                 (Port B/C: S.Port, GPS)
-  ├─ crsf.read_packets()               (Port A – entfällt bei REED_TRIGGER_ENABLED)
-  │    └─► BUS_OK, channel_output[]
-  ├─ reedTriggerUpdate()               (nur bei REED_TRIGGER_ENABLED)
-  │    └─► IO6: Impuls -> Sound_on_web[1] (sound1.wav),
-  │         IO5: Impuls -> Sound_on_web[2] (sound2.wav)
-  ├─ flameUpdate()                     (nur bei REED_TRIGGER_ENABLED, Flammen-LED)
-  ├─ uartPortsTelemetry() / updateLed()
-  ├─ CRSF Lua-Menü (Read/Write/Command)
+  ├─ reedUpdate()                      (aktive Reed-Ports: RX/TX, Entprellung)
+  ├─ processCommandQueue()             (Reed + Web-Testbuttons, gemeinsamer Pfad)
+  │    ├─► Sound_on_web[1..4] = true
+  │    ├─► toggleMotorSound()
+  │    └─► flameToggle()
+  ├─ crsf.read_packets()               (nur wenn Port A = CRSF)
+  │    └─► BUS_OK, channel_output[], uartPortsTelemetry()
+  ├─ updateLed() / flameUpdate()       (Flamme hat Vorrang, solange sie an ist)
+  ├─ CRSF Lua-Menü (Read/Write/Command) (nur wenn Port A = CRSF)
   ├─ saveConfigForce()                 (500ms nach letzter Änderung)
   ├─ wifiFailsafeCheck()
   ├─ Config()                          ← Sound_on[] aus CRSF-Kanälen setzen

@@ -2,6 +2,13 @@
 
 Die Version wird bei jeder Änderung erhöht, weil sie als CRSF „Parameter Version Number“ an den Sender geht. Ab v0.09 gilt jede Version für S3 und C3. Neueste Version oben.
 
+## v0.14 (RC_Common 1.5.0)
+- Reed-Trigger ist jetzt eine Port-Rolle statt einer Compile-Option: Port A (Default CRSF) ist um Aus/Reed erweiterbar, Port B/C zusätzlich um Reed. Alle Pins eines Reed-Ports laufen als Eingänge mit Pull-up, ohne UART; die Baudrate wird dafür ausgeblendet.
+- Neuer Web-Tab „Reed“: je Reed-Port und Pin (RX/TX) Aktion wählen (Keine, Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und per Testbutton auslösen. Entprellzeit 5–500 ms (Default 50 ms), gespeichert in NVS und in Konfigurations-Export/-Backup.
+- Reed-Impulse und Web-Testbuttons legen ihre Aktion in eine gemeinsame 16-Eintrags-Kommando-Queue; Ausführung in `loop()` über einen zentralen Executor. Motor-Toggle und Flammen-LED nutzen dieselben Funktionen wie die übrige Steuerung; die Flamme überlagert die Status-LED, solange sie an ist.
+- Rollenwechsel wirken wie bisher erst nach Neustart (Boot-Snapshot), Aktionen und Entprellzeit sofort. Das Lua-Menü zeigt die neue Rolle und blendet die Baudrate bei Reed aus; die Pin-Aktionen bleiben Web-only.
+- Backup-/Export-Import: neue Felder additiv, alte Sicherungen bekommen Defaults. RC_Common-Hosttests und Builds für S3/C3 gruen. Noch nicht auf Hardware getestet.
+
 ## v0.13 (RC_Common 1.4.0)
 - Status-LED wie alle Module: grün langsam = OK, rot schnell = Failsafe / kein RC-Link, rot Aufblitzen = kein Signal (vorher aus), blau Doppelblitz = Adresskonflikt (neu), gelb Doppelblitz = doppelte Port-Rolle, violett = WLAN an.
 - Neues Lua-Feld 62 „LED Farbfolge“ (RGB/GRB, NVS `ledrgb`). BOOT-Taste im Betrieb 2 s halten = WLAN an/aus.

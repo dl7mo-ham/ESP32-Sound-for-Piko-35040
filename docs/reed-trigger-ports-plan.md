@@ -161,3 +161,14 @@ Zusätzlich erhält die Web-UI einen neuen Tab, in dem pro Pin jedes Reed-Trigge
 - [ ] Eigene Dokus/Bilder/Texte aus `main` vorhanden.
 - [ ] Lautstärke-Bugfix übernommen oder Abweichungen/Restarbeit dokumentiert.
 - [ ] Dieses Plan-Dokument liegt im Branch und beschreibt Architektur, betroffene Stellen, Datenmodell, UI/API, Queue/Dispatch und Verifikation.
+
+## Umsetzungsstand (v0.14)
+
+Die oben beschriebenen Schritte 2–7 sind umgesetzt: `UROLE_REED`, konfigurierbare
+Port-A-Rolle, Reed-Pin-Aktionen inkl. Entprellzeit, Reed-Scan, gemeinsame
+Kommando-Queue, Flammen-LED, Web-Tab „Reed“ mit Testbuttons sowie Lua-/Doku-
+Anpassung. Neue Konfigurationsfelder: `porta_role`, `reed_debounce_ms`,
+`reed_a_rx` … `reed_c_tx` (JSON: `reed`-Objekt). Offen bleibt Schritt 8
+(Hardware-Test am Piko 35040); die Builds für S3/C3 und die RC_Common-
+Hosttests laufen fehlerfrei. Details zu den Entscheidungen stehen in
+[`CHANGELOG.md`](../CHANGELOG.md) und im README-Abschnitt „Reed-Betrieb“.

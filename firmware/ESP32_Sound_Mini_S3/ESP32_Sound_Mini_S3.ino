@@ -29,15 +29,18 @@
    Siehe pins.h (vorlaeufig, wird in Schritt 5 am Board geprueft).
 
    ── Das Port-Modell ───────────────────────────────────────────────────
-   Port A = CRSF (Serial2, beim C3 Serial0), fest. Port C nur beim S3.
+   Port A = Hardware-UART (S3: Serial2, C3: Serial0), Default CRSF. Seit
+            v0.14 in der Web-UI auch Aus oder Reed (beide Pins als
+            Tastereingaenge INPUT_PULLUP).
    Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART0 (Serial0).
             Rolle je Port waehlbar in Web UND CRSF/Lua-Menue (RC_Common,
             uart_roles.h): Aus, CRSF (Modulkette: der CRSF-Router reicht
             Frames zwischen Port A und Port B/C weiter), S.Port-Master
-            (LiPo-Telemetrie), GPS (CRSF-GPS-Telemetrie) oder Raw-UART, je
-            mit eigener Baudrate. S.Port, GPS und Raw nur auf einem Port;
-            doppelt gewaehlt laeuft die Rolle auf Port B, Port C bleibt aus.
-            CRSF darf auf beiden Ports laufen.
+            (LiPo-Telemetrie), GPS (CRSF-GPS-Telemetrie), Raw-UART oder
+            Reed (beide Pins als Tastereingaenge), je mit eigener Baudrate.
+            S.Port, GPS und Raw nur auf einem Port; doppelt gewaehlt laeuft
+            die Rolle auf Port B, Port C bleibt aus. CRSF darf auf beiden
+            Ports laufen, Reed auf beliebig vielen.
 
    ── WLAN & Weboberflaeche ─────────────────────────────────────────────
    Der Access Point laesst sich einschalten ueber:
@@ -61,6 +64,8 @@
    XT_I2S_Audio.cpp/.h    WAV-Wiedergabe ueber I2S
    sound_store.cpp/.h     Sound-Speicher Flash (LittleFS)
    mem_info.cpp/.h        Speicherbelegung Flash/RAM fuer Web und Lua
+   reed_trigger.cpp/.h    Reed-/Tastereingaenge je Port, Aktionen und Queue
+   flame_led.cpp/.h       Flammen-Effekt der Status-LED (Web/Reed)
    RC_Common/             Gemeinsame Basis aller ESP32-Module (identische
                           Kopie wie im Soundmodul V7 und im Multiswitch):
                           CRSF mit Router, UART-Rollen, S.Port, GPS,
@@ -84,11 +89,13 @@
 #include "sound_store.h"
 #include "mem_info.h"
 #include "sound_map.h"
+#include "reed_trigger.h"   // v0.14: Reed-Trigger je Port/Pin
+#include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
 
-uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
+uint16_t Version = 14; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (14 -> "0.14")
 char versionString[6];
-// Port C (GPS) kann beim Mini nicht mit Port A kollidieren (CRSF-only). Die
-// Variable bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
+// Port C (GPS) kann beim Mini nicht mit Port A kollidieren. Die Variable
+// bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
 bool gpsPinConflict = false;
 
 // ── Zustand ───────────────────────────────────────────────────────────
@@ -104,10 +111,26 @@ unsigned long shutdown_timer = 0;
 enum Engine_State : uint8_t { OFF, STARTING, RUNNING, STOPPING };
 volatile uint8_t engine_State = OFF;
 
-// Boot-Snapshot: Rolle/Baudrate von Port B und Port C werden
+// Direktsteuerung Motorsound (Web-UI/Reed-Trigger). In reinem CRSF-Betrieb
+// folgt Sound_on_Motor weiter den Kanaelen; der manuelle Zustand bleibt
+// trotzdem erhalten, wenn kein CRSF-Motorsignal anliegt.
+void setMotorSound(bool on) {
+    Sound_on_Motor = on;
+    Sound_on_web[0] = false;   // alten Legacy-Trigger nicht dagegenlaufen lassen
+    Serial.printf("[Motor] Direktsteuerung -> %s\n", on ? "EIN (Start->Loop)" : "AUS (Shut)");
+}
+void toggleMotorSound() {
+    setMotorSound(!Sound_on_Motor);
+}
+bool motorSoundIsOn() {
+    return Sound_on_Motor;
+}
+
+// Boot-Snapshot: Rolle/Baudrate von Port A, Port B und Port C werden
 // einmalig in setup() aus config uebernommen. Aendern ueber Web/Lua schreibt
 // sofort in config, wirkt aber erst nach einem Neustart - die UARTs sind
 // dann schon initialisiert und werden im Betrieb nicht umgeschaltet.
+uint8_t  PortA_Role_boot        = UROLE_CRSF;
 uint8_t  PortB_Role_boot        = UROLE_OFF;
 uint32_t PortB_Baud_boot        = 420000;
 uint8_t  PortC_Role_boot        = UROLE_OFF;
@@ -150,6 +173,9 @@ char password[64];
 unsigned long currentTime = 0;
 
 bool BUS_OK = false;
+// Port A laeuft in diesem Boot mit CRSF. Bei Rolle Aus/Reed werden alle
+// CRSF-Zugriffe (Router, Kanaele, Telemetrie, Lua) uebersprungen.
+bool crsfActive = false;
 
 // ── CRSF ──────────────────────────────────────────────────────────────
 CRSF crsf;       // Port A - der Haupt-RC-Bus; mit Port B/C = CRSF zugleich Router der Modulkette
@@ -167,6 +193,47 @@ static void checkCrsfTimeout() {
 }
 
 uint16_t channel_output[16] = {};
+
+// ── Kommando-Queue (v0.14) ────────────────────────────────────────────
+// Reed-Impulse und die Testbuttons der Web-UI legen nur eine Kommando-ID ab;
+// ausgefuehrt wird sie in loop() ueber denselben Pfad wie die uebrigen
+// Trigger. Die IDs sind identisch mit den Reed-Aktionen (config.h).
+static constexpr uint8_t CMD_QUEUE_SIZE = 16;
+static uint8_t cmdQueue[CMD_QUEUE_SIZE];
+static uint8_t cmdHead = 0, cmdTail = 0;
+
+void enqueueCommand(uint8_t cmd) {
+    if (cmd == REED_ACTION_NONE || cmd >= REED_ACTION_COUNT) return;
+    uint8_t next = (uint8_t)((cmdHead + 1) % CMD_QUEUE_SIZE);
+    if (next == cmdTail) {
+        Serial.printf("[Cmd] Queue voll, Kommando %u verworfen\n", (unsigned)cmd);
+        return;
+    }
+    cmdQueue[cmdHead] = cmd;
+    cmdHead = next;
+}
+
+static void executeCommand(uint8_t cmd) {
+    switch (cmd) {
+        case REED_ACTION_PLAY_SOUND_1:
+        case REED_ACTION_PLAY_SOUND_2:
+        case REED_ACTION_PLAY_SOUND_3:
+        case REED_ACTION_PLAY_SOUND_4:
+            Sound_on_web[cmd] = true;   // ID 1-4 == Sound-Slot 1-4
+            break;
+        case REED_ACTION_TOGGLE_MOTOR: toggleMotorSound(); break;
+        case REED_ACTION_TOGGLE_FLAME: flameToggle();      break;
+        default: break;
+    }
+}
+
+static void processCommandQueue() {
+    while (cmdTail != cmdHead) {
+        uint8_t cmd = cmdQueue[cmdTail];
+        cmdTail = (uint8_t)((cmdTail + 1) % CMD_QUEUE_SIZE);
+        executeCommand(cmd);
+    }
+}
 
 // ── I2S Audio ─────────────────────────────────────────────────────────
 XT_I2S_Class I2SAudio(PIN_I2S_LRC, PIN_I2S_BCLK, PIN_I2S_DOUT, I2S_NUM_0);
@@ -428,7 +495,7 @@ static void    luaSetTest(uint8_t s, uint8_t v)     { if (v == 1) Sound_on_web[s
 
 // ── Einstellungen ────────────────────────────────────────────────────────
 static uint8_t luaGetModAdr(uint8_t)                { return (uint8_t)constrain(config.modul_adress, 0, 20); }
-static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
+static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; if (crsfActive) crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
 static uint8_t luaGetGroupAdr(uint8_t a)            { return (uint8_t)constrain(config.EK_Gruppen_Adresse[a], 0, 255); }
 static void    luaSetGroupAdr(uint8_t a, uint8_t v) { config.EK_Gruppen_Adresse[a] = v; markDirty(); }
 // Port B (arg 0) / Port C (arg 1) wirken erst nach einem Neustart
@@ -446,8 +513,12 @@ static void    luaSetPortRole(uint8_t a, uint8_t v) {
                   a ? 'C' : 'B', uartRoleName(v));
 }
 static uint8_t luaGetPortBaud(uint8_t a)            { return uartBaudToIndex(luaPortBaud(a)); }
-// v0.11: Baudrate nur bei aktivem Port sichtbar
-static void    luaViewPortBaud(uint8_t a, LuaView& v, char*) { if (uartRoleClamp(luaPortRole(a)) == 0) v.hidden = true; }
+// v0.11: Baudrate nur bei aktivem Port sichtbar. v0.14: Reed braucht keine
+// Baudrate, das Feld wird dort ebenfalls ausgeblendet.
+static void    luaViewPortBaud(uint8_t a, LuaView& v, char*) {
+    uint8_t r = uartRoleClamp(luaPortRole(a));
+    if (r == UROLE_OFF || r == UROLE_REED) v.hidden = true;
+}
 #if !HAS_PORT_C
 static void    luaHideAlways(uint8_t, LuaView& v, char*) { v.hidden = true; }   // C3: kein Port C
 #endif
@@ -668,19 +739,30 @@ void setup() {
     Serial.begin(115200);
     loadConfig();
 
+    // Port A: Rolle aus der Konfiguration (Default CRSF). Nur bei CRSF wird
+    // der RC-Bus initialisiert; Reed setzt beide Pins als Pull-up-Eingaenge,
+    // Aus laesst sie unberuehrt.
+    PortA_Role_boot = portaRoleClamp(config.PortA_Role);
+    crsfActive      = (PortA_Role_boot == UROLE_CRSF);
+
     strncpy(ssid,    config.WiFi_SSID,    sizeof(ssid)-1);    ssid[sizeof(ssid)-1]='\0';
     strncpy(password,config.WiFi_Password,sizeof(password)-1); password[sizeof(password)-1]='\0';
 
-    // Port A: CRSF
-    crsf.init_crsf(PORTA_SERIAL, PIN_CRSF_RX, PIN_CRSF_TX);
-    crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
-    Serial.printf("CRSF (RX=%d, TX=%d)  Geraeteadresse 0x%02X  Slot %d\n",
-                  PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
-                  (uint8_t)constrain(config.modul_adress,0,15) * 2);
+    if (crsfActive) {
+        crsf.init_crsf(PORTA_SERIAL, PIN_CRSF_RX, PIN_CRSF_TX);
+        crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
+        Serial.printf("CRSF (RX=%d, TX=%d)  Geraeteadresse 0x%02X  Slot %d\n",
+                      PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
+                      (uint8_t)constrain(config.modul_adress,0,15) * 2);
+    } else {
+        Serial.printf("Port A: %s (RX=%d, TX=%d), kein CRSF-Eingang\n",
+                      uartRoleName(PortA_Role_boot), PIN_CRSF_RX, PIN_CRSF_TX);
+    }
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
     statusLed.begin(PIN_STATUS_LED, STATUS_LED_WS2812, 40, STATUS_LED_ACTIVE_HIGH);
     statusLed.setRgbOrder(config.LedRgb);   // v0.13
+    flameBegin(statusLed);                  // v0.14: Flamme nutzt dieselbe LED
     pinMode(PIN_MAX_GAIN, INPUT);   // GAIN offen = 9 dB
 
     soundStoreBegin();
@@ -713,13 +795,17 @@ void setup() {
     saveConfig();
 
     // Port B und Port C starten ueber RC_Common (uart_ports.h): CRSF =
-    // Router der Modulkette, S.Port = LiPo-Sensoren, GPS, Raw = UART offen.
-    // S.Port/GPS/Raw doppelt gewaehlt -> Port C bleibt aus.
+    // Router der Modulkette, S.Port = LiPo-Sensoren, GPS, Raw = UART offen,
+    // Reed = beide Pins INPUT_PULLUP. CRSF-Rollen bleiben aus, wenn Port A
+    // nicht CRSF ist. S.Port/GPS/Raw doppelt gewaehlt -> Port C bleibt aus.
     sportLipoUsePollIds(config.sport_poll_id);
     uartPorts[0].role = PortB_Role_boot; uartPorts[0].baud = PortB_Baud_boot;
     uartPorts[1].role = PortC_Role_boot; uartPorts[1].baud = PortC_Baud_boot;
-    uartPortsBegin(uartPorts, 2, crsf, true);
+    uartPortsBegin(uartPorts, 2, crsf, crsfActive);
     PortC_Duplicate_boot = uartPorts[1].duplicate;
+    // Reed-Pins (auch Port A) endgueltig als Pull-up-Eingaenge setzen und
+    // die Entprellung starten. Die Port-Rolle wirkt erst nach einem Neustart.
+    reedBegin(PortA_Role_boot, PortB_Role_boot, PortC_Role_boot);
 
     buildLuaMenu();
     Serial.printf("RC_Common %s, Lua-Menue %u Felder\n", RC_COMMON_VERSION, (unsigned)luaMenu.size());
@@ -747,18 +833,23 @@ void wifiFailsafeCheck() {
 // gruen langsam = RC-Signal OK, rot schnell = Frames, aber Failsafe /
 // kein RC-Link, rot Aufblitzen = kein CRSF an Port A, blau Doppelblitz =
 // Adresskonflikt, gelb Doppelblitz = Port C mit doppelter Rolle,
-// violett statt gruen/rot = WLAN an.
+// violett statt gruen/rot = WLAN an. Bei Port A Reed/Aus gibt es kein
+// CRSF-Signal -> rot Aufblitzen; die Flamme ueberlagert die LED, solange
+// sie eingeschaltet ist.
 static void updateLed() {
     unsigned long now = millis();
-    const LinkStatistics& ls = crsf.getLinkStatistics();
     StatusLedInput in = {};
-    bool dup = crsf.isDuplicateAddress();
+    bool dup = false;
+    if (crsfActive) {
+        const LinkStatistics& ls = crsf.getLinkStatistics();
+        dup = crsf.isDuplicateAddress();
+        in.crsf          = true;
+        in.busOk         = BUS_OK;
+        in.lastRcFrameMs = crsf.getLastRcFrameMs();
+        in.linkStatsMs   = ls.lastUpdate;
+        in.uplinkLQ      = ls.uplinkLQ;
+    }
     in.configError   = dup || PortC_Duplicate_boot;
-    in.crsf          = true;
-    in.busOk         = BUS_OK;
-    in.lastRcFrameMs = crsf.getLastRcFrameMs();
-    in.linkStatsMs   = ls.lastUpdate;
-    in.uplinkLQ      = ls.uplinkLQ;
     statusLed.setRgbOrder(config.LedRgb);
     statusLed.update(statusLedMode(in, now), now, dup, WebServerManager::isApActive());
 }
@@ -771,44 +862,54 @@ void loop() {
     // Port B/C: S.Port und GPS einlesen (RC_Common, ohne aktive Rolle ohne Wirkung)
     uartPortsUpdate();
 
-    // Port A: CRSF
-    crsf.read_packets(0);
-    crsf.route_packets();   // Modulkette Port A <-> Port B/C (nur bei Rolle CRSF aktiv)
-    for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
-    // BUS_OK haengt daran, ob gerade ein gueltiger CRSF-Frame geparst wurde
-    // (Zaehler validFrames), nicht an einem Kanalwert.
-    static uint32_t lastValidFrameCount = 0;
-    uint32_t vf = crsf.getValidFrames();
-    if (vf != lastValidFrameCount) { lastValidFrameCount = vf; BUS_OK = true; lastCrsfPacket = millis(); }
-    checkCrsfTimeout();
+    // Reed-Impulse sammeln und die Kommandos abarbeiten (Reed, Web-Test).
+    reedUpdate();
+    processCommandQueue();
 
-    // Alle 100 ms Zellspannungen (S.Port) und GPS als CRSF-Telemetrie, kein
-    // Batterie-Frame (0x08) - sonst wuerde die RxBt des Empfaengers
-    // ueberschrieben.
-    uartPortsTelemetry(crsf);
-    updateLed();
+    if (crsfActive) {
+        // Port A: CRSF
+        crsf.read_packets(0);
+        crsf.route_packets();   // Modulkette Port A <-> Port B/C (nur bei Rolle CRSF aktiv)
+        for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
+        // BUS_OK haengt daran, ob gerade ein gueltiger CRSF-Frame geparst
+        // wurde (Zaehler validFrames), nicht an einem Kanalwert.
+        static uint32_t lastValidFrameCount = 0;
+        uint32_t vf = crsf.getValidFrames();
+        if (vf != lastValidFrameCount) { lastValidFrameCount = vf; BUS_OK = true; lastCrsfPacket = millis(); }
+        checkCrsfTimeout();
+
+        // Alle 100 ms Zellspannungen (S.Port) und GPS als CRSF-Telemetrie,
+        // kein Batterie-Frame (0x08) - sonst wuerde die RxBt des Empfaengers
+        // ueberschrieben.
+        uartPortsTelemetry(crsf);
+    }
+
+    // Flamme hat Vorrang vor der Status-LED (gleiche LED, siehe flame_led.h).
+    if (flameIsOn()) flameUpdate(); else updateLed();
     checkWifiButton(currentTime);   // v0.13
-    if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
-        // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
-        crsf.setDeviceInfoReplyPending(false);
-        char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
-        // Firmware-Version als "Parameter Version Number", damit Konfiguratoren
-        // eine geaenderte Parameterstruktur neu einlesen.
-        crsf.send_device_info(dn,luaMenu.maxId(),(uint8_t)(Version & 0xFF));
-    }
-    if(crsf.getDeviceReadReplyPending()){
-        uint8_t pi=crsf.getParamReadIndex();
-        crsf.setDeviceReadReplyPending(false);
-        luaMenu.send(crsf,pi);
-    }
-    if(crsf.getDeviceWriteReplyPending()){
-        uint8_t wi=crsf.getParamWriteIndex(),wv=crsf.getParamWriteValue();
-        crsf.setDeviceWriteReplyPending(false);
-        luaMenu.write(wi,wv); luaMenu.send(crsf,wi);
-    }
-    if(crsf.getDeviceCommandReplyPending()){
-        crsf.setDeviceCommandReplyPending(false);
-        einkanalFunctionCRSF();
+    if (crsfActive) {
+        if(crsf.getDeviceInfoReplyPending() && (millis() - crsf.getPingTime() >= crsfSlotDelayMs())){
+            // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
+            crsf.setDeviceInfoReplyPending(false);
+            char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
+            // Firmware-Version als "Parameter Version Number", damit Konfiguratoren
+            // eine geaenderte Parameterstruktur neu einlesen.
+            crsf.send_device_info(dn,luaMenu.maxId(),(uint8_t)(Version & 0xFF));
+        }
+        if(crsf.getDeviceReadReplyPending()){
+            uint8_t pi=crsf.getParamReadIndex();
+            crsf.setDeviceReadReplyPending(false);
+            luaMenu.send(crsf,pi);
+        }
+        if(crsf.getDeviceWriteReplyPending()){
+            uint8_t wi=crsf.getParamWriteIndex(),wv=crsf.getParamWriteValue();
+            crsf.setDeviceWriteReplyPending(false);
+            luaMenu.write(wi,wv); luaMenu.send(crsf,wi);
+        }
+        if(crsf.getDeviceCommandReplyPending()){
+            crsf.setDeviceCommandReplyPending(false);
+            einkanalFunctionCRSF();
+        }
     }
 
     // NVS-Speicher: 500 ms nach der letzten Aenderung schreiben, und nicht
@@ -824,10 +925,13 @@ void loop() {
     if(currentTime<5000) return;
     for(uint8_t i=1;i<=RCSOUND_NUM_SOUNDS;i++) handleSound(i,Sounds[i]);
 
-    // Motor Toggle
-    if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
-    else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;
-    else if(!config.engine_on_toggle) Sound_on_Motor=Sound_on[0];
+    // Motor Toggle (nur mit CRSF; ohne RC-Bus steuert Web/Reed den Zustand
+    // direkt ueber setMotorSound()/toggleMotorSound()).
+    if (crsfActive) {
+        if(Sound_on[0]&&!Sound_on_Motor_state&&config.engine_on_toggle){Sound_on_Motor=!Sound_on_Motor;Sound_on_Motor_state=true;}
+        else if(!Sound_on[0]&&Sound_on_Motor_state&&config.engine_on_toggle) Sound_on_Motor_state=false;
+        else if(!config.engine_on_toggle) Sound_on_Motor=Sound_on[0];
+    }
 
     bool mw=Sound_on_Motor||Sound_on_web[0];
     if((mw&&!engine_break&&!Sound_play[0])||(throttle>0&&engine_break&&!Sound_play[0])||(throttle>0&&Sound_play[0])){Sound_play[0]=true;shutdown_timer=millis();}
@@ -848,21 +952,26 @@ void loop() {
 // ======== Sound ======================================================
 void handleSound(uint8_t idx, XT_Wav_Class* snd) {
     if(!snd)return;
-    if(Sound_on[idx]||Sound_on_web[idx]){
+    // One-Shot-Trigger sofort verbrauchen - auch wenn der Sound bereits
+    // laeuft. Sonst bleibt Sound_on_web[idx] true, der Slot haengt nach dem
+    // Wiedergabe-Ende dauerhaft im "laeuft bereits"-Zweig und startet nie
+    // wieder (siehe docs/audio-ablauf.md).
+    bool webTrigger = Sound_on_web[idx];
+    Sound_on_web[idx] = false;
+    if(Sound_on[idx]||webTrigger){
         if(!Sound_play[idx]){
             Sound_play[idx]=true;
             snd->LoadWavFile();
             snd->Volume=config.Volumen_Sound[idx];
             if(config.Mode_Sound[idx]==1)snd->RepeatForever=true;
             I2SAudio.Play(snd,true,config.Volumen_Sound[idx]);
-            Sound_on_web[idx]=false;
         }else{
             snd->Volume=config.Volumen_Sound[idx];
         }
     }else{
         snd->RepeatForever=false;
-        // Lautstaerke auch waehrend des Nachspielens aktualisieren (z.B.
-        // Web-Testbutton, der Sound_on_web sofort wieder zuruecksetzt).
+        // Lautstaerke auch waehrend des Nachspielens aktualisieren (der
+        // One-Shot-Trigger wird oben bereits verbraucht).
         if(Sound_play[idx]) snd->Volume=config.Volumen_Sound[idx];
         if(config.Mode_Sound[idx]==2&&Sound_play[idx])I2SAudio.Stop(snd);
         // testSoundActive (Lua "Test Sound") zuruecksetzen, sobald die

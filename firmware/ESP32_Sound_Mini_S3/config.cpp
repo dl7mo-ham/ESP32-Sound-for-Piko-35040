@@ -18,6 +18,17 @@ unsigned long configDirtyMs = 0;
 
 static constexpr const char* NVS_NS = "soundmini";
 
+uint8_t portaRoleClamp(int raw) {
+    if (raw == UROLE_OFF || raw == UROLE_CRSF || raw == UROLE_REED) return (uint8_t)raw;
+    return UROLE_CRSF;
+}
+const char* portaRoleOptions() { return "Aus;CRSF;Reed"; }
+const char* portaRoleValues()  { return "0;1;5"; }
+
+static uint8_t reedActionClamp(int raw) {
+    return (raw >= 0 && raw < REED_ACTION_COUNT) ? (uint8_t)raw : REED_ACTION_NONE;
+}
+
 // Siehe isValidEinSource() in ESP32_Sound_Mini_S3.ino (Definition dort, damit dieselbe
 // Bereichspruefung wie einTyp() verwendet wird).
 extern bool isValidEinSource(int c);
@@ -44,12 +55,18 @@ void Reset_all() {
     for (int i = 1; i < RCSOUND_NUM_GROUPS; i++) config.EK_Gruppen_Adresse[i] = 255;
     config.sport_poll_id[0]       = 0xA1;   // Physical ID 0x02 (Werkseinstellung Sensor 1)
     config.sport_poll_id[1]       = 0x22;   // Physical ID 0x03 (Sensor 2 umprogrammiert)
-    // Port B und Port C starten deaktiviert; PortB_Baud bekommt trotzdem einen
-    // sinnvollen Platzhalter fuer ein spaeteres Umschalten auf CRSF.
+    // Port A startet wie bisher als CRSF-Eingang. Port B und Port C starten
+    // deaktiviert; PortB_Baud bekommt trotzdem einen sinnvollen Platzhalter
+    // fuer ein spaeteres Umschalten auf CRSF.
+    config.PortA_Role             = UROLE_CRSF;
     config.PortB_Role             = UROLE_OFF;
     config.PortB_Baud             = uartRoleDefaultBaud(UROLE_CRSF);
     config.PortC_Role             = UROLE_OFF;
     config.PortC_Baud             = uartRoleDefaultBaud(UROLE_GPS);
+    config.ReedDebounceMs         = REED_DEBOUNCE_DEFAULT_MS;
+    for (int p = 0; p < REED_PORTS; p++)
+        for (int i = 0; i < REED_PINS; i++)
+            config.ReedAction[p][i] = REED_ACTION_NONE;
     strncpy(config.WiFi_SSID,     "Sound-Mini",  sizeof(config.WiFi_SSID)     - 1);
     strncpy(config.WiFi_Password, "123456789",   sizeof(config.WiFi_Password) - 1);
     strncpy(config.WiFi_IP,       "192.168.1.1", sizeof(config.WiFi_IP)       - 1);
@@ -147,6 +164,23 @@ void loadConfig() {
     config.LedRgb                 = p.getBool("ledrgb", STATUS_LED_RGB_DEFAULT);   // v0.13
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
+    // v0.14: Port A und Reed-Trigger. Fehlende Schluessel behalten die
+    // Werkseinstellung (Port A = CRSF, keine Aktionen).
+    config.PortA_Role             = portaRoleClamp(p.getInt("parole", UROLE_CRSF));
+    config.ReedDebounceMs         = (uint16_t)constrain(p.getInt("reeddb", REED_DEBOUNCE_DEFAULT_MS),
+                                                        REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
+    if (p.getBytesLength("reedact") == sizeof(config.ReedAction)) {
+        p.getBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
+    }
+    for (int pi = 0; pi < REED_PORTS; pi++) {
+        for (int i = 0; i < REED_PINS; i++) {
+            uint8_t a = reedActionClamp(config.ReedAction[pi][i]);
+            if (a != config.ReedAction[pi][i]) {
+                config.ReedAction[pi][i] = a;
+                configDirty = true;
+            }
+        }
+    }
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
     // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
     // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
@@ -195,6 +229,10 @@ void saveConfigForce() {
     p.putBool("ledrgb", config.LedRgb);   // v0.13
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
+    // v0.14: Port A und Reed-Trigger (projektlokal, nicht in RC_Common)
+    p.putInt("parole", (int)config.PortA_Role);
+    p.putInt("reeddb", (int)config.ReedDebounceMs);
+    p.putBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
     RcCommonSettings cs;
     configToCommon(cs);

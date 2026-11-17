@@ -8,13 +8,15 @@
  *   - nur CRSF als RC-Bus (kein SBUS, kein PWM, keine Hardware-Varianten)
  *   - Motor + 4 Zusatzsounds
  *
- * Das Port-Modell bleibt:
- *   Port A = RC-Eingang CRSF (fest)
+ * Port-Modell:
+ *   Port A = Hardware-UART, Default CRSF. Seit v0.14 in der Web-UI
+ *            umschaltbar auf Aus oder Reed (beide Pins als Tastereingaenge).
  *   Port B = Hardware-UART1, Port C = Hardware-UART0. Rolle je Port
  *            waehlbar (RC_Common, uart_roles.h): Aus, CRSF (Modulkette),
- *            S.Port-Master (LiPo-Telemetrie), GPS oder Raw-UART, je mit
- *            frei waehlbarer Baudrate. S.Port, GPS und Raw laufen nur auf
- *            einem Port (doppelt gewaehlt gewinnt Port B), CRSF auf beiden.
+ *            S.Port-Master (LiPo-Telemetrie), GPS, Raw-UART oder Reed, je
+ *            mit frei waehlbarer Baudrate. S.Port, GPS und Raw laufen nur
+ *            auf einem Port (doppelt gewaehlt gewinnt Port B), CRSF auf
+ *            beiden, Reed auf beliebig vielen.
  * Pins siehe pins.h.
  */
 
@@ -22,9 +24,32 @@
 
 // Rollen fuer Port B und Port C kommen ab v0.03 aus RC_Common (RC_Common/
 // uart_roles.h, gleiche Nummern in allen Modulen): UROLE_OFF, UROLE_CRSF,
-// UROLE_SPORT, UROLE_GPS, UROLE_RAW. Alte NVS-Werte (bis v0.02: 3 = Raw,
-// 4 = GPS) werden beim ersten Start einmalig umgerechnet.
+// UROLE_SPORT, UROLE_GPS, UROLE_RAW, UROLE_REED. Alte NVS-Werte (bis v0.02:
+// 3 = Raw, 4 = GPS) werden beim ersten Start einmalig umgerechnet.
 #include "src/RC_Common/uart_roles.h"
+
+// v0.14: Reed-Trigger. Pro Port (A/B/C) und Pin (RX/TX) eine Aktion. Die IDs
+// sind zugleich die Kommando-IDs der Queue im Hauptsketch.
+static constexpr int REED_PORTS = 3;
+static constexpr int REED_PINS  = 2;
+static constexpr uint8_t REED_ACTION_NONE          = 0;
+static constexpr uint8_t REED_ACTION_PLAY_SOUND_1  = 1;
+static constexpr uint8_t REED_ACTION_PLAY_SOUND_2  = 2;
+static constexpr uint8_t REED_ACTION_PLAY_SOUND_3  = 3;
+static constexpr uint8_t REED_ACTION_PLAY_SOUND_4  = 4;
+static constexpr uint8_t REED_ACTION_TOGGLE_MOTOR  = 5;
+static constexpr uint8_t REED_ACTION_TOGGLE_FLAME  = 6;
+static constexpr uint8_t REED_ACTION_COUNT         = 7;
+
+static constexpr int REED_DEBOUNCE_MIN_MS = 5;
+static constexpr int REED_DEBOUNCE_MAX_MS = 500;
+static constexpr int REED_DEBOUNCE_DEFAULT_MS = 50;
+
+// Port A kennt nur Aus/CRSF/Reed. Ungueltige Werte (z.B. aus einer alten
+// Sicherung) fallen auf CRSF zurueck, damit der RC-Eingang wie bisher laeuft.
+uint8_t     portaRoleClamp(int raw);
+const char* portaRoleOptions();   // "Aus;CRSF;Reed"
+const char* portaRoleValues();    // "0;1;5" (Werte fuer die Web-UI)
 
 // Motor(0) + 4 Zusatzsounds = 5 Slots.
 static constexpr int RCSOUND_NUM_SOUNDS = 4;
@@ -64,10 +89,17 @@ struct ConfigData {
     int EK_Gruppen_Adresse[RCSOUND_NUM_GROUPS];
 
     // Port-Modell - siehe Erklaerung am Dateianfang.
+    uint8_t  PortA_Role;        // UROLE_OFF/UROLE_CRSF/UROLE_REED - Default CRSF
     uint8_t  PortB_Role;        // UROLE_* (uart_roles.h) - Default UROLE_OFF
     uint32_t PortB_Baud;        // Baudrate Port B, frei waehlbar (Vorbelegung je nach Rolle)
     uint8_t  PortC_Role;        // Rolle Port C, gleiche Werte - Default UROLE_OFF
     uint32_t PortC_Baud;        // Baudrate Port C
+
+    // v0.14: Reed-Trigger. ReedAction[port][0=RX,1=TX] = REED_ACTION_*,
+    // ReedDebounceMs = Entprellzeit in ms (5-500). Aenderungen wirken sofort,
+    // die Port-Rolle dagegen erst nach einem Neustart.
+    uint16_t ReedDebounceMs;
+    uint8_t  ReedAction[REED_PORTS][REED_PINS];
 
     uint8_t sport_poll_id[2];    // S.Port Physical Poll-ID Sensor 1+2 (z.B. 0xA1, 0x22)
 

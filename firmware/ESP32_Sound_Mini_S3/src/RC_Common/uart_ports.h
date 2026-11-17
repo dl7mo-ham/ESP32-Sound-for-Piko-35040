@@ -6,9 +6,11 @@
 //   S.Port -> sport_lipo (FLVSS/MLVSS-Zellspannungen)
 //   GPS    -> gps_speed (bei "Auto" sucht der Port die Baudrate selbst)
 //   Raw    -> UART offen, Firmware wertet nichts aus
+//   Reed   -> beide Pins INPUT_PULLUP, kein UART (Reed-/Tastereingaenge)
 // S.Port, GPS und Raw laufen nur auf einem Port; doppelt gewaehlt bleibt
-// der zweite Port aus. CRSF darf auf beiden Ports laufen (Kette verzweigt).
-// Rollen und Baudraten wirken erst nach einem Neustart.
+// der zweite Port aus. CRSF darf auf beiden Ports laufen (Kette verzweigt),
+// Reed auf beliebig vielen Ports. Rollen und Baudraten wirken erst nach
+// einem Neustart.
 #ifndef RC_UART_PORTS_H
 #define RC_UART_PORTS_H
 
