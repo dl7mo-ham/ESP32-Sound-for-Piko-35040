@@ -28,6 +28,15 @@ Ein Reed-Impuls legt die Aktion in dieselbe kleine Kommando-Queue wie die Web-Te
 
 Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr: Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
 
+### Versionen dieses Forks
+
+| Version | Änderung |
+|---|---|
+| 0.15 | **Upstream-Konfliktminimierung:** `src/RC_Common/` wieder upstream-identisch (1.4.0); Reed als projektlokale Rolle `APP_UROLE_REED` = 100 in `reed_roles.h`, inklusive Migration alter Werte 5 → 100. Lua/Web zeigen Reed als letzten Eintrag (Index 5 ↔ 100). Reed-Tests liegen jetzt in `firmware/ESP32_Sound_Mini_S3/tests/`. |
+| 0.14 | **Reed-Trigger pro Port (RC_Common 1.5.0):** Port A ist jetzt rollenfähig (Aus/CRSF/Reed, Default CRSF); B/C zusätzlich `Reed`. Im Reed-Modus liest der Port beide Pins mit Pull-up, Baudrate entfällt. Neuer Web-Tab „Reed“ mit Aktion je Pin (Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und Testbutton; konfigurierbare Entprellzeit (5–500 ms). Reed-Impulse und Testbuttons laufen über dieselbe Kommando-Queue. Aktionen/Entprellzeit wirken sofort, Rollenwechsel erst nach Neustart. Export/Backup bleiben rückwärtskompatibel. Noch nicht auf Hardware getestet. |
+
+Ältere Versionen (Upstream und Fork): [CHANGELOG.md](CHANGELOG.md).
+
 ---
 
 *Ab hier folgt die unveränderte README des Upstream-Projekts.*
@@ -247,21 +256,7 @@ Gehäuse für den C3 (31 × 24 × 18 mm, ESP-Seite oben, BOOT/RST über Führung
 
 ## Versionen
 
-| Version | Änderung |
-|---|---|
-| 0.15 | **Upstream-Konfliktminimierung:** `src/RC_Common/` wieder upstream-identisch (1.4.0); Reed als projektlokale Rolle `APP_UROLE_REED` = 100 in `reed_roles.h`, inklusive Migration alter Werte 5 → 100. Lua/Web zeigen Reed als letzten Eintrag (Index 5 ↔ 100). Reed-Tests liegen jetzt in `firmware/ESP32_Sound_Mini_S3/tests/`. |
-| 0.14 | **Reed-Trigger pro Port (RC_Common 1.5.0):** Port A ist jetzt rollenfähig (Aus/CRSF/Reed, Default CRSF); B/C zusätzlich `Reed`. Im Reed-Modus liest der Port beide Pins mit Pull-up, Baudrate entfällt. Neuer Web-Tab „Reed“ mit Aktion je Pin (Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und Testbutton; konfigurierbare Entprellzeit (5–500 ms). Reed-Impulse und Testbuttons laufen über dieselbe Kommando-Queue. Aktionen/Entprellzeit wirken sofort, Rollenwechsel erst nach Neustart. Export/Backup bleiben rückwärtskompatibel. Noch nicht auf Hardware getestet. |
-| 0.13 | Status-LED-Modi und Lua-Feld 62 „LED Farbfolge“ (RGB/GRB); BOOT-Taste im Betrieb 2 s = WLAN an/aus. |
-| 0.11 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** Port-Baudraten kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (Adr 0)“. Ausgeblendet werden Kanal Nr bei Quelle Aus/Dauer, Kanal Speed bei Deaktiviert, die Baudrate bei Port „Aus“ und beim C3 die Port-C-Zeilen. Feldnummern unverändert. Gilt für S3 und C3. |
-| 0.10 | Lua: „Kanal Nr“ (Motor und Sounds) und „Kanal Nr Speed“ bleiben immer Zahlenfelder, bei Quelle „Aus“ oder „Dauer“ gesperrt. Vorher wurden sie dann zum Info-Feld „Deaktiviert“. Das ELRS-Lua-Skript lädt nach einer Änderung der Quelle nur Zahlen- und Auswahlfelder neu, deshalb ließ sich der Kanal nach dem Umstellen (z. B. auf EK) erst nach Verlassen des Menüs ändern. Gilt für S3 und C3. |
-| 0.09 | Zweites Board **ESP32-C3 Pro Mini** im selben Code (`pins.h` wählt nach dem Board in der Arduino IDE). C3: Port A auf UART0 (IO20/21), Port B auf IO5/6, kein Port C, Audio-Tasks ohne festen CPU-Kern, CI baut S3 und C3. Für den S3 ändert sich nichts. |
-| 0.08 | Sound-Speicher-Belegung wird aus den Dateien berechnet (4-KB-Blöcke plus Verwaltung) statt mit `LittleFS.usedBytes()`. Diese Bibliotheksfunktion ist nur eine obere Schätzung und zeigte im Web dauerhaft „100 %, frei 0,00 MB“, obwohl noch Platz frei war. Web und Lua zeigen jetzt denselben Wert. Der alte Bibliothekswert steht nur noch im seriellen Monitor. |
-| 0.07 | Web-Tab „Debug“: „WAV Dateien“ zeigt jetzt, ob die Datei im Flash liegt (mit Größe). Vorher stand bei Sound 1–4 „fehlt“, solange der Sound nicht gerade gespielt wurde. RAM-Zeile eindeutig (belegt, frei, min frei). Neue Karte „Dateien im Flash“ mit allen Dateien und Summe. |
-| 0.06 | Speicherbelegung: Firmware, Sounds (Flash), RAM und PSRAM im Web-Tab „Debug“ (Karte „Speicherbelegung“) und im Lua-Ordner „Speicher“ (Felder 53–57, nur Anzeige). Auf Hardware getestet (28.10.2026). |
-| 0.05 | WLAN-Taste statt WLAN-Brücke: Die BOOT-Taste (GPIO0) nach dem Einschalten innerhalb von 3 s kurz drücken schaltet das WLAN ein (nur wenn „WLAN dauerhaft an“ aus ist, LED blinkt dabei blau). GPIO9 und der Jumper entfallen. |
-| 0.04 | Einstellungs-Backup im Flash statt auf SD-Karte (RC_Common 1.2.0), automatisch vor Import und Firmware-Update. Keine SD-Karte mehr, Sounds nur im Flash. |
-| 0.03 | Gemeinsame Basis **RC_Common 1.1.0**: Core 3.0.7, CRSF-Bibliothek 1.1.0 mit Router (Port B/C mit Rolle CRSF reichen Frames zwischen Port A und dem Port weiter), Rollen mit gemeinsamen Nummern (Aus, CRSF, S.Port, GPS, Raw; alte Werte werden beim ersten Start umgerechnet), gemeinsame NVS-Schlüssel, Lua-Menü als Tabelle mit unveränderten Feld-IDs, Status-LED, WLAN-Failsafe und OTA aus RC_Common. Web-API: `portb_role`/`portc_role` statt `portb_mode`/`portc_mode` (alte Sicherungen werden umgerechnet). **GPS-Baudrate „Auto“** (Vorgabe für GPS, wie Betaflight): Der Port sucht die Baudrate des GPS selbst, stellt es auf 115200 Baud und 10 Hz um (ATGM336H und u-blox) und sucht neu, wenn 3 s keine Daten kommen. Baudraten in der Weboberfläche als Auswahlliste mit „Auto“. |
-| 0.02 | Port C mit Rolle und Baudrate wie Port B, Pins verschoben |
+Aktuell v0.13. Alle Versionen mit Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
 ## Ordner
 
