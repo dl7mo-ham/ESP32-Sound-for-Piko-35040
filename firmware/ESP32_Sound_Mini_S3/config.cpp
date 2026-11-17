@@ -11,6 +11,7 @@
 #include <Preferences.h>
 #include "src/RC_Common/settings_common.h"
 #include "sound_map.h"
+#include "reed_trigger.h"   // reedActionClamp(): einzige Definition liegt dort
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -19,15 +20,12 @@ unsigned long configDirtyMs = 0;
 static constexpr const char* NVS_NS = "soundmini";
 
 uint8_t portaRoleClamp(int raw) {
-    if (raw == UROLE_OFF || raw == UROLE_CRSF || raw == UROLE_REED) return (uint8_t)raw;
+    uint8_t role = appRoleClamp(raw);
+    if (role == UROLE_OFF || role == UROLE_CRSF || role == APP_UROLE_REED) return role;
     return UROLE_CRSF;
 }
 const char* portaRoleOptions() { return "Aus;CRSF;Reed"; }
-const char* portaRoleValues()  { return "0;1;5"; }
-
-static uint8_t reedActionClamp(int raw) {
-    return (raw >= 0 && raw < REED_ACTION_COUNT) ? (uint8_t)raw : REED_ACTION_NONE;
-}
+const char* portaRoleValues()  { return "0;1;100"; }
 
 // Siehe isValidEinSource() in ESP32_Sound_Mini_S3.ino (Definition dort, damit dieselbe
 // Bereichspruefung wie einTyp() verwendet wird).
@@ -96,9 +94,11 @@ static void configToCommon(RcCommonSettings& s) {
     s.wifiAuto    = config.WifiAutoEnable;
     s.wifiTimeout = config.WifiAutoTimeoutSec;
     s.wifiAlways  = config.WifiAlwaysOn;
-    s.role[0] = config.PortB_Role;
+    // RC_Common kennt nur 0..4. Reed (100) wird dort als "Aus" abgelegt;
+    // der App-Wert steht in den eigenen Schluesseln approleb/approlec.
+    s.role[0] = config.PortB_Role == APP_UROLE_REED ? UROLE_OFF : config.PortB_Role;
     s.baud[0] = config.PortB_Baud;
-    s.role[1] = config.PortC_Role;
+    s.role[1] = config.PortC_Role == APP_UROLE_REED ? UROLE_OFF : config.PortC_Role;
     s.baud[1] = config.PortC_Baud;
 }
 
@@ -167,6 +167,15 @@ void loadConfig() {
     // v0.14: Port A und Reed-Trigger. Fehlende Schluessel behalten die
     // Werkseinstellung (Port A = CRSF, keine Aktionen).
     config.PortA_Role             = portaRoleClamp(p.getInt("parole", UROLE_CRSF));
+    // v0.15: Reed ist projektlokal (APP_UROLE_REED=100). Die rohen Werte der
+    // gemeinsamen Schluessel werden VOR rcSettingsLoad() gelesen: dessen
+    // uartRoleClamp() wuerde den alten Reed-Wert 5 (v0.14) zu OFF machen.
+    int rawRoleB = p.getInt("u1role", config.PortB_Role);
+    int rawRoleC = p.getInt("u2role", config.PortC_Role);
+    uint8_t appRoleB = appRoleClamp(p.isKey("approleb") ? p.getInt("approleb", rawRoleB) : rawRoleB);
+    uint8_t appRoleC = appRoleClamp(p.isKey("approlec") ? p.getInt("approlec", rawRoleC) : rawRoleC);
+    bool roleMigrated = (rawRoleB == APP_UROLE_REED_LEGACY || rawRoleC == APP_UROLE_REED_LEGACY
+                         || !p.isKey("approleb") || !p.isKey("approlec"));
     config.ReedDebounceMs         = (uint16_t)constrain(p.getInt("reeddb", REED_DEBOUNCE_DEFAULT_MS),
                                                         REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
     if (p.getBytesLength("reedact") == sizeof(config.ReedAction)) {
@@ -193,6 +202,11 @@ void loadConfig() {
     }
     p.end();
     commonToConfig(cs);
+    // Die App-Rollen (inkl. 100) wieder herstellen - RC_Common liefert nur
+    // den reduzierten Wert 0..4 zurueck. Alte Werte 5 sind jetzt migriert.
+    config.PortB_Role = appRoleB;
+    config.PortC_Role = appRoleC;
+    if (roleMigrated) configDirty = true;
     // Ein ungueltiger Quellwert wird auf 999 (Deaktiviert) bereinigt.
     for (int i = 0; i < RCSOUND_NUM_SLOTS; i++) {
         if (!isValidEinSource(config.Source_Start_Sound[i])) {
@@ -229,8 +243,12 @@ void saveConfigForce() {
     p.putBool("ledrgb", config.LedRgb);   // v0.13
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
-    // v0.14: Port A und Reed-Trigger (projektlokal, nicht in RC_Common)
+    // v0.14/v0.15: Port A, Reed-Trigger und die App-Rollen von Port B/C
+    // (projektlokal, nicht in RC_Common). Reed wird dort als 100 gespeichert,
+    // in den gemeinsamen Schluesseln u1role/u2role dagegen als UROLE_OFF.
     p.putInt("parole", (int)config.PortA_Role);
+    p.putInt("approleb", (int)config.PortB_Role);
+    p.putInt("approlec", (int)config.PortC_Role);
     p.putInt("reeddb", (int)config.ReedDebounceMs);
     p.putBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln

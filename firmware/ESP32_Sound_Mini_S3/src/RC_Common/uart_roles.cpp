@@ -1,13 +1,13 @@
 // uart_roles.cpp - RC_Common, siehe uart_roles.h
 #include "uart_roles.h"
 
-static const char* const ROLE_NAMES[UROLE_COUNT] = {"Aus", "CRSF", "S.Port", "GPS", "Raw", "Reed"};
+static const char* const ROLE_NAMES[UROLE_COUNT] = {"Aus", "CRSF", "S.Port", "GPS", "Raw"};
 
 const char* uartRoleName(uint8_t role) {
     return role < UROLE_COUNT ? ROLE_NAMES[role] : ROLE_NAMES[UROLE_OFF];
 }
 
-const char* uartRoleOptions() { return "Aus;CRSF;S.Port;GPS;Raw;Reed"; }
+const char* uartRoleOptions() { return "Aus;CRSF;S.Port;GPS;Raw"; }
 
 uint8_t uartRoleClamp(int raw) {
     return (raw >= 0 && raw < UROLE_COUNT) ? (uint8_t)raw : UROLE_OFF;

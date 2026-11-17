@@ -34,9 +34,8 @@ void tearDown() {}
 // ── UART-Rollen ─────────────────────────────────────────────────────────
 
 void test_role_names_and_options() {
-    TEST_ASSERT_EQUAL_STRING("Aus;CRSF;S.Port;GPS;Raw;Reed", uartRoleOptions());
+    TEST_ASSERT_EQUAL_STRING("Aus;CRSF;S.Port;GPS;Raw", uartRoleOptions());
     TEST_ASSERT_EQUAL_STRING("GPS", uartRoleName(UROLE_GPS));
-    TEST_ASSERT_EQUAL_STRING("Reed", uartRoleName(UROLE_REED));
     TEST_ASSERT_EQUAL_STRING("Aus", uartRoleName(99));
     TEST_ASSERT_EQUAL_UINT8(UROLE_COUNT, LuaMenu::optionCount(uartRoleOptions()));
 }
@@ -48,15 +47,7 @@ void test_role_clamp_and_baud() {
     TEST_ASSERT_EQUAL_UINT32(420000, uartRoleDefaultBaud(UROLE_CRSF));
     TEST_ASSERT_EQUAL_UINT32(57600,  uartRoleDefaultBaud(UROLE_SPORT));
     TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, uartRoleDefaultBaud(UROLE_GPS));
-    TEST_ASSERT_EQUAL_UINT32(0,      uartRoleDefaultBaud(UROLE_REED));
     TEST_ASSERT_EQUAL_UINT32(0,      uartRoleDefaultBaud(UROLE_OFF));
-}
-
-void test_role_reed_multi_instance() {
-    bool dup = false;
-    TEST_ASSERT_FALSE(uartRoleSingleInstance(UROLE_REED));
-    TEST_ASSERT_EQUAL_UINT8(UROLE_REED, uartRoleResolveSecond(UROLE_REED, UROLE_REED, &dup));
-    TEST_ASSERT_FALSE(dup);   // Reed darf auf mehreren Ports laufen
 }
 
 void test_role_duplicate_resolution() {
@@ -385,7 +376,6 @@ int main(int, char**) {
     RUN_TEST(test_role_names_and_options);
     RUN_TEST(test_role_clamp_and_baud);
     RUN_TEST(test_role_duplicate_resolution);
-    RUN_TEST(test_role_reed_multi_instance);
     RUN_TEST(test_role_legacy_maps);
     RUN_TEST(test_baud_index);
     RUN_TEST(test_baud_auto_start);

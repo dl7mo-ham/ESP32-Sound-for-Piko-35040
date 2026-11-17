@@ -18,8 +18,7 @@ static constexpr uint8_t UROLE_CRSF  = 1;   // Modulkette (CRSF-Router), nur wen
 static constexpr uint8_t UROLE_SPORT = 2;   // FrSky S.Port Master (FLVSS/MLVSS LiPo-Zellen)
 static constexpr uint8_t UROLE_GPS   = 3;   // NMEA-GPS (CRSF-GPS-Telemetrie)
 static constexpr uint8_t UROLE_RAW   = 4;   // UART offen, Firmware wertet nichts aus
-static constexpr uint8_t UROLE_REED  = 5;   // beide Pins als Reed-/Tasteneingaenge (INPUT_PULLUP)
-static constexpr uint8_t UROLE_COUNT = 6;
+static constexpr uint8_t UROLE_COUNT = 5;
 
 // Anzeigename ("Aus" auch fuer ungueltige Werte)
 const char* uartRoleName(uint8_t role);
@@ -30,9 +29,7 @@ uint8_t     uartRoleClamp(int raw);
 // Vorschlag beim Wechsel der Rolle: Protokoll-Baudrate, bei GPS
 // UART_BAUD_AUTO (0 = keine, Baudrate unveraendert)
 uint32_t    uartRoleDefaultBaud(uint8_t role);
-// Rolle darf nur auf einem Port laufen (S.Port, GPS, Raw haben einen Zustand).
-// CRSF (Modulkette) und Reed (lokale GPIO-Eingaenge) duerfen auf mehreren
-// Ports gleichzeitig aktiv sein.
+// Rolle darf nur auf einem Port laufen (S.Port, GPS, Raw haben einen Zustand)
 bool        uartRoleSingleInstance(uint8_t role);
 
 // Zwei Ports mit Rolle: gleiche Einzel-Rolle auf beiden -> zweiter Port aus.

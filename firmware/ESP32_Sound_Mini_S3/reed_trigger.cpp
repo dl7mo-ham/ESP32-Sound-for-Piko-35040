@@ -7,6 +7,7 @@
  */
 
 #include "reed_trigger.h"
+#include "reed_roles.h"
 #include "pins.h"
 
 struct ReedPinState {
@@ -43,6 +44,10 @@ uint8_t reedActionClamp(int raw) {
     return (raw >= 0 && raw < REED_ACTION_COUNT) ? (uint8_t)raw : REED_ACTION_NONE;
 }
 
+static uint16_t reedDebounceClamp(int raw) {
+    return (uint16_t)constrain(raw, REED_DEBOUNCE_MIN_MS, REED_DEBOUNCE_MAX_MS);
+}
+
 bool reedPortPresent(uint8_t port) {
     return port < REED_PORTS && portPresent[port];
 }
@@ -64,13 +69,13 @@ uint32_t reedTriggerCount(uint8_t port, uint8_t pin) {
 
 void reedBegin(uint8_t roleA, uint8_t roleB, uint8_t roleC) {
     const uint8_t roles[REED_PORTS] = {
-        portaRoleClamp(roleA), uartRoleClamp(roleB), uartRoleClamp(roleC)
+        portaRoleClamp(roleA), appRoleClamp(roleB), appRoleClamp(roleC)
     };
     unsigned long now = millis();
 
     for (uint8_t p = 0; p < REED_PORTS; p++) {
-        portPresent[p] = (p < 2) || HAS_PORT_C;
-        portActive[p]  = portPresent[p] && roles[p] == UROLE_REED;
+        portPresent[p] = (p < REED_PORTS - 1) || HAS_PORT_C;
+        portActive[p]  = portPresent[p] && roles[p] == APP_UROLE_REED;
         for (uint8_t i = 0; i < REED_PINS; i++) {
             ReedPinState& st = pinState[p][i];
             st.rawLast      = true;   // Pull-up: offener Kontakt = HIGH
@@ -83,7 +88,7 @@ void reedBegin(uint8_t roleA, uint8_t roleB, uint8_t roleC) {
             Serial.printf("[Reed] Port %c: RX=%d TX=%d als Eingang (Pull-up), "
                           "Entprellung %u ms, RX->%s, TX->%s\n",
                           (char)('A' + p), REED_PIN_MAP[p][0], REED_PIN_MAP[p][1],
-                          (unsigned)config.ReedDebounceMs,
+                          (unsigned)reedDebounceClamp(config.ReedDebounceMs),
                           reedActionName(config.ReedAction[p][0]),
                           reedActionName(config.ReedAction[p][1]));
         }
@@ -92,9 +97,7 @@ void reedBegin(uint8_t roleA, uint8_t roleB, uint8_t roleC) {
 
 void reedUpdate() {
     unsigned long now = millis();
-    uint16_t debounce = config.ReedDebounceMs;
-    if (debounce < REED_DEBOUNCE_MIN_MS) debounce = REED_DEBOUNCE_DEFAULT_MS;
-    if (debounce > REED_DEBOUNCE_MAX_MS) debounce = REED_DEBOUNCE_MAX_MS;
+    uint16_t debounce = reedDebounceClamp(config.ReedDebounceMs);
 
     for (uint8_t p = 0; p < REED_PORTS; p++) {
         if (!portActive[p]) continue;
@@ -110,7 +113,7 @@ void reedUpdate() {
             if (raw == st.stable) continue;
 
             st.stable = raw;
-            if (st.stable != LOW) continue;   // nur die schliessende Flanke
+            if (st.stable) continue;   // nur die schliessende Flanke (LOW)
 
             st.count++;
             uint8_t action = reedActionClamp(config.ReedAction[p][i]);

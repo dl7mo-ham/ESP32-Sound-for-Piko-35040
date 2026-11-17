@@ -17,6 +17,7 @@
 #include "mem_info.h"        // v0.06: Speicherbelegung Flash/RAM
 #include "sound_map.h"       // v0.12: Sound-Zuordnung
 #include "reed_trigger.h"    // v0.14: Reed-Aktionen/Testbuttons
+#include "reed_roles.h"      // v0.15: APP_UROLE_REED = 100 (projektlokal)
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -821,8 +822,9 @@ function slSet(sid,lid,v){sv(sid,v);if(lid)document.getElementById(lid).textCont
 // RC_Common/uart_roles.h), die Liste mit "Auto" aus /rc_common.js
 // (rcFillBaud, ein eigener Wert aus einer Sicherung bleibt erhalten).
 var PORTB_BAUD_DEFAULTS = {};
-// Reed (5) und Aus (0) nutzen keinen UART -> Baudrate ausblenden.
-function portBaudHidden(m){ return m===0 || m===5; }
+// Reed (APP_UROLE_REED=100) und Aus (0) nutzen keinen UART -> Baudrate ausblenden.
+var APP_UROLE_REED = 100;
+function portBaudHidden(m){ return m===0 || m===APP_UROLE_REED; }
 function onPortBMode(){
   var m = gi('portb-mode');
   if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portb-baud'), PORTB_BAUD_DEFAULTS[m]);
@@ -890,8 +892,9 @@ function loadConfig(){
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
     fillSelFlatVals('porta-mode', s.porta_options, s.porta_values);
     sv('porta-mode', s.porta_role);
-    fillSelFlat('portb-mode', s.portb_options);
-    fillSelFlat('portc-mode', s.portb_options);
+    // B/C: Reed ist der letzte Eintrag mit Wert 100 (kein fortlaufender Index).
+    fillSelFlatVals('portb-mode', s.portb_options, s.portb_values);
+    fillSelFlatVals('portc-mode', s.portc_options, s.portc_values);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
     sv('portb-mode', s.portb_role); rcFillBaud(document.getElementById('portb-baud'), s.portb_baud);
     sv('portc-mode', s.portc_role); rcFillBaud(document.getElementById('portc-baud'), s.portc_baud);
@@ -1950,19 +1953,19 @@ void WebServerManager::handleApiConfigPost() {
   // Port A: nur Aus/CRSF/Reed (Default CRSF). Wirkt wie Port B/C erst nach
   // einem Neustart (Boot-Snapshot PortA_Role_boot in ESP32_Sound_Mini_S3.ino).
   if (jsonGetInt(body, "porta_role", v)) { config.PortA_Role = portaRoleClamp(v); changed=true;
-    Serial.printf("[API] Port A Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortA_Role)); }
+    Serial.printf("[API] Port A Rolle -> %s (wirkt erst nach Neustart)\n", appRoleName(config.PortA_Role)); }
   // Port B / Port C - wirkt erst nach einem Neustart
   // (siehe setup() in ESP32_Sound_Mini_S3.ino, PortB_Role_boot/
   // PortC_Role_boot). Anders als im CRSF/Lua-Menue (1-Byte-
   // Wertebereich, siehe dort) ist die Baudrate hier ueber JSON wirklich
   // frei eingebbar, kein Snapping auf eine feste Liste.
-  if (jsonGetInt(body, "portb_role", v)) { config.PortB_Role = uartRoleClamp(v); changed=true;
-    Serial.printf("[API] Port B Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortB_Role)); }
+  if (jsonGetInt(body, "portb_role", v)) { config.PortB_Role = appRoleClamp(v); changed=true;
+    Serial.printf("[API] Port B Rolle -> %s (wirkt erst nach Neustart)\n", appRoleName(config.PortB_Role)); }
   else if (jsonGetInt(body, "portb_mode", v)) { config.PortB_Role = uartRoleFromSoundMiniLegacy(v); changed=true; }
   // v0.03: UART_BAUD_AUTO = "Auto" (GPS sucht die Baudrate selbst)
   if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
-  if (jsonGetInt(body, "portc_role", v)) { config.PortC_Role = uartRoleClamp(v); changed=true;
-    Serial.printf("[API] Port C Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortC_Role)); }
+  if (jsonGetInt(body, "portc_role", v)) { config.PortC_Role = appRoleClamp(v); changed=true;
+    Serial.printf("[API] Port C Rolle -> %s (wirkt erst nach Neustart)\n", appRoleName(config.PortC_Role)); }
   else if (jsonGetInt(body, "portc_mode", v)) { config.PortC_Role = uartRoleFromSoundMiniLegacy(v); changed=true; }
   else if (jsonGetInt(body, "portc_gps", v)) { config.PortC_Role = v ? UROLE_GPS : UROLE_OFF;
     config.PortC_Baud = uartRoleDefaultBaud(UROLE_GPS); changed=true; }
@@ -2064,15 +2067,16 @@ String WebServerManager::buildConfigJson() {
   // Einstellungen
   j += "\"settings\":{";
   // Port A kennt nur Aus/CRSF/Reed; die Werteliste ist nicht fortlaufend
-  // (0/1/5), deshalb zusaetzlich porta_values fuer die Web-UI.
+  // (0/1/100), deshalb zusaetzlich porta_values fuer die Web-UI.
   j += "\"porta_role\":"    + String(config.PortA_Role)           + ",";
   j += "\"porta_options\":\"" + String(portaRoleOptions())        + "\",";
   j += "\"porta_values\":\""  + String(portaRoleValues())         + "\",";
   j += "\"portb_role\":" + String(config.PortB_Role) + ",";
   j += "\"portb_baud\":" + String(config.PortB_Baud) + ",";
-  // Rollenliste + Standard-Baudraten aus RC_Common (uart_roles.h), Index in
-  // beiden Listen == Rollennummer, gilt fuer Port B und C.
-  j += "\"portb_options\":\"" + String(uartRoleOptions()) + "\",";
+  // Rollenliste inkl. Reed (projektlokal) mit eigener Werteliste, weil 100
+  // kein fortlaufender Index ist. Standard-Baudraten weiter aus RC_Common.
+  j += "\"portb_options\":\"" + String(appRoleOptions())  + "\",";
+  j += "\"portb_values\":\""  + String(appRoleValues())   + "\",";
   j += "\"portb_baud_defaults\":[";
   for (uint8_t i = 0; i < UROLE_COUNT; i++) {
     if (i > 0) j += ",";
@@ -2080,6 +2084,8 @@ String WebServerManager::buildConfigJson() {
   }
   j += "],";
   j += "\"portc_role\":" + String(config.PortC_Role) + ",";
+  j += "\"portc_options\":\"" + String(appRoleOptions())  + "\",";
+  j += "\"portc_values\":\""  + String(appRoleValues())   + "\",";
   j += "\"portc_baud\":" + String(config.PortC_Baud) + ",";
   j += "\"portc_dup\":"  + String(PortC_Duplicate_boot ? 1 : 0) + ",";
   j += "\"portc_present\":" + String(HAS_PORT_C ? 1 : 0) + ",";   // v0.09: C3 ohne Port C
@@ -2116,7 +2122,7 @@ String WebServerManager::buildConfigJson() {
     bool present = reedPortPresent(p);
     uint8_t role = (p == 0) ? config.PortA_Role
                  : (p == 1) ? config.PortB_Role : config.PortC_Role;
-    bool configured = present && role == UROLE_REED;
+    bool configured = present && role == APP_UROLE_REED;
     j += "{\"key\":\"" + String(REED_PORT_KEYS[p]) + "\",";
     j += "\"label\":\"" + String(REED_PORT_LABELS[p]) + "\",";
     j += "\"present\":"    + String(present ? 1 : 0)    + ",";

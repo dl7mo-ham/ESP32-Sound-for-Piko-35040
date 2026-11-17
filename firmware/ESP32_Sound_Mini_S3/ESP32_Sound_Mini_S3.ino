@@ -79,6 +79,7 @@
 #include "src/RC_Common/rc_common.h"
 #include "src/RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "config.h"
+#include "reed_roles.h"     // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "pins.h"
 #include "WebServerManager.h"
 #include "src/RC_Common/uart_ports.h"     // Port B/C: Rollen starten, Telemetrie
@@ -501,23 +502,25 @@ static void    luaSetGroupAdr(uint8_t a, uint8_t v) { config.EK_Gruppen_Adresse[
 // Port B (arg 0) / Port C (arg 1) wirken erst nach einem Neustart
 static uint8_t&  luaPortRole(uint8_t a)             { return a ? config.PortC_Role : config.PortB_Role; }
 static uint32_t& luaPortBaud(uint8_t a)             { return a ? config.PortC_Baud : config.PortB_Baud; }
-static uint8_t luaGetPortRole(uint8_t a)            { return uartRoleClamp(luaPortRole(a)); }
+// Lua sieht nur die Dropdown-Indizes 0..5; Reed (App-Wert 100) ist Index 5.
+static uint8_t luaGetPortRole(uint8_t a)            { return appRoleUiIndex(appRoleClamp(luaPortRole(a))); }
 static void    luaSetPortRole(uint8_t a, uint8_t v) {
-    if (v != luaPortRole(a)) {
+    uint8_t role = appRoleClamp(v);   // UI-Index 5 (und Legacy 5) -> 100
+    if (role != luaPortRole(a)) {
         // Baudrate auf den Standard der Rolle vorbelegen (Aus/Raw: unveraendert)
-        uint32_t def = uartRoleDefaultBaud(v);
-        if (def != 0 && v != UROLE_RAW) luaPortBaud(a) = def;
+        uint32_t def = appRoleDefaultBaud(role);
+        if (def != 0 && role != UROLE_RAW) luaPortBaud(a) = def;
     }
-    luaPortRole(a) = v; markDirty();
+    luaPortRole(a) = role; markDirty();
     Serial.printf("!!! Port %c Rolle -> %s (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n",
-                  a ? 'C' : 'B', uartRoleName(v));
+                  a ? 'C' : 'B', appRoleName(role));
 }
 static uint8_t luaGetPortBaud(uint8_t a)            { return uartBaudToIndex(luaPortBaud(a)); }
 // v0.11: Baudrate nur bei aktivem Port sichtbar. v0.14: Reed braucht keine
 // Baudrate, das Feld wird dort ebenfalls ausgeblendet.
 static void    luaViewPortBaud(uint8_t a, LuaView& v, char*) {
-    uint8_t r = uartRoleClamp(luaPortRole(a));
-    if (r == UROLE_OFF || r == UROLE_REED) v.hidden = true;
+    uint8_t r = appRoleClamp(luaPortRole(a));
+    if (r == UROLE_OFF || r == APP_UROLE_REED) v.hidden = true;
 }
 #if !HAS_PORT_C
 static void    luaHideAlways(uint8_t, LuaView& v, char*) { v.hidden = true; }   // C3: kein Port C
@@ -642,10 +645,10 @@ static void buildLuaMenu() {
     m.u8(40, SETTINGS_FI, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
     m.u8(41, SETTINGS_FI, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
     m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
-    m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
+    m.select(43, SETTINGS_FI, "Port B Rolle", appRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
     m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0)->view = luaViewPortBaud;
 #if HAS_PORT_C
-    m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
+    m.select(45, SETTINGS_FI, "Port C Rolle", appRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
     m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1)->view = luaViewPortBaud;
 #else
     // ESP32-C3: kein Port C. Felder bleiben als Anzeige, damit die
@@ -756,7 +759,7 @@ void setup() {
                       (uint8_t)constrain(config.modul_adress,0,15) * 2);
     } else {
         Serial.printf("Port A: %s (RX=%d, TX=%d), kein CRSF-Eingang\n",
-                      uartRoleName(PortA_Role_boot), PIN_CRSF_RX, PIN_CRSF_TX);
+                      appRoleName(PortA_Role_boot), PIN_CRSF_RX, PIN_CRSF_TX);
     }
 
     pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
@@ -799,8 +802,12 @@ void setup() {
     // Reed = beide Pins INPUT_PULLUP. CRSF-Rollen bleiben aus, wenn Port A
     // nicht CRSF ist. S.Port/GPS/Raw doppelt gewaehlt -> Port C bleibt aus.
     sportLipoUsePollIds(config.sport_poll_id);
-    uartPorts[0].role = PortB_Role_boot; uartPorts[0].baud = PortB_Baud_boot;
-    uartPorts[1].role = PortC_Role_boot; uartPorts[1].baud = PortC_Baud_boot;
+    // RC_Common kennt nur 0..4: Reed (100) wird dort als "Aus" angemeldet,
+    // die Pull-ups setzt reedBegin() direkt auf den Pins.
+    uartPorts[0].role = PortB_Role_boot == APP_UROLE_REED ? UROLE_OFF : PortB_Role_boot;
+    uartPorts[0].baud = PortB_Baud_boot;
+    uartPorts[1].role = PortC_Role_boot == APP_UROLE_REED ? UROLE_OFF : PortC_Role_boot;
+    uartPorts[1].baud = PortC_Baud_boot;
     uartPortsBegin(uartPorts, 2, crsf, crsfActive);
     PortC_Duplicate_boot = uartPorts[1].duplicate;
     // Reed-Pins (auch Port A) endgueltig als Pull-up-Eingaenge setzen und

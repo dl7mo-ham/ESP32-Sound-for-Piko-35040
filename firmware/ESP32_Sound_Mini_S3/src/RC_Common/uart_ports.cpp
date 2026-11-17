@@ -37,20 +37,11 @@ void uartPortsBegin(UartPort* ports, uint8_t count, CRSF& crsf, bool crsfBus) {
             case UROLE_SPORT: sportLipoInit(p.ser, p.rx, p.tx, p.baud); break;
             case UROLE_GPS:   gpsSpeedInit(p.ser, p.rx, p.tx, p.baud); break;
             case UROLE_RAW:   p.ser->begin(p.baud, SERIAL_8N1, p.rx, p.tx); break;
-            case UROLE_REED:
-                // Reed/Trigger: beide Pins als Tastereingaenge, kein UART
-                if (p.ser) {
-                    pinMode(p.rx, INPUT_PULLUP);
-                    pinMode(p.tx, INPUT_PULLUP);
-                }
-                break;
             default: break;
         }
         if (!p.ser) continue;
         Serial.printf("%s: %s", p.name, uartRoleName(p.activeRole));
-        if (p.activeRole == UROLE_REED) {
-            Serial.printf(" (RX=%d TX=%d, Pull-up)", p.rx, p.tx);
-        } else if (p.activeRole != UROLE_OFF) {
+        if (p.activeRole != UROLE_OFF) {
             if (p.baud == UART_BAUD_AUTO) Serial.printf(" (RX=%d TX=%d, Baudrate automatisch)", p.rx, p.tx);
             else Serial.printf(" (RX=%d TX=%d, %u Baud)", p.rx, p.tx, (unsigned)p.baud);
         }

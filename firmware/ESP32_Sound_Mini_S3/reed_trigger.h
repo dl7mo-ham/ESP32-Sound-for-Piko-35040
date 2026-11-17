@@ -5,7 +5,8 @@
  * reed_trigger.h  -  Soundmodul Mini
  *
  * Reed-/Tastereingaenge pro Port (v0.14). Ist ein Port in der Rolle
- * UROLE_REED, werden beide Pins als INPUT_PULLUP betrieben (kein UART).
+ * APP_UROLE_REED (projektlokal, Wert 100 - siehe reed_roles.h), werden beide
+ * Pins als INPUT_PULLUP betrieben (kein UART).
  * Ein Impuls (schliessende Flanke HIGH -> LOW) legt nach der Entprellzeit
  * die in config.ReedAction[port][pin] gewaehlte Aktion in die Kommando-Queue
  * des Hauptsketchs. Die Queue wird in loop() ueber denselben Pfad
