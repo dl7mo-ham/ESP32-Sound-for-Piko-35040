@@ -4,6 +4,13 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.13+dl7mo.3 (2026-11-18)
+
+- Leere Sound-Plätze (`(leer)` oder fehlende Datei) lassen `I2SAudio.Play()` trotzdem `Playing = true` setzen; `NextSample()` bleibt stumm und räumt das Flag nie auf. Bei einem leeren **Start**-Platz blieb die Motor-State-Machine dadurch dauerhaft in `STARTING` – `loop.wav` startete nie. Bei leeren Sound-1–4-Plätzen blieben `Sound_play[]` und `testSoundActive[]` hängen.
+- Neues projektlokales Modul `sound_playback.*` mit `soundPlaybackSanitize()`: Erkennt `Playing && !FileOK`, ruft `I2SAudio.Stop()` und entfernt damit auch den stummen Playlist-Eintrag. Aufruf in `motor_control.cpp` **vor** dem `crsfActive`-Return (wirkt also auch im Reed-Betrieb) und in `sound_trigger.cpp` für die One-Shots.
+- Keine Upstream-Datei berührt: `.ino`, `XT_I2S_Audio.cpp`, `WebServerManager.cpp`, `config.cpp` und `src/RC_Common/` bleiben unverändert. CRSF-Cache-Token jetzt 203.
+- Host-Tests (projektlokal und RC_Common), Manifest-Prüfung und Builds für S3/C3 grün. **Noch nicht auf Hardware getestet.**
+
 ## v0.13+dl7mo.2 (2026-11-18, bisher v0.15)
 
 - Basis: upstream v0.13, `src/RC_Common/` wieder upstream-identisch (1.4.0). Die früheren Eingriffe (Rolle 5, Manifest, Version, Tests, README) sind daraus entfernt.

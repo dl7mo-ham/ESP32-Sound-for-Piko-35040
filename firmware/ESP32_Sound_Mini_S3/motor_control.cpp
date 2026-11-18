@@ -4,8 +4,10 @@
 
 #include "motor_control.h"
 #include "config.h"
+#include "sound_playback.h"
 
 // Zustand aus dem Sketch (ESP32_Sound_Mini_S3.ino).
+extern XT_Wav_Class Sound_start;
 extern bool Sound_on[RCSOUND_NUM_SLOTS];
 extern bool Sound_on_web[RCSOUND_NUM_SLOTS];
 extern bool Sound_on_Motor;
@@ -27,6 +29,11 @@ bool motorSoundIsOn() {
 }
 
 void motorControlLoop() {
+    // Muss VOR dem CRSF-Return stehen: mit Port A = Reed gibt es keinen
+    // CRSF-Bus, aber auch dort darf ein leerer Start-Platz STARTING nicht
+    // blockieren (dann bliebe loop.wav dauerhaft aus).
+    soundPlaybackSanitize(&Sound_start);
+
     if (!crsfActive) return;
     // Direktsteuerung (Web/Reed) bleibt erhalten, solange kein CRSF-Motorsignal
     // anliegt. Mit CRSF folgt Sound_on_Motor den Kanaelen.

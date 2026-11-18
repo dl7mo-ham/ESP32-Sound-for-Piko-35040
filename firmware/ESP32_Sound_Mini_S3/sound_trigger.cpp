@@ -4,6 +4,7 @@
 
 #include "sound_trigger.h"
 #include "XT_I2S_Audio.h"   // kein Include-Guard, deshalb nur hier
+#include "sound_playback.h"
 #include "config.h"
 
 // Zustand aus dem Sketch (ESP32_Sound_Mini_S3.ino).
@@ -15,6 +16,10 @@ extern XT_I2S_Class I2SAudio;
 
 void handleSound(uint8_t idx, XT_Wav_Class* snd) {
     if (!snd) return;
+    // Leerer Platz: Play() liess Playing=true bei FileOK=false stehen; ohne
+    // Korrektur haengt Sound_play[idx] hier dauerhaft fest (gleiche Ursache
+    // wie beim Start-Sound in der Motor-State-Machine).
+    soundPlaybackSanitize(snd);
     // One-Shot-Trigger sofort verbrauchen - auch wenn der Sound bereits
     // laeuft. Sonst bleibt Sound_on_web[idx] true, der Slot haengt nach dem
     // Wiedergabe-Ende dauerhaft im "laeuft bereits"-Zweig und startet nie

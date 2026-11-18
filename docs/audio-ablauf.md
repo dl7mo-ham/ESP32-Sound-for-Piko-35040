@@ -66,6 +66,14 @@ handleSound(i, &SoundX)
           testSoundActive[i] = false
 ```
 
+> [!NOTE]
+> Seit `v0.13+dl7mo.3` ruft `handleSound()` zuerst `soundPlaybackSanitize()`
+> (`sound_playback.cpp`) auf. `Play()` setzt `Playing = true`, auch wenn die
+> Datei fehlt (`FileOK = false`); `NextSample()` bleibt dann stumm und räumt das
+> Flag nie auf. Ohne den Aufruf bliebe bei einem leeren Platz
+> `Sound_play[i]` dauerhaft `true` und der Slot ließe sich nicht mehr neu
+> auslösen.
+
 ---
 
 ## 3. Motor-State-Machine (Sound 0)
@@ -97,6 +105,15 @@ handleSound(i, &SoundX)
                   │ shut.wav fertig
                   └──────► OFF
 ```
+
+> [!NOTE]
+> Seit `v0.13+dl7mo.3` korrigiert `motorControlLoop()` denselben Zustand auch für
+> `Sound_start` – und zwar **vor** dem `crsfActive`-Return, also auch im
+> Reed-Betrieb. Ohne diesen Aufruf bleibt ein leerer Start-Platz dauerhaft in
+> `STARTING` hängen (`Sound_start.Playing` bleibt trotz Stille `true`), und
+> `loop.wav` wird nie gestartet. `loop`/`shut` werden bewusst nicht korrigiert,
+> damit ein nachträgliches Zuweisen dieser Dateien den laufenden Loop direkt
+> übernimmt.
 
 Der Motorsound besteht aus drei Phasen:
 * **`start.wav`**: Anlassergeräusch beim Einschalten.
