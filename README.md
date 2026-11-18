@@ -5,7 +5,7 @@
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Version in diesem Repo:** v0.15 (RC_Common 1.4.0 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; C3-Variante noch nicht auf Hardware getestet; v0.07 getestet am 29.10.2026)
+**Aktuelle Fork-Version:** v0.13+dl7mo.2 (Basis upstream v0.13, RC_Common 1.4.0 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; C3-Variante noch nicht auf Hardware getestet; zuletzt getestet: v0.07 am 29.10.2026). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
@@ -13,7 +13,7 @@ steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von htt
 
 ![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
 
-Seit v0.14 ist Reed keine feste Compile-Option mehr, sondern eine **Port-Rolle**: Unter „Einstellung“ kann Port A (und auf dem S3 auch B/C) auf `Aus`, `CRSF` oder `Reed` gestellt werden. Im Reed-Modus werden **beide Pins des Ports als Eingänge mit Pull-up** gelesen (kein UART); ein Kontakt gegen GND löst einen Impuls aus. Rollenwechsel wirken erst nach einem Neustart.
+Seit `v0.13+dl7mo.1` (früher v0.14) ist Reed keine feste Compile-Option mehr, sondern eine **Port-Rolle**: Unter „Einstellung“ kann Port A (und auf dem S3 auch B/C) auf `Aus`, `CRSF` oder `Reed` gestellt werden. Im Reed-Modus werden **beide Pins des Ports als Eingänge mit Pull-up** gelesen (kein UART); ein Kontakt gegen GND löst einen Impuls aus. Rollenwechsel wirken erst nach einem Neustart.
 
 Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewählt und einzeln getestet:
 
@@ -30,12 +30,7 @@ Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 n
 
 ### Versionen dieses Forks
 
-| Version | Änderung |
-|---|---|
-| 0.15 | **Upstream-Konfliktminimierung:** `src/RC_Common/` wieder upstream-identisch (1.4.0); Reed als projektlokale Rolle `APP_UROLE_REED` = 100 in `reed_roles.h`, inklusive Migration alter Werte 5 → 100. Lua/Web zeigen Reed als letzten Eintrag (Index 5 ↔ 100). Reed-Tests liegen jetzt in `firmware/ESP32_Sound_Mini_S3/tests/`. |
-| 0.14 | **Reed-Trigger pro Port (RC_Common 1.5.0):** Port A ist jetzt rollenfähig (Aus/CRSF/Reed, Default CRSF); B/C zusätzlich `Reed`. Im Reed-Modus liest der Port beide Pins mit Pull-up, Baudrate entfällt. Neuer Web-Tab „Reed“ mit Aktion je Pin (Sound 1–4, Motor Ein/Aus, Flamme Ein/Aus) und Testbutton; konfigurierbare Entprellzeit (5–500 ms). Reed-Impulse und Testbuttons laufen über dieselbe Kommando-Queue. Aktionen/Entprellzeit wirken sofort, Rollenwechsel erst nach Neustart. Export/Backup bleiben rückwärtskompatibel. Noch nicht auf Hardware getestet. |
-
-Ältere Versionen (Upstream und Fork): [CHANGELOG.md](CHANGELOG.md).
+Chronologische Liste: [docs/fork-changelog.md](docs/fork-changelog.md). Die Upstream-Historie bleibt unverändert in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

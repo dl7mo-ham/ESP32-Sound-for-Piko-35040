@@ -4,9 +4,13 @@ Nur Vorschlag, noch kein Repo und kein Code.
 
 Grundlage: Sound-Firmware v7.18 (`mnorden81-ESP32-Sound-bidirectional_code`, `main` @ `4d0f1df`) und die lokale Notiz `Sound/Mini/README.md` (MAX98357, CRSF, Board C3 oder S3-Zero offen).
 
-## Umgesetzte Erweiterung ab v0.14: Reed-Trigger pro Port
+## Umgesetzte Erweiterung ab v0.13+dl7mo.1 (früher v0.14): Reed-Trigger pro Port
 
-Die ursprüngliche Planung sah nur CRSF als Eingang vor. Der Piko-35040-Sonderstand nutzte stattdessen feste Pins (IO5/IO6, `REED_TRIGGER_ENABLED`) und hatte keine Port-Rollen. Ab v0.14 ist beides in der regulären Port-Architektur zusammengeführt:
+> [!NOTE]
+> Dieses Dokument ist ein Archiv. Die alten Fork-Nummern v0.14/v0.15 entsprechen
+> `v0.13+dl7mo.1`/`v0.13+dl7mo.2`; siehe [fork-changelog.md](fork-changelog.md).
+
+Die ursprüngliche Planung sah nur CRSF als Eingang vor. Der Piko-35040-Sonderstand nutzte stattdessen feste Pins (IO5/IO6, `REED_TRIGGER_ENABLED`) und hatte keine Port-Rollen. Ab dl7mo.1 ist beides in der regulären Port-Architektur zusammengeführt:
 
 - **Rolle `APP_UROLE_REED`** (Wert 100, projektlokal in `reed_roles.h`; RC_Common 1.4.0 bleibt unverändert) für Port A/B/C; Port A ist dafür von fest CRSF auf Aus/CRSF/Reed umgestellt (Default CRSF). Reed darf auf mehreren Ports gleichzeitig laufen. Der alte Wert 5 aus v0.14 wird beim Laden auf 100 migriert; in Lua/Web ist Reed der letzte Dropdown-Eintrag (Index 5).
 - **Pin-Modell:** pro Port RX und TX; im Reed-Modus `INPUT_PULLUP`, kein UART. Aktive Flanke HIGH → LOW, Entprellzeit 5–500 ms (Default 50 ms, NVS `reeddb`).

@@ -98,7 +98,7 @@
 #include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
 #include "status_led_arbiter.h" // v0.15: Prioritaet Flamme vs. Status-LED
 
-uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
+uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren. Die Variable
 // bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.

@@ -51,9 +51,13 @@ Hintergrund und bisherige Umsetzung: [`docs/upstream-konfliktminimierung-plan.md
 
 ## Konventionen
 
-- Firmware-Version bei jeder Änderung erhöhen (`CHANGELOG.md`, `README.md`, ggf.
-  RC_Common-Versionsfeld **nur upstream**): Die Version geht als CRSF
-  „Parameter Version Number“ an den Sender.
+- Fork-Version bei jeder Änderung erhöhen: `docs/fork-changelog.md` und die
+  README-Fork-Sektion (`<upstream-Basis>+dl7mo.<Zähler>`). `CHANGELOG.md` bleibt
+  upstream-identisch; das RC_Common-Versionsfeld ebenfalls **nur upstream**.
+  Der CRSF-„Parameter Version Number“ geht weiter an den Sender, kommt aber aus
+  `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 +
+  FORK_SEQ`) und nicht aus der `Version`-Zeile im Sketch. `FORK_SEQ` bei jeder
+  Änderung und bei jedem Upstream-Merge erhöhen.
 - Die eigene README-Sektion steht **über** der Zeile
   `*Ab hier folgt die unveränderte README des Upstream-Projekts.*` – den Teil darunter
   nicht antasten.

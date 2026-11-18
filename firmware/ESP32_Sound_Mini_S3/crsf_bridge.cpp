@@ -11,6 +11,7 @@
 #include "crsf_bridge.h"
 #include <Arduino.h>
 #include "config.h"
+#include "fork_version.h"   // projektlokal: CRSF-Parameter-Version
 #include "src/RC_Common/CRSF_ESP32/crsf_esp32.h"
 #include "src/RC_Common/lua_menu.h"
 #include "src/RC_Common/uart_ports.h"
@@ -21,7 +22,6 @@ extern LuaMenu      luaMenu;
 extern bool         crsfActive;
 extern bool         BUS_OK;
 extern uint16_t     channel_output[16];
-extern uint16_t     Version;
 void einkanalFunctionCRSF();   // bleibt im Sketch (MWset-Auswertung)
 
 static constexpr unsigned long CRSF_TIMEOUT_MS = 2000;
@@ -63,9 +63,10 @@ void crsfLoopTasks() {
         // Erst im eigenen Zeit-Slot auf den Broadcast-Ping antworten.
         crsf.setDeviceInfoReplyPending(false);
         char dn[24]; snprintf(dn, sizeof(dn), "%s@%d", config.Device_Name, config.modul_adress);
-        // Firmware-Version als "Parameter Version Number", damit
+        // Projektlokale Fork-Version als "Parameter Version Number", damit
         // Konfiguratoren eine geaenderte Parameterstruktur neu einlesen.
-        crsf.send_device_info(dn, luaMenu.maxId(), (uint8_t)(Version & 0xFF));
+        // Die Upstream-Variable Version bleibt unberuehrt (Merge-Ruhe).
+        crsf.send_device_info(dn, luaMenu.maxId(), APP_PARAM_VERSION);
     }
     if (crsf.getDeviceReadReplyPending()) {
         uint8_t pi = crsf.getParamReadIndex();

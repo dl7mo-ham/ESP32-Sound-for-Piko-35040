@@ -10,6 +10,15 @@ Die Piko-Anpassungen sollen gegenüber `upstream/main` **minimal-invasiv** werde
 
 Dieses Dokument ist die Umsetzungsvorlage für die im Review (`2026-11-17`) identifizierten Punkte.
 
+## Gültige Regeln (Stand 2026-11-18)
+
+Die Maßnahmen unten sind umgesetzt; als bleibende Regeln gelten:
+
+- `src/RC_Common/` bleibt upstream-identisch. Neue Funktionalität kommt in eigene Dateien; in Upstream-Dateien höchstens dünne Aufrufstellen.
+- Die Fork-Version (`<upstream-Basis>+dl7mo.<Zähler>`) steht nur in [docs/fork-changelog.md](fork-changelog.md) und in der README-Fork-Sektion. `CHANGELOG.md` bleibt upstream-identisch.
+- Der CRSF-Cache-Token kommt aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`), nicht aus `Version` im Sketch. `FORK_SEQ` bei jeder Änderung und bei jedem Upstream-Merge erhöhen.
+- Nach einem Upstream-Merge: `sha256sum -c` in RC_Common, beide Host-Test-Suiten, beide Builds, `git diff --stat upstream/main...HEAD`.
+
 ---
 
 ## Ausgangslage

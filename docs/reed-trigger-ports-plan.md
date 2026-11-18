@@ -162,7 +162,7 @@ Zusätzlich erhält die Web-UI einen neuen Tab, in dem pro Pin jedes Reed-Trigge
 - [ ] Lautstärke-Bugfix übernommen oder Abweichungen/Restarbeit dokumentiert.
 - [ ] Dieses Plan-Dokument liegt im Branch und beschreibt Architektur, betroffene Stellen, Datenmodell, UI/API, Queue/Dispatch und Verifikation.
 
-## Umsetzungsstand (v0.14)
+## Umsetzungsstand (v0.13+dl7mo.1, früher v0.14)
 
 Die oben beschriebenen Schritte 2–7 sind umgesetzt: `UROLE_REED`, konfigurierbare
 Port-A-Rolle, Reed-Pin-Aktionen inkl. Entprellzeit, Reed-Scan, gemeinsame
@@ -171,10 +171,11 @@ Anpassung. Neue Konfigurationsfelder: `porta_role`, `reed_debounce_ms`,
 `reed_a_rx` … `reed_c_tx` (JSON: `reed`-Objekt). Offen bleibt Schritt 8
 (Hardware-Test am Piko 35040); die Builds für S3/C3 und die RC_Common-
 Hosttests laufen fehlerfrei. Details zu den Entscheidungen stehen in
-[`CHANGELOG.md`](../CHANGELOG.md) und im README-Abschnitt „Reed-Betrieb“.
+[`fork-changelog.md`](fork-changelog.md) und im README-Abschnitt „Reed-Betrieb“.
 
 > [!NOTE]
-> Der historische Plan verwendet `UROLE_REED` = 5. Seit v0.15 heisst die Rolle
+> Der historische Plan verwendet `UROLE_REED` = 5. Seit `v0.13+dl7mo.2`
+> (früher v0.15) heisst die Rolle
 > `APP_UROLE_REED` = 100 und liegt in `reed_roles.h`; `src/RC_Common/` ist wieder
 > upstream-identisch (1.4.0). Gespeicherte Werte 5 werden beim Laden nach 100
 > migriert. Siehe [`upstream-konfliktminimierung-plan.md`](upstream-konfliktminimierung-plan.md).
