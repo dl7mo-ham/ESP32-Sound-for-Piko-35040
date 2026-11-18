@@ -85,6 +85,7 @@ function renderReed(){
       restart.className='hidden';
     }
   }
+  loadLedOrder();
 }
 function testReed(action){
   if(!action){ toast('Keine Aktion gewaehlt',1); return; }
@@ -107,12 +108,43 @@ function saveReed(){
     toast('Fehler',1);
   });
 }
+// LED-Farbfolge: Im Reed-Betrieb gibt es kein Lua-Menue, daher hier im Web-Tab.
+function loadLedOrder(){
+  fetch('/api/led-order').then(function(r){return r.json();}).then(function(d){
+    var s=document.getElementById('led-rgb-order');
+    if(s&&d&&typeof d.rgb!=='undefined') s.value=d.rgb?'1':'0';
+  }).catch(function(){});
+}
+function saveLedOrder(){
+  var s=document.getElementById('led-rgb-order'); if(!s) return;
+  xpost('/api/led-order',{rgb:parseInt(s.value,10)},function(resp){
+    var d=null; try{ d=JSON.parse(resp); }catch(e){}
+    if(d&&d.ok) toast('LED-Farbfolge gespeichert'); else toast('Fehler',1);
+  });
+}
 )JS";
 
 static WebServer* reedServer = nullptr;
 
 static void reedSendOk(WebServer& sv)  { sv.send(200, "application/json", "{\"ok\":true}"); }
 static void reedSendErr(WebServer& sv) { sv.send(400, "application/json", "{\"error\":\"bad request\"}"); }
+
+// ── GET/POST /api/led-order  {"rgb":bool} ─────────────────────────────────
+// Dieselbe Einstellung wie im Lua-Menue (config.LedRgb). updateLed() in der
+// .ino uebernimmt den Wert im naechsten Loop, ein Neustart ist nicht noetig.
+static void reedWebHandleLedOrderGet(WebServer& sv) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "{\"rgb\":%s}", config.LedRgb ? "true" : "false");
+  sv.send(200, "application/json", buf);
+}
+static void reedWebHandleLedOrderPost(WebServer& sv) {
+  if (!sv.hasArg("plain")) { reedSendErr(sv); return; }
+  int v;
+  if (!reedJsonGetInt(sv.arg("plain"), "rgb", v) || (v != 0 && v != 1)) { reedSendErr(sv); return; }
+  bool rgb = (v == 1);
+  if (config.LedRgb != rgb) { config.LedRgb = rgb; markDirty(); }
+  reedSendOk(sv);
+}
 
 // ── POST /api/reed/test  {"action":1..6} ──────────────────────────────────
 // Testbutton der Web-UI. Prueft die Aktion nur und legt sie in die Queue;
@@ -136,4 +168,6 @@ void reedWebRegister(WebServer& server) {
     reedServer->send_P(200, "application/javascript", REED_UI_JS);
   });
   server.on("/api/reed/test", HTTP_POST, []() { reedWebHandleTest(*reedServer); });
+  server.on("/api/led-order", HTTP_GET,  []() { reedWebHandleLedOrderGet(*reedServer); });
+  server.on("/api/led-order", HTTP_POST, []() { reedWebHandleLedOrderPost(*reedServer); });
 }

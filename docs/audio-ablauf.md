@@ -242,7 +242,7 @@ loop()                                  (ESP32_Sound_Mini_S3.ino)
   ├─ crsfLoopTasks()                    (crsf_bridge.cpp, nur bei Port A = CRSF)
   │    ├─► Pakete/Router, BUS_OK, channel_output[], uartPortsTelemetry()
   │    └─► Lua-Menü: Ping/Read/Write/Command-Replies
-  ├─ ledArbiterUpdate(updateLed)        (status_led_arbiter.cpp: Flamme vor Status)
+  ├─ ledArbiterUpdate(updateLed)        (status_led_arbiter.cpp: Flamme vor Status; Reed ohne Flamme = LED aus)
   ├─ saveConfigForce()                  (500ms nach letzter Änderung)
   ├─ wifiFailsafeCheck()
   ├─ Config()                           ← Sound_on[] aus CRSF-Kanälen setzen

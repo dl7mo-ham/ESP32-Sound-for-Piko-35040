@@ -7,6 +7,7 @@
  */
 
 #include "flame_led.h"
+#include "config.h"                  // LedRgb: Farbfolge auch bei aktiver Flamme
 #include "src/RC_Common/status_led.h"
 
 static constexpr uint8_t  FLAME_BRIGHTNESS       = 40;
@@ -56,6 +57,9 @@ void flameBegin(StatusLed& statusLed) {
 }
 
 void flameUpdate() {
+    // updateLed() wird bei aktiver Flamme uebersprungen; die Farbfolge muss
+    // hier trotzdem aktuell bleiben (Web-/Lua-Aenderung wirkt sonst erst danach).
+    if (led) led->setRgbOrder(config.LedRgb);
     renderFlame(millis());
 }
 

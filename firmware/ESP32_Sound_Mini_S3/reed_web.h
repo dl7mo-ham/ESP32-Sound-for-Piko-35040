@@ -4,6 +4,7 @@
  * Reed-Web-Oberflaeche: HTML-Fragment (Compile-Time in RCSOUND_HTML
  * eingefuegt, kein RAM- und kein zusaetzlicher Flash-Overhead durch einen
  * zweiten Request), externes JS (/reed_ui.js) und die REST-Routen.
+ * Enthaelt auch die LED-Farbfolge, weil es im Reed-Betrieb kein Lua-Menue gibt.
  *
  * In WebServerManager.cpp stehen dadurch nur noch drei Zeilen: dieses
  * Include, das Makro im HTML und reedWebRegister(server) in begin().
@@ -44,9 +45,24 @@
 "    </div>\n" \
 "    <button class=\"btn btn-p\" onclick=\"saveReed()\">Speichern</button>\n" \
 "  </div>\n" \
+"  <div class=\"card\">\n" \
+"    <div class=\"card-title\">LED-Farbfolge (Status &amp; Flamme)</div>\n" \
+"    <div class=\"row\" style=\"margin-bottom:10px\">\n" \
+"      <span class=\"lbl\">Farbfolge der WS2812</span>\n" \
+"      <select id=\"led-rgb-order\">\n" \
+"        <option value=\"1\">RGB (S3-Zero)</option>\n" \
+"        <option value=\"0\">GRB (Standard)</option>\n" \
+"      </select>\n" \
+"    </div>\n" \
+"    <div style=\"font-size:11px;color:var(--sub);margin-bottom:10px\">\n" \
+"      Umstellen, wenn die Flamme gruen statt orange leuchtet (Rot/Gruen vertauscht).\n" \
+"      Wirkt sofort und wird dauerhaft gespeichert.\n" \
+"    </div>\n" \
+"    <button class=\"btn btn-p\" onclick=\"saveLedOrder()\">Speichern</button>\n" \
+"  </div>\n" \
 "</div>\n"
 
-// Registriert /reed_ui.js und /api/reed/test am Webserver. Wird aus
+// Registriert /reed_ui.js, /api/reed/test und /api/led-order am Webserver. Wird aus
 // WebServerManager::begin() heraus mit dessen (privatem) server-Objekt
 // aufgerufen.
 void reedWebRegister(WebServer& server);

@@ -4,6 +4,23 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.13+dl7mo.6 (2026-11-18)
+
+- LED im Reed-Betrieb dunkel, solange die Flamme aus ist: `status_led_arbiter.cpp` prueft die Boot-Snapshot-Rollen und unterdrueckt die RC-Statusanzeige, wenn eine Portrolle `APP_UROLE_REED` ist. Damit gibt es kein „kein Signal“-Blinken (und kein blaues WLAN-Muster) mehr im Reed-Modus. `flameSet(false)` schreibt weiterhin sofort schwarz; die Flamme hat unveraendert Vorrang. Keine Upstream-Datei berührt; CRSF-Cache-Token jetzt 206.
+- **Noch nicht auf Hardware getestet.**
+
+## v0.13+dl7mo.5 (2026-11-18)
+
+- Die Einstellung „LED Farbfolge“ war bisher nur im CRSF-Lua-Menü erreichbar – im Reed-Betrieb gibt es kein Lua-Menü. Neue Card „LED-Farbfolge (Status & Flamme)“ im Web-Tab „Reed“ (`reed_web.h`) mit Auswahl `RGB (S3-Zero)` / `GRB (Standard)`.
+- Dafür projektlokale REST-Endpunkte `GET/POST /api/led-order` in `reed_web.cpp`; Schreiben setzt `config.LedRgb` und `markDirty()`. `updateLed()` und – bei aktiver Flamme – `flameUpdate()` übernehmen die Reihenfolge im nächsten Loop (kein Neustart nötig). Keine Upstream-Datei berührt; CRSF-Cache-Token jetzt 205.
+- **Noch nicht auf Hardware getestet.**
+
+## v0.13+dl7mo.4 (2026-11-18)
+
+- Diagnose zur grünen Flamme: Der Grünanteil im Code war nicht die Ursache. Bei vertauschter WS2812-Farbfolge landet der rote Kanal im Grün der LED – weniger Grün im Code lässt die Flamme daher noch grüner erscheinen. Der ursprüngliche Mix (25 % Grün = warmes Orange) ist wiederhergestellt.
+- Abhilfe ist die Lua-Einstellung „LED Farbfolge“ (`RGB (S3-Zero)` / `GRB`): Sie muss zur tatsächlich verbauten LED passen. Auch das bläuliche Blinken bei ausgeschalteter Flamme erklärt sich damit (vorgesehen ist violett bei WLAN, bzw. rot ohne Signal). Keine Upstream-Datei berührt; CRSF-Cache-Token jetzt 204.
+- **Noch nicht auf Hardware getestet.**
+
 ## v0.13+dl7mo.3 (2026-11-18)
 
 - Leere Sound-Plätze (`(leer)` oder fehlende Datei) lassen `I2SAudio.Play()` trotzdem `Playing = true` setzen; `NextSample()` bleibt stumm und räumt das Flag nie auf. Bei einem leeren **Start**-Platz blieb die Motor-State-Machine dadurch dauerhaft in `STARTING` – `loop.wav` startete nie. Bei leeren Sound-1–4-Plätzen blieben `Sound_play[]` und `testSoundActive[]` hängen.
