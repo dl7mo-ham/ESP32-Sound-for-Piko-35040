@@ -169,7 +169,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div class="card-title">Lautst&auml;rke &amp; Drehzahl</div>
     <div class="sl-wrap">
       <div class="sl-head"><span>Volumen</span><span id="lv-m-vol">-</span></div>
-      <input type="range" id="m-vol" min="0" max="200" step="5" oninput="slUpd('m-vol','lv-m-vol')" onchange="liveVol(0,gi('m-vol'))">
+      <input type="range" id="m-vol" min="0" max="200" step="5" oninput="slUpd('m-vol','lv-m-vol')">
     </div>
     <div class="sl-wrap">
       <div class="sl-head"><span>Drehzahl min %</span><span id="lv-m-rmin">-</span></div>
@@ -253,7 +253,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div class="card-title">Lautst&auml;rke</div>
     <div class="sl-wrap">
       <div class="sl-head"><span>Volumen</span><span id="lv-s-vol">-</span></div>
-      <input type="range" id="s-vol" min="0" max="200" step="5" oninput="slUpd('s-vol','lv-s-vol')" onchange="liveVol(curSnd,gi('s-vol'))">
+      <input type="range" id="s-vol" min="0" max="200" step="5" oninput="slUpd('s-vol','lv-s-vol')">
     </div>
   </div>
   <div class="card">
@@ -1073,19 +1073,8 @@ function saveSound(){
     toast('Fehler',1);
   });
 }
-function liveVol(id,v){
-  if(id===0){if(cfg.motor)cfg.motor.vol=v;}
-  else if(cfg.sounds&&cfg.sounds[id-1])cfg.sounds[id-1].vol=v;
-  xpost('/api/sound',{id:id,vol:v});
-}
 function testSound(){
-  var newVol=gi('s-vol');
-  xpost('/api/sound',{id:curSnd,vol:newVol,test:true},function(){
-    if(cfg.sounds&&cfg.sounds[curSnd-1]){
-      cfg.sounds[curSnd-1].vol=newVol;
-    }
-    toast('Sound '+curSnd+' wird gespielt');
-  });
+  xpost('/api/sound',{id:curSnd,test:true},function(){toast('Sound '+curSnd+' wird gespielt');});
 }
 // ─── Sound-Dateien und Sound-Zuordnung (v0.12) ─────────────────────────
 // Jede Datei behaelt ihren Namen; welche Datei auf welchem Platz spielt,

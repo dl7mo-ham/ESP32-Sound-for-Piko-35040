@@ -26,6 +26,24 @@ function reedActionLabel(action){
   var names=((cfg.reed&&cfg.reed.action_options)||'').split(';');
   return names[action]||('Aktion '+action);
 }
+// ─── Sofortige Lautstaerke (v0.13+dl7mo.8) ───────────────────────────────
+// Frueher als Fork-Diff mitten in WebServerManager.cpp: zwei onchange-
+// Attribute, liveVol() und ein geaendertes testSound(). Das Backend
+// /api/sound akzeptiert {id,vol} bereits - hier werden nur die vorhandenen
+// Regler mit Listenern versehen. Dieses Script laeuft vor dem Haupt-<script>;
+// cfg/curSnd/xpost werden erst beim Event aufgeloest (siehe Dateikommentar).
+function appLiveVol(id,v){
+  v=parseInt(v,10)||0;
+  if(id===0){ if(cfg.motor) cfg.motor.vol=v; }
+  else if(cfg.sounds&&cfg.sounds[id-1]) cfg.sounds[id-1].vol=v;
+  xpost('/api/sound',{id:id,vol:v});
+}
+(function attachLiveVolume(){
+  var m=document.getElementById('m-vol');
+  var s=document.getElementById('s-vol');
+  if(m) m.addEventListener('change',function(){ appLiveVol(0,this.value); });
+  if(s) s.addEventListener('change',function(){ appLiveVol(curSnd,this.value); });
+})();
 function renderReed(){
   var r=cfg.reed;
   var box=document.getElementById('reed-ports');

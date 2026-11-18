@@ -4,7 +4,9 @@
  * Reed-Web-Oberflaeche: HTML-Fragment (Compile-Time in RCSOUND_HTML
  * eingefuegt, kein RAM- und kein zusaetzlicher Flash-Overhead durch einen
  * zweiten Request), externes JS (/reed_ui.js) und die REST-Routen.
- * Enthaelt auch die LED-Farbfolge, weil es im Reed-Betrieb kein Lua-Menue gibt.
+ * Enthaelt auch die LED-Farbfolge (kein Lua-Menue im Reed-Betrieb) und die
+ * sofortige Lautstaerke-Uebertragung der vorhandenen Web-Regler, damit
+ * WebServerManager.cpp dafuer upstream-identisch bleiben kann.
  *
  * In WebServerManager.cpp stehen dadurch nur noch drei Zeilen: dieses
  * Include, das Makro im HTML und reedWebRegister(server) in begin().

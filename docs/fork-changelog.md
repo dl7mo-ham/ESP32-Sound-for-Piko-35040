@@ -4,6 +4,12 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.13+dl7mo.8 (2026-11-18)
+
+- Die sofortige Lautstärke-Übertragung der Web-Regler (`m-vol`, `s-vol`) steckte als Fork-Diff mitten in `WebServerManager.cpp`: zwei `onchange`-Attribute, `liveVol()` und ein geändertes `testSound()`. Sie liegt jetzt als `appLiveVol()` plus zwei `change`-Listener im projektlokalen `/reed_ui.js` (`reed_web.cpp`). Das Backend `/api/sound` mit `{id,vol}` bleibt unverändert; das Verhalten ist gleich.
+- `WebServerManager.cpp` ist an diesen drei Stellen wieder upstream-identisch. Kein neues API, keine neue Route, kein Eingriff in `src/RC_Common/`; CRSF-Cache-Token jetzt 208.
+- **Auf Hardware getestet (ESP32-S3-Zero, 18.11.2026):** Die sofortige Lautstärkeübertragung der Regler und der Testbutton funktionieren wie vor dem Umbau. Die C3-Variante bleibt weiterhin nicht auf Hardware getestet.
+
 ## v0.13+dl7mo.7 (2026-11-18)
 
 - Web-Tab „Reed“ zeigt bei jeder Pin-Zeile jetzt auch die zugehörige GPIO-Nummer, z. B. `RX (IO5)` / `TX (IO6)` (S3 Port A). Die Nummern kommen aus der vorhandenen Pin-Tabelle in `reed_trigger.cpp` (`pins.h`) und werden additiv als `pins:{rx,tx}` je Port in `/api/config` geliefert; bestehende Export-/Backup-Formate bleiben unverändert.
