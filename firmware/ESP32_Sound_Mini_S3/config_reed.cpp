@@ -116,6 +116,9 @@ void reedConfigAppendJson(String& j) {
         bool configured = present && role == APP_UROLE_REED;
         j += "{\"key\":\"" + String(REED_PORT_KEYS[p]) + "\",";
         j += "\"label\":\"" + String(REED_PORT_LABELS[p]) + "\",";
+        // Additiv: GPIO-Nummern fuer die Web-Anzeige (RX/TX aus pins.h).
+        j += "\"pins\":{\"rx\":" + String((int)reedPinNumber(p, 0)) +
+             ",\"tx\":" + String((int)reedPinNumber(p, 1)) + "},";
         j += "\"present\":"    + String(present ? 1 : 0)    + ",";
         j += "\"configured\":" + String(configured ? 1 : 0) + ",";
         j += "\"active\":"     + String(reedPortActive(p) ? 1 : 0) + "}";

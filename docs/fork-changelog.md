@@ -4,6 +4,12 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.13+dl7mo.7 (2026-11-18)
+
+- Web-Tab „Reed“ zeigt bei jeder Pin-Zeile jetzt auch die zugehörige GPIO-Nummer, z. B. `RX (IO5)` / `TX (IO6)` (S3 Port A). Die Nummern kommen aus der vorhandenen Pin-Tabelle in `reed_trigger.cpp` (`pins.h`) und werden additiv als `pins:{rx,tx}` je Port in `/api/config` geliefert; bestehende Export-/Backup-Formate bleiben unverändert.
+- Keine Upstream-Datei berührt; CRSF-Cache-Token jetzt 207.
+- **Auf Hardware getestet (ESP32-S3-Zero, 18.11.2026):** Die GPIO-Anzeige im Reed-Tab stimmt. Die C3-Variante bleibt weiterhin ungetestet.
+
 ## v0.13+dl7mo.6 (2026-11-18)
 
 - LED im Reed-Betrieb dunkel, solange die Flamme aus ist: `status_led_arbiter.cpp` prueft die Boot-Snapshot-Rollen und unterdrueckt die RC-Statusanzeige, wenn eine Portrolle `APP_UROLE_REED` ist. Damit gibt es kein „kein Signal“-Blinken (und kein blaues WLAN-Muster) mehr im Reed-Modus. `flameSet(false)` schreibt weiterhin sofort schwarz; die Flamme hat unveraendert Vorrang. Keine Upstream-Datei berührt; CRSF-Cache-Token jetzt 206.

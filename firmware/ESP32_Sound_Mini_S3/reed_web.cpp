@@ -58,7 +58,9 @@ function renderReed(){
     ['rx','tx'].forEach(function(pin){
       var row=document.createElement('div'); row.className='row';
       var lab=document.createElement('span'); lab.className='lbl';
-      lab.style.flex='0 0 56px'; lab.textContent=pin.toUpperCase();
+      lab.style.cssText='flex:0 0 86px;font-size:12px';
+      var pinNo=p.pins?p.pins[pin]:undefined;
+      lab.textContent=pin.toUpperCase()+(pinNo!==undefined&&pinNo<255?' (IO'+pinNo+')':'');
       row.appendChild(lab);
       var sel=document.createElement('select');
       sel.id='reed-'+p.key+'-'+pin;

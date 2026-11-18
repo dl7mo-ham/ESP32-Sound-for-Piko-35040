@@ -53,6 +53,11 @@ bool reedPortActive(uint8_t port) {
     return port < REED_PORTS && portActive[port];
 }
 
+uint8_t reedPinNumber(uint8_t port, uint8_t pin) {
+    if (port >= REED_PORTS || pin >= REED_PINS) return 0xFF;
+    return REED_PIN_MAP[port][pin];
+}
+
 uint8_t reedActiveCount() {
     uint8_t n = 0;
     for (uint8_t p = 0; p < REED_PORTS; p++) if (portActive[p]) n++;

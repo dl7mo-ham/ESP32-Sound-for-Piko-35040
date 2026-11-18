@@ -36,6 +36,10 @@ void reedUpdate();
 bool reedPortPresent(uint8_t port);
 bool reedPortActive(uint8_t port);
 
+// GPIO-Nummer eines Reed-Pins fuer Anzeige/Diagnose (z. B. 5 = IO5).
+// 0xFF, wenn Port oder Pin auf diesem Board nicht vorhanden ist.
+uint8_t reedPinNumber(uint8_t port, uint8_t pin);
+
 // Anzahl der in diesem Boot aktiven Reed-Ports (0..3).
 uint8_t reedActiveCount();
 
