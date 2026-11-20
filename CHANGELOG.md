@@ -2,6 +2,14 @@
 
 Die Version wird bei jeder Änderung erhöht, weil sie als CRSF „Parameter Version Number“ an den Sender geht. Ab v0.09 gilt jede Version für S3 und C3. Neueste Version oben.
 
+## v0.14 (RC_Common 1.5.2)
+- **Neu: Funk** (ESP-NOW, RC_Common `funk_link`), gleich wie Multiswitch v5.04: Betrieb Kabel / Kabel + Funk (Zentrale) / Funk (Teilnehmer). Als Teilnehmer kommt CRSF nur aus dem Funk, Port A bleibt frei, Port B/C geben weiter. Einstellungen im Lua-Ordner „Funk“ und in der Web-UI (Einstellung → Funk), gelten nach Neustart. NVS `fkmode fkid fkch fkpwr fkrate fkback`. Web-Tab „Funk“ mit Ampel, Zählern und Gegenstellen. WLAN läuft mit Funk auf dem Funkkanal. Gelber Doppelblitz bei zweiter Funk-Zentrale, blauer bei Adresskonflikt im Funk.
+- **Lua-Menü neu:** statt je einem Ordner pro Sound ein Ordner „Sounds“ mit „Sound Nr“, „Name“ (zugeordnete Datei), Quelle, Kanal Nr, Volumen, Wiedergabe Mode, Test Sound. Gleich in allen Soundmodulen. Feld-IDs neu durchnummeriert (1–54), die Einstellungen bleiben erhalten.
+- **S3: Port A und Port C getauscht.** Port A (Empfänger) liegt jetzt an den beschrifteten RX/TX-Pins (RX IO44, TX IO43, UART0), Port C an IO5/IO6 (UART2). Gleich wie Multiswitch S3 und CRSF-Router S3. **Kabel umstecken!** C3 unverändert (Port A war schon IO20/21).
+- RC_Common 1.5.2: Multiswitch-Befehle (WM-Widget) wirken auch bei Modul-Adresse ungleich 0.
+- Flash: S3 92,9 %, C3 96,8 % der App-Partition.
+- Noch nicht auf Hardware getestet.
+
 ## v0.13 (RC_Common 1.4.0)
 - Status-LED wie alle Module: grün langsam = OK, rot schnell = Failsafe / kein RC-Link, rot Aufblitzen = kein Signal (vorher aus), blau Doppelblitz = Adresskonflikt (neu), gelb Doppelblitz = doppelte Port-Rolle, violett = WLAN an.
 - Neues Lua-Feld 62 „LED Farbfolge“ (RGB/GRB, NVS `ledrgb`). BOOT-Taste im Betrieb 2 s halten = WLAN an/aus.

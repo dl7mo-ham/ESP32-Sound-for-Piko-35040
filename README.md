@@ -6,6 +6,8 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Eingang:** nur CRSF (Port A), busbasiert
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), keine SD-Karte
+- **Funk (ab v0.14):** CRSF per ESP-NOW statt Kabel, wie Multiswitch v5.04 und CRSF-Router S3. Lua-Ordner „Funk“ oder Web-UI (Einstellung → Funk): Betrieb Kabel / Kabel + Funk (Zentrale) / Funk (Teilnehmer), Fahrzeug-Kennung, Funkkanal, Sendeleistung, Kanal-Rate (Zentrale), Rückkanal (Teilnehmer). Gilt nach Neustart. Mit Funk läuft das WLAN auf dem Funkkanal, der Web-Tab „Funk“ zeigt Verbindung, Verlust und Gegenstellen.
+- **Lua-Ordner „Sounds“ (ab v0.14):** oben „Sound Nr“ wählen, darunter stehen sofort Name, Quelle, Kanal, Volumen, Wiedergabe und Test dieses Sounds. Gleich in allen Soundmodulen.
 - **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
 - **Status-LED:** RGB-LED des S3-Zero (GPIO 21) zeigt den CRSF-Link, gleiches Farbschema wie alle Module (siehe [Status-LED](#status-led))
 - **Web-UI:** Sound-Upload und OTA-Update per WLAN, WLAN ab Werk immer an, sonst per BOOT-Taste oder Lua einschaltbar
@@ -26,7 +28,7 @@ Projektbeschreibung: [`docs/Projektbeschreibung.docx`](docs/Projektbeschreibung.
 Seit v0.06 zeigt das Modul, wie voll Flash und RAM sind:
 
 - **Weboberfläche:** Tab „Debug“, Karte „Speicherbelegung“ (aktualisiert sich alle 2 s). Balken für Firmware, Sounds (Flash), RAM und PSRAM, ab 90 % gelb, ab 98 % rot. Prozent und Balken zeigen immer den belegten Anteil. Seit v0.07 listet die Karte „Dateien im Flash“ alle Dateien mit Größe (Sounds, Backups, evtl. Reste), und „WAV Dateien“ zeigt, ob jede Sound-Datei im Flash liegt.
-- **Lua-Menü am Sender:** Ordner „Speicher“ (Felder 53–57, nur Anzeige): Firmware, Sounds, RAM frei, PSRAM frei. Die Werte werden beim Öffnen des Ordners neu gelesen.
+- **Lua-Menü am Sender:** Ordner „Speicher“ (nur Anzeige): Firmware, Sounds, RAM frei, PSRAM frei. Die Werte werden beim Öffnen des Ordners neu gelesen.
 
 | Anzeige | Bedeutung |
 |---|---|
@@ -45,7 +47,7 @@ Format: WAV, 16 Bit PCM, 22,05 kHz mono empfohlen.
 
 - **Web-UI, Tab „Speicher“:** zeigt alle gespeicherten Sounds mit Größe und Platz. Pro Platz gibt es eine Auswahlliste. Ein Sound darf auf mehreren Plätzen liegen. Dort kannst du auch Sounds hochladen (mehrere auf einmal) und löschen.
 - **Web-UI, Tabs „Motor“ und „Sounds“:** „Hochladen“ speichert die Datei mit ihrem Namen und legt sie gleich auf diesen Platz.
-- **Lua-Menü, Ordner „Sound-Zuordnung“** (Felder 58–61): erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien. Neu hochgeladene Sounds erscheinen nach erneutem Öffnen des Menüs.
+- **Lua-Menü, Ordner „Sound-Zuordnung“**: erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien. Neu hochgeladene Sounds erscheinen nach erneutem Öffnen des Menüs.
 
 Module mit älterer Firmware behalten ihre Sounds: `loop.wav`, `shut.wav`, `start.wav` und `sound1.wav` … `sound4.wav` bleiben auf ihren Plätzen. Die Zuordnung steht im Export und im Backup.
 
@@ -152,7 +154,7 @@ Gleiches Schema in allen Modulen (seit v0.13 / RC_Common 1.4.0):
 | violett statt grün/rot | WLAN ist an (Muster bleibt) |
 | blau blinkend (3 s nach dem Start) | jetzt BOOT drücken = WLAN an |
 
-Blinkt die LED rot, obwohl alles verbunden ist, sind Rot und Grün vertauscht: im Lua-Menü Einstellungen → „LED Farbfolge“ (Feld 62) umstellen. Vorgabe ist RGB für den S3-Zero, GRB für den C3.
+Blinkt die LED rot, obwohl alles verbunden ist, sind Rot und Grün vertauscht: im Lua-Menü Einstellungen → „LED Farbfolge“ umstellen. Vorgabe ist RGB für den S3-Zero, GRB für den C3.
 
 ## WLAN einschalten
 
@@ -161,7 +163,7 @@ Das Modul öffnet den Access Point „Sound-Mini“ (Passwort `123456789`), Webo
 1. **„WLAN dauerhaft an“** (ab Werk EIN): WLAN ist nach jedem Einschalten sofort an. Umschalten im Web-Tab „WiFi“ oder im Lua-Menü (Einstellungen → „WLAN dauerhaft an“), wirkt ab dem nächsten Start.
 2. **BOOT-Taste:** Ist „WLAN dauerhaft an“ aus, blinkt die LED nach dem Einschalten 3 s lang blau. Wer in dieser Zeit kurz die BOOT-Taste des S3-Zero drückt, schaltet das WLAN ein. Die Taste beim Einschalten **nicht** gedrückt halten, sonst startet der ESP im Flash-Modus (dann einfach neu einschalten).
 3. **BOOT-Taste im Betrieb** (ab v0.13): 2 s gedrückt halten schaltet das WLAN an oder aus (wie beim CRSF-Router und den Schaltmodulen).
-4. **Lua-Menü „WLAN jetzt“** (Einstellungen, Feld 46) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
+4. **Lua-Menü „WLAN jetzt“** (Einstellungen) oder der Schalter „WLAN jetzt“ in der Weboberfläche: sofort an oder aus, gilt nur bis zum nächsten Ausschalten.
 5. **Auto-WLAN bei Signalverlust:** schaltet das WLAN ein, wenn länger als die eingestellte Zeit kein CRSF-Signal kommt.
 
 Eine WLAN-Brücke oder ein Jumper ist seit v0.05 nicht mehr nötig, GPIO9 ist frei.
@@ -177,9 +179,11 @@ Das Modul ist ein Sandwich aus zwei Platinen, ohne Lochrasterplatine (Aufbau von
 
 - Der **MAX98357A** sitzt Rücken an Rücken auf der Rückseite des S3-Zero. Seine 7-polige Stiftleiste geht durch beide Platinen und trifft 5V, GND, 3V3, IO1 bis IO4 (VIN-5V, GND-GND, GAIN-IO1, DIN-IO2, BCLK-IO3, LRC-IO4). Den **SD-Stift weglassen**, 3V3 bleibt frei.
 - Die Bauteilseite des ESP mit USB-C und BOOT-Taste bleibt frei zugänglich.
-- **Port A** (Empfänger): 4 Kabel, auf der Bauteilseite an 5V, GND, IO5 und IO6 gelötet, mit 4-poligem JST-Stecker. Farben: schwarz GND, rot +5V, gelb IO5 (CRSF RX ← Empfänger-TX), weiß IO6 (CRSF TX → Empfänger-RX).
+- **Port A** (Empfänger, ab v0.14 an den mit **RX/TX beschrifteten Pins**): 4 Kabel an 5V, GND, RX (IO44) und TX (IO43), mit 4-poligem JST-Stecker. Farben: schwarz GND, rot +5V, gelb RX/IO44 (CRSF RX ← Empfänger-TX), weiß TX/IO43 (CRSF TX → Empfänger-RX).
 - **Port B**: 2 Stifte an IO7 (RX) und IO8 (TX), zeigen zur MAX-Seite.
-- **Port C** (IO43/IO44) ist optional: bei Bedarf zwei Kabel auf der Bauteilseite direkt an die Pins löten, z. B. grün IO43 (TX) und blau IO44 (RX). In den 3D-Ansichten ist Port C halb durchsichtig gezeichnet.
+- **Port C** (ab v0.14 IO5/IO6) ist optional: bei Bedarf zwei Kabel direkt an die Pins löten, z. B. blau IO5 (RX) und grün IO6 (TX).
+
+> **Umstecken beim Update von v0.13 oder älter (nur S3):** Bis v0.13 lag Port A (Empfänger) auf IO5/IO6 und Port C auf den RX/TX-Pins (IO44/IO43). Ab v0.14 ist es umgekehrt, gleich wie beim Multiswitch S3 und CRSF-Router S3. Also das Empfängerkabel von IO5/IO6 auf RX/TX umlöten, ein GPS an Port C von RX/TX auf IO5/IO6. Die 3D-Ansichten, Fotos und Grafiken unten zeigen noch die alte Lage (Port A an IO5/IO6), maßgeblich ist die Tabelle „Pinbelegung“.
 - **Lautsprecher** am 2-poligen JST-PH-Stecker des MAX (+ und −), nie an GND.
 
 Größe ca. 23,5 × 19,5 × 9 mm ohne Kabel.
@@ -194,7 +198,7 @@ Drehbares 3D-Modell zum Öffnen im Browser: [`docs/3d-modell/Aufbau3D_Mini-S3.ht
 |---|---|
 | ![Foto MAX-Seite](docs/hardware-bilder/foto_max_seite_S3.jpg) | ![Foto ESP-Seite](docs/hardware-bilder/foto_esp_seite_S3.jpg) |
 
-Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
+Auf den Fotos (Stand v0.13) liegt Port A noch an IO5/IO6 (grün IO5, orange IO6).
 
 ### Gehäuse
 
@@ -211,10 +215,10 @@ Auf den Fotos haben die Port-A-Kabel noch andere Farben (grün IO5, orange IO6).
 | Funktion | GPIO |
 |---|---|
 | MAX98357A direkt auf 5V, GND, 3V3, IO1..IO4 | GAIN 1, DIN 2, BCLK 3, LRC 4 |
-| Port A CRSF RX / TX | 5 / 6 |
+| Port A CRSF RX / TX (Header-Pins RX/TX, ab v0.14) | 44 / 43 |
 | Port B RX / TX | 7 / 8 |
 | WLAN-Taste = BOOT-Taste auf dem S3-Zero | 0 |
-| Port C RX / TX | 44 / 43 |
+| Port C RX / TX (ab v0.14) | 5 / 6 |
 | Status-LED (WS2812 auf dem S3-Zero) | 21 |
 
 ### ESP32-C3 Pro Mini
@@ -224,7 +228,7 @@ Der MAX98357A wird **umgedreht** (Bauteilseite zum ESP) direkt auf die Versorgun
 | Funktion | GPIO |
 |---|---|
 | MAX98357A direkt auf 5V, GND, 3V3 (SD offen), IO4..IO1 | GAIN 4, DIN 3, BCLK 2, LRC 1 |
-| Port A CRSF RX / TX | 20 / 21 |
+| Port A CRSF RX / TX (Header-Pins RX/TX) | 20 / 21 |
 | Port B RX / TX | 5 / 6 |
 | WLAN-Taste = BOOT-Taste | 9 |
 | Status-LED (vorläufig WS2812, am Board prüfen) | 8 |

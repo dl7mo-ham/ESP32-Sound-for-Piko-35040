@@ -62,6 +62,8 @@ void Reset_all() {
     config.WifiAutoTimeoutSec  = 60;
     config.WifiAlwaysOn        = true;
     config.LedRgb              = STATUS_LED_RGB_DEFAULT;   // v0.13
+    config.FunkMode            = 0;             // v0.14
+    config.Funk                = FunkConfig();
     for (int i = 0; i < SND_FILE_SLOTS; i++) soundMapDefaultName(i, config.Sound_File[i]);
     configDirty = true;
 }
@@ -145,6 +147,8 @@ void loadConfig() {
         }
     }
     config.LedRgb                 = p.getBool("ledrgb", STATUS_LED_RGB_DEFAULT);   // v0.13
+    config.FunkMode               = (uint8_t)constrain(p.getUChar("fkmode", 0), 0, 2);   // v0.14
+    funkConfigLoad(p, config.Funk);
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
@@ -193,6 +197,8 @@ void saveConfigForce() {
     }
     p.putBytes("sfiles", config.Sound_File, sizeof(config.Sound_File));
     p.putBool("ledrgb", config.LedRgb);   // v0.13
+    p.putUChar("fkmode", config.FunkMode);   // v0.14
+    funkConfigSave(p, config.Funk);
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
