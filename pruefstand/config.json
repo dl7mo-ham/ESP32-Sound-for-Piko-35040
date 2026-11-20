@@ -1,0 +1,76 @@
+{
+  "title": "Sound Mini Prüfstand",
+  "firmwares": [
+    {
+      "id": "mini",
+      "name": "Sound Mini",
+      "dir": "firmware/ESP32_Sound_Mini_S3",
+      "page": {
+        "file": "WebServerManager.cpp",
+        "var": "RCSOUND_HTML"
+      },
+      "mock": "mock_sound.js",
+      "version": "Version",
+      "lua": {
+        "files": [
+          "src/RC_Common/*.h",
+          "*.h",
+          "*.cpp",
+          "*.ino",
+          "!XT_I2S*"
+        ],
+        "expect_max": "CRSF_PARAM_COUNT"
+      },
+      "api": {
+        "GET /api/config": "buildConfigJson",
+        "GET /api/debug": "handleApiDebug",
+        "GET /api/soundfiles": "handleApiSoundFiles"
+      },
+      "api_files": [
+        "src/RC_Common/*.h",
+        "*.h",
+        "*.cpp",
+        "*.ino",
+        "!XT_I2S*"
+      ],
+      "api_init": [
+        "Reset_all"
+      ],
+      "export": [
+        "BOARD_NAME",
+        "BOARD_SHORT",
+        "PIN_I2S_DOUT",
+        "PIN_I2S_BCLK",
+        "PIN_I2S_LRC",
+        "PIN_MAX_GAIN",
+        "PIN_CRSF_RX",
+        "PIN_CRSF_TX",
+        "PIN_PORTB_RX",
+        "PIN_PORTB_TX",
+        "HAS_PORT_C",
+        "PIN_PORTC_RX",
+        "PIN_PORTC_TX",
+        "PIN_STATUS_LED",
+        "STATUS_LED_WS2812",
+        "PIN_BOOT_BUTTON",
+        "STATUS_LED_RGB_DEFAULT"
+      ],
+      "variants": [
+        {
+          "id": "s3",
+          "name": "ESP32-S3 Zero",
+          "defines": {
+            "CONFIG_IDF_TARGET_ESP32S3": "1"
+          }
+        },
+        {
+          "id": "c3",
+          "name": "ESP32-C3 Pro Mini",
+          "defines": {
+            "CONFIG_IDF_TARGET_ESP32C3": "1"
+          }
+        }
+      ]
+    }
+  ]
+}
