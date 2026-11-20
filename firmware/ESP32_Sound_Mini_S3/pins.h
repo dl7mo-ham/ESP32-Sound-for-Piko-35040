@@ -108,9 +108,13 @@
 // GAIN des MAX: Eingang ohne Pull (offen) = 9 dB, LOW = 12 dB, HIGH = 6 dB
 #define PIN_MAX_GAIN  1
 
-// ── Port A: CRSF (Hardware-UART, Serial2) ────────────────────────────
-#define PIN_CRSF_RX   5
-#define PIN_CRSF_TX   6
+// ── Port A: CRSF (Hardware-UART0, Serial0) ───────────────────────────
+// v0.14: auf die mit RX/TX beschrifteten Header-Pins GPIO44/43 gelegt
+// (vorher GPIO5/6), gleich wie Multiswitch S3 und CRSF-Router S3. Das
+// ROM-Bootlog auf IO43 (nur beim Start) verwirft der Empfaenger.
+// UMSTECKEN beim Update von v0.13: Empfaenger an RX/TX, GPS an GPIO5/6.
+#define PIN_CRSF_RX   44
+#define PIN_CRSF_TX   43
 
 // ── Port B: Hardware-UART1 (Serial1), Rolle waehlbar ─────────────────
 // S.Port-Rolle: TX -[1N4148 Anode->Kathode]-> S.Port-Signal <- RX
@@ -133,12 +137,11 @@
 // beim CRSF-Router festgestellt). Vorgabe fuer Lua "LED Farbfolge".
 #define STATUS_LED_RGB_DEFAULT true
 
-// ── Port C: Hardware-UART0 (Serial0), Rolle waehlbar wie Port B ──────
-// IO43/44 sind die TX/RX-Pins am Header (UART0 ist frei, die Konsole
-// laeuft ueber USB). Das ROM-Bootlog auf IO43 (nur beim Start) wird von
-// GPS und CRSF-Geraeten verworfen.
-#define PIN_PORTC_RX  44
-#define PIN_PORTC_TX  43
+// ── Port C: Hardware-UART2 (Serial2), Rolle waehlbar wie Port B ──────
+// v0.14: GPIO5/6 (vorher die RX/TX-Header-Pins 44/43, die jetzt Port A
+// sind).
+#define PIN_PORTC_RX  5
+#define PIN_PORTC_TX  6
 
 #endif // Board
 
