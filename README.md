@@ -257,3 +257,7 @@ Aktuell v0.13. Alle Versionen mit Änderungen: [CHANGELOG.md](CHANGELOG.md).
 ## Lizenz
 
 GPL-3.0, wie das Ursprungsprojekt (enthält Code von XTronical).
+
+## Prüfstand (WebUI und Lua im Browser)
+
+In [`pruefstand/`](pruefstand/) liegt eine Seite, die die echte Weboberfläche und das Lua-Menü dieser Firmware im Browser zeigt (alle Varianten, Modul simuliert): [Prüfstand öffnen](https://raw.githack.com/mnorden81/ESP32-Sound-Mini-S3/main/pruefstand/pruefstand.html). Sie wird bei jeder Firmware-Änderung neu gebaut, die GitHub-Prüfung „Prüfstand" achtet darauf.
