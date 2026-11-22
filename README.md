@@ -265,6 +265,10 @@ Aktuell v0.13. Alle Versionen mit Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
 GPL-3.0, wie das Ursprungsprojekt (enthält Code von XTronical).
 
+## Sound-Aufbereitung (im Browser)
+
+[Sound-Aufbereitung öffnen](https://raw.githack.com/mnorden81/ESP32-Sound-Mini-S3/main/werkzeuge/sound-aufbereitung.html#mini) – prüft Audiodateien (WAV, MP3, M4A …) und wandelt sie passend für dieses Modul um: Sound Mini S3 (MAX98357A, Flash-Speicher). Ohne Installation, auch am Handy; nichts wird hochgeladen, alles läuft im Browser. Die Dateien behalten ihren Namen (Umlaute und Leerzeichen werden wie im Modul ersetzt), die Zuordnung zum Sound-Platz geschieht im Modul im Tab „Speicher“. Oben lässt sich das Modul umstellen. Selbst erzeugte, rechtefreie Testsounds (Hupe, Blinker, Rückfahrwarner, Martinshorn, Motor-Leerlauf als Schleife, Sweep 40 Hz–16 kHz) gibt es per Knopf „Testsounds einfügen“ oder direkt in [`werkzeuge/testsounds/`](werkzeuge/testsounds/).
+
 ## Prüfstand (WebUI und Lua im Browser)
 
 In [`pruefstand/`](pruefstand/) liegt eine Seite, die die echte Weboberfläche und das Lua-Menü dieser Firmware im Browser zeigt (alle Varianten, Modul simuliert): [Prüfstand öffnen](https://raw.githack.com/mnorden81/ESP32-Sound-Mini-S3/main/pruefstand/pruefstand.html). Sie wird bei jeder Firmware-Änderung neu gebaut, die GitHub-Prüfung „Prüfstand" achtet darauf.
