@@ -6,6 +6,7 @@ Abgeleitet von [ESP32-RC-Sound V7](https://github.com/mnorden81/mnorden81-ESP32-
 - **Eingang:** nur CRSF (Port A), busbasiert
 - **Sounds:** Motor (Start/Loop/Stopp) + 4 Zusatzsounds
 - **Speicher:** Flash (LittleFS), keine SD-Karte
+- **Klangqualität (ab v0.15):** Mischer repariert. Ein Kanal wurde bei jedem negativen Sample zerstört, der eingebaute „Kompressor“ hat alles über ca. −9 dB verzerrt (jetzt ein sauberer Begrenzer, der nur bei Übersteuerung eingreift), Volumen über 100 % kippt nicht mehr über, andere Abtastraten und die Motor-Drehzahl werden weich umgerechnet (lineare Interpolation, kein Phasensprung an der Puffergrenze), 8-Bit-WAV wird richtig gelesen. Nicht auf Hardware getestet.
 - **Funk (ab v0.14):** CRSF per ESP-NOW statt Kabel, wie Multiswitch v5.04 und CRSF-Router S3. Lua-Ordner „Funk“ oder Web-UI (Einstellung → Funk): Betrieb Kabel / Kabel + Funk (Zentrale) / Funk (Teilnehmer), Fahrzeug-Kennung, Funkkanal, Sendeleistung, Kanal-Rate (Zentrale), Rückkanal (Teilnehmer). Gilt nach Neustart. Mit Funk läuft das WLAN auf dem Funkkanal, der Web-Tab „Funk“ zeigt Verbindung, Verlust und Gegenstellen.
 - **Lua-Ordner „Sounds“ (ab v0.14):** oben „Sound Nr“ wählen, darunter stehen sofort Name, Quelle, Kanal, Volumen, Wiedergabe und Test dieses Sounds. Gleich in allen Soundmodulen.
 - **Ports:** Port A (CRSF), Port B und Port C als Hardware-UART, Rolle je Port in Web-UI und Lua wählbar: Aus, CRSF (Modulkette), S.Port, GPS oder Raw
