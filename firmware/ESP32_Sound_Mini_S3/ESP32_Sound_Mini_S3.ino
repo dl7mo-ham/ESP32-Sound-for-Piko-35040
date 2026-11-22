@@ -87,7 +87,7 @@
 #include "mem_info.h"
 #include "sound_map.h"
 
-uint16_t Version = 14; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (14 -> "0.14")
+uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren (CRSF-only). Die
 // Variable bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
