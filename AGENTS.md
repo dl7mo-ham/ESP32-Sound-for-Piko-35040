@@ -44,7 +44,7 @@ Hintergrund und bisherige Umsetzung: [`docs/upstream-konfliktminimierung-plan.md
 |---|---|
 | `firmware/ESP32_Sound_Mini_S3/ESP32_Sound_Mini_S3.ino` | Arduino-Sketch, `setup()`/`loop()`; nur dünne Aufrufe projektlokaler Module |
 | `firmware/ESP32_Sound_Mini_S3/*.cpp/.h` | Projektlokale Erweiterungen (Reed, Queue, Web-Tab, Motor, LED, …) |
-| `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` | Upstream-Kopie 1.4.0, **nicht verändern** |
+| `firmware/ESP32_Sound_Mini_S3/src/RC_Common/` | Upstream-Kopie 1.5.2, **nicht verändern** |
 | `firmware/ESP32_Sound_Mini_S3/tests/` | Projektlokale Host-Tests hier ergänzen |
 | `firmware/platformio.ini` | Build für `s3` (Default) und `c3` |
 | `docs/` | Doku, Pläne, Bilder; `docs/audio-ablauf.md` bei Ablaufänderungen aktualisieren |

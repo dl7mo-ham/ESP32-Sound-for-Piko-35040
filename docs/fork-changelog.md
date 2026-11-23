@@ -4,6 +4,16 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.15+dl7mo.9 (2026-11-23)
+
+- Upstream-Merge auf `v0.15` eingespielt (Funk/ESP-NOW v0.14, Prüfstand, Browser-Sound-Aufbereitung, v0.15-Mischer-Reparatur). `RC_Common` ist damit upstream-identisch bei **1.5.2** (neu: `funk_link.{h,cpp}`, CRSF-Router-Port D); das Manifest ist grün.
+- Textliche Konflikte in `ESP32_Sound_Mini_S3.ino`, `WebServerManager.cpp`, `XT_I2S_Audio.cpp` und `config.h` aufgelöst. Alle projektlokalen Reed-/Queue-/Bridge-Dateien blieben unverändert; in Upstream-Dateien nur die nötigen Aufrufstellen ergänzt.
+- **Reed bleibt rein lokal:** `FunkMode_boot` wird bei Port A = Reed/Aus auf 0 gesetzt, `funk.loop()` läuft nur bei aktivem Funk, die 16 CRSF-Kanäle kommen weiter aus `crsf_bridge.cpp`. Web-Tab „Reed“ und neues Funk-Tab koexistieren (`TABS` enthält beide). Die Status-LED berücksichtigt `funk.conflict()`/`funk.dupAddr()` nur bei aktiver CRSF.
+- Im Mischer ist upstreams Begrenzer mit 16-Bit-Maske statt `ApplyCompressor()` übernommen; die beiden lokalen Lautstärke-Korrekturen (kein `Volume = 100` beim Laden, kein `SetVolume()` in `NextSample()`) bleiben erhalten.
+- **Achtung Hardware:** Port A liegt beim S3 jetzt auf RX/TX = IO44/43 (`Serial0`), Port C auf IO5/6 (`Serial2`). Die Reed-Pins folgen den `pins.h`-Makros; vorhandene Verdrahtung muss umgesteckt werden. Web-Anzeige und Doku zeigen jetzt IO44/43.
+- CRSF-Cache-Token jetzt 209. Host-Tests (3), RC_Common-Tests (55), `sha256sum -c` sowie Builds für `s3` und `c3` sind grün. Beim C3 ist der Flash mit 98,4 % allerdings sehr knapp.
+- **Noch nicht auf Hardware getestet.**
+
 ## v0.13+dl7mo.8 (2026-11-18)
 
 - Die sofortige Lautstärke-Übertragung der Web-Regler (`m-vol`, `s-vol`) steckte als Fork-Diff mitten in `WebServerManager.cpp`: zwei `onchange`-Attribute, `liveVol()` und ein geändertes `testSound()`. Sie liegt jetzt als `appLiveVol()` plus zwei `change`-Listener im projektlokalen `/reed_ui.js` (`reed_web.cpp`). Das Backend `/api/sound` mit `{id,vol}` bleibt unverändert; das Verhalten ist gleich.

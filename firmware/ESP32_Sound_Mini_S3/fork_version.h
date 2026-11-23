@@ -3,7 +3,7 @@
  *
  * Der Fork hat eine eigene Versionsachse: `<upstream-Basis>+dl7mo.<Zaehler>`.
  * Sie steht nur in docs/fork-changelog.md und in der README-Fork-Sektion.
- * Die `Version`-Zeile im Sketch bleibt dagegen upstream-identisch (v0.13),
+ * Die `Version`-Zeile im Sketch bleibt dagegen upstream-identisch (v0.15),
  * damit Upstream-Updates dort nicht haengen bleiben.
  *
  * CRSF braucht ein wechselndes Byte als "Parameter Version Number", damit
@@ -17,11 +17,11 @@
 #ifndef FORK_VERSION_H
 #define FORK_VERSION_H
 
-#define FORK_SEQ 8
-#define APP_PARAM_VERSION (200 + FORK_SEQ)   // aktuell 208
+#define FORK_SEQ 9
+#define APP_PARAM_VERSION (200 + FORK_SEQ)   // aktuell 209
 
 // Nur informativ (z. B. fuer serielle Ausgabe); passt nicht in
 // char versionString[6] und wird deshalb nicht ueber Web/Lua angezeigt.
-#define FORK_VERSION_LABEL "v0.13+dl7mo.8"
+#define FORK_VERSION_LABEL "v0.15+dl7mo.9"
 
 #endif

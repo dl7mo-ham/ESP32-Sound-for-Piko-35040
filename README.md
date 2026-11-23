@@ -5,7 +5,7 @@
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Fork-Version:** v0.13+dl7mo.8 (Basis upstream v0.13, RC_Common 1.4.0 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen und GPIO-Anzeige im Web-Tab; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge auch im Web-Tab „Reed“ einstellbar; Status-LED dunkel im Reed-Modus ohne Flamme; S3 zuletzt auf Hardware getestet: v0.13+dl7mo.8 am 18.11.2026; C3-Variante weiterhin nicht auf Hardware getestet). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
+**Aktuelle Fork-Version:** v0.15+dl7mo.9 (Basis upstream v0.15, RC_Common 1.5.2 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen und GPIO-Anzeige im Web-Tab; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge auch im Web-Tab „Reed“ einstellbar; Status-LED dunkel im Reed-Modus ohne Flamme; Reed-Modus rein lokal: bei Port A = Reed/Aus bleibt der Funk aus; S3/Port-A-Pins jetzt IO44/43 statt IO5/6 – beim Update umstecken! Zuletzt auf Hardware getestet: v0.13+dl7mo.8 am 18.11.2026; C3-Variante weiterhin nicht auf Hardware getestet). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
@@ -15,7 +15,7 @@ steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von htt
 
 Seit `v0.13+dl7mo.1` (früher v0.14) ist Reed keine feste Compile-Option mehr, sondern eine **Port-Rolle**: Unter „Einstellung“ kann Port A (und auf dem S3 auch B/C) auf `Aus`, `CRSF` oder `Reed` gestellt werden. Im Reed-Modus werden **beide Pins des Ports als Eingänge mit Pull-up** gelesen (kein UART); ein Kontakt gegen GND löst einen Impuls aus. Rollenwechsel wirken erst nach einem Neustart.
 
-Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewählt und einzeln getestet; daneben steht die GPIO-Nummer (z. B. `RX (IO5)` auf Port A des S3):
+Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewählt und einzeln getestet; daneben steht die GPIO-Nummer (z. B. `RX (IO44)` auf Port A des S3):
 
 | Aktion | Wirkung |
 |---|---|
@@ -26,7 +26,7 @@ Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewä
 
 Ein Reed-Impuls legt die Aktion in dieselbe kleine Kommando-Queue wie die Web-Testbuttons; ausgeführt wird sie zentral in `loop()`. Die Entprellzeit (5–500 ms, Default 50 ms) und alle Aktionen werden sofort übernommen und in der Konfiguration gespeichert (auch in Export/Backup).
 
-Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr: Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
+Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr und der Funk bleibt ebenfalls aus (Reed rein lokal): Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
 
 ### Versionen dieses Forks
 

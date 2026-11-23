@@ -32,7 +32,7 @@ verarbeitet danach die One-Shot-Flags.
 > [!NOTE]
 > Seit `v0.13+dl7mo.1` (früher v0.14) ist Reed eine Port-Rolle (nicht mehr `REED_TRIGGER_ENABLED`).
 > Seit `v0.13+dl7mo.2` (früher v0.15) ist sie projektlokal `APP_UROLE_REED` = 100 (`reed_roles.h`);
-> RC_Common 1.4.0 bleibt upstream-identisch.
+> RC_Common 1.5.2 bleibt upstream-identisch.
 > Ein Reed-Port liest RX und TX mit Pull-up; ein Impuls (HIGH → LOW, nach Entprellzeit) löst die konfigurierte Aktion
 > aus: Sound 1–4, Motor Ein/Aus oder Flamme Ein/Aus. Aktionen sind pro Pin frei wählbar und im
 > Web-Tab „Reed“ einzeln testbar. Rollenwechsel brauchen einen Neustart, Aktionen/Entprellzeit
@@ -234,6 +234,7 @@ noch die Aufrufe (Dateiname in Klammern):
 loop()                                  (ESP32_Sound_Mini_S3.ino)
   ├─ WebServerManager::Webpage()        (nur wenn AP aktiv)
   ├─ uartPortsUpdate()                  (Port B/C: S.Port, GPS)
+  ├─ funk.loop()                        (RC_Common/funk_link.cpp, nur bei Port A = CRSF und FunkMode != 0)
   ├─ reedUpdate()                       (reed_trigger.cpp: RX/TX, Entprellung)
   ├─ processCommandQueue()              (command_queue.cpp: Reed + Web-Test)
   │    ├─► Sound_on_web[1..4] = true
@@ -250,6 +251,10 @@ loop()                                  (ESP32_Sound_Mini_S3.ino)
   ├─ motorControlLoop()                 (motor_control.cpp: CRSF-Toggle)
   └─ Motor-State-Machine + Throttle-Rampe
 ```
+
+> Bei Port A = Reed/Aus ist `FunkMode_boot = 0`: `funk.loop()` und `crsfLoopTasks()`
+> laufen nicht, die 16 CRSF-Kanäle bleiben ohne Wirkung. Reed-Aktionen und
+> Web-Test laufen rein lokal. Der Funk ist nur bei Port A = CRSF aktiv.
 
 ---
 
