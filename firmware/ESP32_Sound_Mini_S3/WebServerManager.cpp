@@ -19,6 +19,9 @@
 #include "reed_roles.h"      // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "config_reed.h"     // Reed-JSON/POST/NVS (projektlokal)
 #include "reed_web.h"        // Reed-Tab HTML, /reed_ui.js, /api/reed/test
+#include "src/RC_Common/funk_link.h"   // v0.14: Funk (ESP-NOW)
+extern FunkLink funk;
+extern uint8_t FunkMode_boot;
 
 // Zugriff auf die CRSF-Instanz aus dem Hauptsketch (fuer Diagnose-Zaehler)
 extern CRSF crsf;
@@ -78,6 +81,13 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 .btn-r{background:var(--red);color:#fff}.btn-r:hover{opacity:.85}
 .btn-s{background:var(--surf2);color:var(--text);border:1px solid var(--border)}.btn-s:hover{border-color:var(--accent);color:var(--accent)}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.amp{width:12px;height:12px;border-radius:50%;background:var(--sub);display:inline-block;flex:none}
+.amp.g{background:var(--green)}.amp.y{background:var(--yellow)}.amp.r{background:var(--red)}
+.fstat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.fstat div{background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:6px 8px}
+.fstat b{display:block;font-family:var(--mono);font-size:15px}
+.fstat span{font-size:11px;color:var(--sub)}
+.peer{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;background:var(--surf2);font-size:12px}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
 .bg-g{background:#1a3a1a;color:var(--green)}
 .bg-r{background:#3a1a1a;color:var(--red)}
@@ -134,6 +144,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <div class="tab" onclick="showTab('store')">Speicher</div>
   <div class="tab" onclick="showTab('settings')">Einstellung</div>
   <div class="tab" onclick="showTab('reed')">Reed</div>
+  <div class="tab" id="tab-btn-funk" style="display:none" onclick="showTab('funk')">Funk</div>
   <div class="tab" onclick="showTab('wifi')">WiFi</div>
   <div class="tab" onclick="showTab('lipo')">LiPo</div>
   <div class="tab" onclick="showTab('debug')">Debug</div>
@@ -352,6 +363,34 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <hr>
   <!-- Port B (Hardware-UART1) und Port C (Hardware-UART0), Rolle je Port
        waehlbar, Pins siehe pins.h. -->
+  <!-- v0.14: Funk (ESP-NOW), wie Multiswitch v5.04 -->
+  <div class="card" id="c-funk">
+    <div class="card-title">Funk (ESP-NOW)</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="lbl">Betrieb</span>
+      <select id="fk-mode" onchange="onFunkMode()">
+        <option value="0">Kabel (ohne Funk)</option>
+        <option value="1">Kabel + Funk (Zentrale)</option>
+        <option value="2">Funk (Teilnehmer)</option>
+      </select>
+    </div>
+    <div id="fk-rows">
+    <div class="row"><span class="lbl">Fahrzeug-Kennung</span><input type="number" id="fk-id" min="1" max="255" style="width:90px"></div>
+    <div class="row"><span class="lbl">Funkkanal</span><select id="fk-ch"></select></div>
+    <div class="row"><span class="lbl">Sendeleistung</span><select id="fk-pwr">
+      <option value="2">2 dBm</option><option value="5">5 dBm</option><option value="8">8 dBm</option>
+      <option value="11">11 dBm</option><option value="15">15 dBm</option><option value="20">20 dBm</option></select></div>
+    <div class="row" id="fk-row-rate"><span class="lbl">Kan&auml;le alle</span><select id="fk-rate">
+      <option value="0">jedes Frame</option><option value="5">5 ms</option><option value="10">10 ms</option>
+      <option value="20">20 ms</option><option value="50">50 ms</option></select></div>
+    <div class="row" id="fk-row-back"><span class="lbl">R&uuml;ckkanal</span><select id="fk-back">
+      <option value="1">An (Lua, Telemetrie)</option><option value="0">Aus (nur empfangen)</option></select></div>
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-top:6px" id="fk-help"></div>
+    <button class="btn btn-p" onclick="saveFunk()">Funk speichern</button>
+    <div style="font-size:12px;margin-top:6px" id="fk-hint"></div>
+  </div>
+  <hr>
   <div class="card" id="c-portbc">
     <div class="card-title">Port A / Port B / Port C</div>
     <div class="row" style="margin-bottom:10px">
@@ -473,6 +512,25 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 )HTML" REED_TAB_HTML R"HTML(
 
 <!-- ═══ WIFI ════════════════════════════════════════════════════════════ -->
+<!-- v0.14: Funk (ESP-NOW), nur sichtbar, wenn Funk an ist -->
+<div id="tab-funk" class="hidden">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="amp" id="f-amp"></span><b id="f-name"></b>
+      <span class="badge" id="f-role"></span><span class="badge" id="f-state"></span>
+    </div>
+    <div style="font-size:11px;color:var(--sub);margin-top:6px;font-family:var(--mono)" id="f-sub"></div>
+    <div id="f-warn" style="display:none;margin-top:8px;color:var(--yellow);font-size:12px"></div>
+  </div>
+  <div class="card"><div class="card-title">Dieses Modul, pro Sekunde</div><div class="fstat" id="f-own"></div></div>
+  <div class="card">
+    <div class="card-title" id="f-peers-title">Gegenstellen</div>
+    <div id="f-peers"></div>
+    <button class="btn btn-s" onclick="xpost('/api/funk/reset',{},loadFunk)">Z&auml;hler zur&uuml;cksetzen</button>
+    <div style="font-size:12px;color:var(--sub);margin-top:8px">Ampel: gr&uuml;n = Verlust unter 1 % und RSSI &uuml;ber &minus;75 dBm, gelb = bis 5 % oder bis &minus;85 dBm, rot = schlechter.</div>
+  </div>
+</div>
+
 <div id="tab-wifi" class="hidden">
   <div class="card">
     <div class="card-title">WiFi Einstellungen</div>
@@ -637,7 +695,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
 <script src="/reed_ui.js"></script>
 <script>
 var cfg={}, dbg={}, curSnd=1, lipoTmr=0;
-var TABS=['motor','sounds','store','settings','reed','wifi','lipo','debug'];
+var TABS=['motor','sounds','store','settings','reed','funk','wifi','lipo','debug'];   // Reed lokal + v0.14 Funk
 
 // ─── Toast ────────────────────────────────────────────────────────────────
 var toastTmr=0;
@@ -680,6 +738,8 @@ function showTab(t){
   if(t==='motor'||t==='sounds') loadSoundFileStatus();
   if(t==='store') loadSoundLib();   // v0.12: Sound-Zuordnung
   if(t==='reed') renderReed();      // v0.14: Reed-Aktionen/Testbuttons
+  clearInterval(funkTmr); funkTmr=0;
+  if(t==='funk'){ loadFunk(); funkTmr=setInterval(loadFunk,1000); }   // v0.14
 }
 
 // ─── XHR-Helfer ──────────────────────────────────────────────────────────
@@ -833,6 +893,67 @@ function selSnd(n){
   sv('s-src',s.source); slSet('s-vol','lv-s-vol',s.vol); sv('s-mode',s.mode);
 }
 
+// ─── Funk (v0.14, RC_Common funk_link, wie Multiswitch v5.04) ─────────────
+var funkTmr=0, funkModeCfg=0;
+function funkAmp(loss,rssi,ok){ if(!ok)return 'r'; if(loss<1&&rssi>-75)return 'g'; if(loss<=5&&rssi>=-85)return 'y'; return 'r'; }
+function fmtLoss(v){return v.toFixed(1).replace('.',',')+' %';}
+function fillFunk(f){
+  var s=document.getElementById('fk-ch');
+  if(!s.options.length) for(var c=1;c<=13;c++) s.add(new Option('Kanal '+c+([1,6,11].indexOf(c)>=0?' (empfohlen)':''),c));
+  sv('fk-mode',f.mode);
+  funkModeCfg=f.mode;
+  sv('fk-id',f.id); sv('fk-ch',f.ch); sv('fk-pwr',f.pwr); sv('fk-rate',f.rate); sv('fk-back',f.back?1:0);
+  document.getElementById('tab-btn-funk').style.display=f.boot?'':'none';
+  onFunkMode();
+}
+function onFunkMode(){
+  var m=gi('fk-mode');
+  document.getElementById('fk-rows').style.display=m?'':'none';
+  document.getElementById('fk-row-rate').style.display=m===1?'':'none';
+  document.getElementById('fk-row-back').style.display=m===2?'':'none';
+  document.getElementById('fk-help').textContent=m===1
+    ?'Zentrale: Kanaele kommen vom Empfaenger am Kabel und gehen zusaetzlich in den Funk. Pro Fahrzeug genau eine Zentrale.'
+    :m===2?'Teilnehmer: Kanaele kommen aus dem Funk, der Kabel-Eingang (Port A) bleibt frei. Kennung und Kanal wie bei der Zentrale einstellen.'
+    :'Ohne Funk: Kanaele nur vom Kabel (Port A).';
+}
+function saveFunk(){
+  var id=Math.max(1,Math.min(255,gi('fk-id')||1));
+  var d={funk_mode:gi('fk-mode'),funk_id:id,funk_ch:gi('fk-ch'),funk_pwr:gi('fk-pwr'),funk_rate:gi('fk-rate'),funk_back:gi('fk-back')};
+  xpost('/api/config',d,function(){
+    var h=document.getElementById('fk-hint');
+    h.textContent='Gespeichert, wirkt nach einem Neustart des Moduls.'; h.style.color='var(--green)';
+    loadConfig();
+  });
+}
+function loadFunk(){
+  xget('/api/funk',0,function(r){
+    var f; try{f=JSON.parse(r);}catch(e){return;}
+    if(!f||!f.role)return;
+    var ok=f.connected, Z=(f.role==='Zentrale');
+    document.getElementById('f-amp').className='amp '+funkAmp(f.loss,f.rssi,ok);
+    document.getElementById('f-name').textContent=f.name+' @'+f.addr_nr;
+    document.getElementById('f-role').textContent=f.role;
+    var st=document.getElementById('f-state');
+    st.textContent=ok?'Funk-Verbindung da':'keine Funk-Verbindung';
+    st.style.background=ok?'#12341f':'#3b1414'; st.style.color=ok?'var(--green)':'var(--red)';
+    document.getElementById('f-sub').textContent='Kennung '+f.id+' · Kanal '+f.ch+' · '+f.pwr+' dBm · CRSF-Adresse '+f.addr+' · MAC '+f.mac;
+    var w=[];
+    if(f.conflict) w.push('Funk-Konflikt: eine zweite Zentrale mit derselben Kennung ist im Funk. Pro Fahrzeug nur eine Zentrale.');
+    if(f.dup_addr) w.push('Adresskonflikt: eine Gegenstelle hat dieselbe CRSF-Adresse ('+f.addr+'). Modul-Adresse aendern.');
+    if(!ok&&!Z) w.push('Failsafe: seit '+(f.lost_ms/1000).toFixed(1).replace('.',',')+' s nichts von der Zentrale. Motor und Sounds aus, an Port B/C geht nichts weiter.');
+    var wd=document.getElementById('f-warn'); wd.style.display=w.length?'':'none'; wd.innerHTML=w.join('<br>');
+    var o=f.own;
+    var t=Z?[[o.ch_cable,'Kanaele vom Kabel'],[o.frames_out,'Frames in den Funk'],[o.frames_in,'Antworten aus Funk'],[o.sent,'Pakete gesendet'],[o.noack,'nicht zugestellt'],[o.qfull,'Warteschlange voll']]
+           :[[o.ch_funk,'Kanaele aus Funk'],[o.frames_in,'Frames aus Funk'],[o.frames_out,'Antworten in den Funk'],[o.sent,'Pakete gesendet'],[o.noack,'nicht zugestellt'],[o.qfull,'Warteschlange voll']];
+    document.getElementById('f-own').innerHTML=t.map(function(x){return '<div><b>'+x[0]+'</b><span>'+x[1]+'</span></div>';}).join('');
+    document.getElementById('f-peers-title').textContent='Gegenstellen ('+f.peers.length+')';
+    document.getElementById('f-peers').innerHTML=f.peers.length?f.peers.map(function(p){
+      return '<div class="peer"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="amp '+funkAmp(p.loss,p.rssi,p.alive)+'"></span><b>'+p.name+'</b><span class="badge">'+p.role+'</span><span style="font-family:var(--mono);color:var(--sub)">'+p.addr+'</span></div>'+
+        '<div style="color:var(--sub);margin-top:4px">RSSI '+p.rssi+' dBm · Verlust '+fmtLoss(p.loss)+' · Pakete/s '+p.pps+'</div></div>';
+    }).join(''):'<div style="font-size:12px;color:var(--sub)">Noch keine Gegenstelle gehoert.</div>';
+  });
+}
+
 // ─── Config laden ─────────────────────────────────────────────────────────
 function loadConfig(){
   xget('/api/config',0,function(resp){
@@ -874,6 +995,7 @@ function loadConfig(){
         (s.storage_ready?', frei '+mb(s.storage_total-s.storage_used)+' von '+mb(s.storage_total):'');
     }
     onPortBMode();
+    if(cfg.funk) fillFunk(cfg.funk);   // v0.14
     var w=cfg.wifi;
     sv('w-ssid',w.ssid); sv('w-pass',w.pass||'');
     sv('w-ip',w.ip); sv('w-dev',w.device);
@@ -1371,7 +1493,10 @@ function importConfigRun(data){
     reed_b_rx:reedAct.b_rx, reed_b_tx:reedAct.b_tx,
     reed_c_rx:reedAct.c_rx, reed_c_tx:reedAct.c_tx,
     ssid:w.ssid, pass:w.pass, ip:w.ip, device:w.device,
-    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1
+    poll_id0:sp.poll_id0, poll_id1:sp.poll_id1,
+    funk_mode:(data.funk||{}).mode, funk_id:(data.funk||{}).id, funk_ch:(data.funk||{}).ch,
+    funk_pwr:(data.funk||{}).pwr, funk_rate:(data.funk||{}).rate,
+    funk_back:((data.funk||{}).back===undefined?undefined:((data.funk||{}).back?1:0))
   });
 
   // Feldname-Stolperfalle: /api/config liefert Motor-throttle_mode als
@@ -1631,6 +1756,7 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
   // /api/uartroles kommen aus RC_Common (web_common.cpp), gleich in allen
   // Modulen. Schreibt in das inaktive OTA-Segment.
   webCommonRegister(server);
+  funk.registerWeb(server);   // v0.14: GET /api/funk, POST /api/funk/reset
   // v0.04: Einstellungs-Backups im Flash (/api/backup/*, RC_Common), ersetzt
   // die SD-Backups (das Mini hat keine SD-Karte)
   cfgBackupRegister(server);
@@ -1656,7 +1782,9 @@ void WebServerManager::begin(const char* apSsid, const char* apPassword) {
 void WebServerManager::enableAP() {
   if (apActive) return;
   Serial.printf("Freier Heap vor WLAN-Start: %u Bytes\n", (unsigned)ESP.getFreeHeap());
-  bool apOk = WiFi.softAP(storedApSsid, storedApPassword);
+  // v0.14: mit Funk auf dessen Kanal (ein Funkteil fuer beides)
+  bool apOk = WiFi.softAP(storedApSsid, storedApPassword, funk.active() ? funk.channel() : 1);
+  funk.wifiChanged();
   if (!apOk) Serial.println("!!! FEHLER: WiFi.softAP() fehlgeschlagen !!!");
   IPAddress apIP, gw, subnet(255,255,255,0);
   if (!apIP.fromString(config.WiFi_IP)) apIP.fromString("192.168.1.1");
@@ -1674,7 +1802,8 @@ void WebServerManager::enableAP() {
 void WebServerManager::disableAP() {
   if (!apActive) return;
   server.stop();
-  WiFi.softAPdisconnect(true);
+  WiFi.softAPdisconnect(true);   // mit Funk bleibt die STA-Seite (ESP-NOW) an
+  funk.wifiChanged();
   apActive = false;
   Serial.println("AP gestoppt.");
 }
@@ -1864,6 +1993,15 @@ void WebServerManager::handleApiConfigPost() {
       changed = true;
   }
 
+  // v0.14: Funk, wirkt nach Neustart
+  if (jsonGetInt(body, "funk_mode", v)) { config.FunkMode = (uint8_t)constrain(v,0,2); changed=true; }
+  if (jsonGetInt(body, "funk_id",   v)) { config.Funk.id     = (uint8_t)constrain(v,1,255); changed=true; }
+  if (jsonGetInt(body, "funk_ch",   v)) { config.Funk.ch     = (uint8_t)constrain(v,1,13);  changed=true; }
+  if (jsonGetInt(body, "funk_pwr",  v)) { config.Funk.pwr    = (uint8_t)constrain(v,2,20);  changed=true; }
+  if (jsonGetInt(body, "funk_rate", v)) { config.Funk.rateMs = (uint8_t)constrain(v,0,50);  changed=true; }
+  if (jsonGetInt(body, "funk_back", v)) { config.Funk.back   = (v != 0);                    changed=true; }
+  funkConfigClamp(config.Funk);
+
   // S.Port Poll-IDs (Hex-String "A1" → uint8_t 0xA1)
   { char tmp[8];
     if (jsonGetStr(body, "poll_id0", tmp, sizeof(tmp)))
@@ -1982,6 +2120,11 @@ String WebServerManager::buildConfigJson() {
   }
   j += "},";
 
+  // v0.14: Funk (mode = gespeichert, boot = beim Start aktiv)
+  j += "\"funk\":{\"mode\":" + String(config.FunkMode) + ",\"boot\":" + String(FunkMode_boot);
+  j += ",\"id\":" + String(config.Funk.id) + ",\"ch\":" + String(config.Funk.ch);
+  j += ",\"pwr\":" + String(config.Funk.pwr) + ",\"rate\":" + String(config.Funk.rateMs);
+  j += ",\"back\":" + String(config.Funk.back ? 1 : 0) + "},";
   j += "\"version\":\"" + String(versionString) + "\"";
   j += "}";
   return j;

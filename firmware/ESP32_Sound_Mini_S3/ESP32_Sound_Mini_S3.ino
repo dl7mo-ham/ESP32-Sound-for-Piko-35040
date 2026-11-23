@@ -29,10 +29,12 @@
    Siehe pins.h (vorlaeufig, wird in Schritt 5 am Board geprueft).
 
    ── Das Port-Modell ───────────────────────────────────────────────────
-   Port A = Hardware-UART (S3: Serial2, C3: Serial0), Default CRSF. Seit
-            v0.14 in der Web-UI auch Aus oder Reed (beide Pins als
-            Tastereingaenge INPUT_PULLUP).
-   Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART0 (Serial0).
+   Port A = Hardware-UART0 (Serial0), Default CRSF. S3: RX/TX (IO44/43),
+            C3: IO20/21. In der Web-UI auch Aus oder Reed (beide Pins als
+            Tastereingaenge INPUT_PULLUP). Mit Funk als Teilnehmer bleibt
+            Port A frei; bei Reed/Aus ist der Funk deaktiviert (rein lokal).
+   Port B = Hardware-UART1 (Serial1), Port C = Hardware-UART2 (Serial2,
+            nur S3: IO5/6).
             Rolle je Port waehlbar in Web UND CRSF/Lua-Menue (RC_Common,
             uart_roles.h): Aus, CRSF (Modulkette: der CRSF-Router reicht
             Frames zwischen Port A und Port B/C weiter), S.Port-Master
@@ -91,6 +93,7 @@
 #include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
 #include "src/RC_Common/wifi_failsafe.h"
 #include "src/RC_Common/status_led.h"
+#include "src/RC_Common/funk_link.h"     // v0.14: Funk (ESP-NOW)
 #include "sound_store.h"
 #include "mem_info.h"
 #include "sound_map.h"
@@ -98,7 +101,7 @@
 #include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
 #include "status_led_arbiter.h" // v0.15: Prioritaet Flamme vs. Status-LED
 
-uint16_t Version = 13; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (13 -> "0.13")
+uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
 char versionString[6];
 // Port C (GPS) kann beim Mini nicht mit Port A kollidieren. Die Variable
 // bleibt, weil die Weboberflaeche sie im Debug-JSON meldet.
@@ -132,17 +135,18 @@ uint32_t PortB_Baud_boot        = 420000;
 uint8_t  PortC_Role_boot        = UROLE_OFF;
 uint32_t PortC_Baud_boot        = 9600;
 bool     PortC_Duplicate_boot   = false;   // Port C hatte dieselbe Rolle wie Port B -> aus
-// Port A (CRSF) belegt Serial2, Port B Serial1, Port C Serial0 (UART0,
-// frei, weil die Konsole ueber USB laeuft).
+// Port A (CRSF) belegt Serial0 (UART0 an den RX/TX-Header-Pins, frei, weil
+// die Konsole ueber USB laeuft), Port B Serial1, Port C Serial2 (v0.14,
+// vorher Port A Serial2 und Port C Serial0).
 // ESP32-C3 (v0.09): kein Serial2 -> Port A auf UART0, Port C entfaellt.
 #if defined(BOARD_C3_PRO_MINI)
 static HardwareSerial* const PORTA_SERIAL = &Serial0;
 static HardwareSerial* const PORTB_SERIAL = &Serial1;
 static HardwareSerial* const PORTC_SERIAL = nullptr;   // gibt es nicht
 #else
-static HardwareSerial* const PORTA_SERIAL = &Serial2;
+static HardwareSerial* const PORTA_SERIAL = &Serial0;
 static HardwareSerial* const PORTB_SERIAL = &Serial1;
-static HardwareSerial* const PORTC_SERIAL = &Serial0;
+static HardwareSerial* const PORTC_SERIAL = &Serial2;
 #endif
 // Port B und C fuer RC_Common (uart_ports.h)
 static UartPort uartPorts[2] = {
@@ -175,6 +179,13 @@ bool crsfActive = false;
 
 // ── CRSF ──────────────────────────────────────────────────────────────
 CRSF crsf;       // Port A - der Haupt-RC-Bus; mit Port B/C = CRSF zugleich Router der Modulkette
+
+// ── Funk (v0.14, RC_Common funk_link) ─────────────────────────────────
+// FunkMode_boot 1 = Zentrale: CRSF vom Kabel (Port A) geht zusaetzlich in
+// den Funk (Router-Port D). 2 = Teilnehmer: CRSF kommt nur aus dem Funk,
+// Port A bleibt frei, Port B/C geben weiter. Wirkt nach Neustart.
+FunkLink funk;              // auch in WebServerManager.cpp
+uint8_t  FunkMode_boot = 0;
 #define MWset       0x01
 #define MWprop      0x02
 #define MWset4      0x07
@@ -211,44 +222,35 @@ float ramp_throttle(float t); float floatMap(float x,float a,float b,float c,flo
 
 // ======== CRSF-Parametersystem ==========================================
 //
+// v0.14: Feld-IDs neu durchnummeriert (lueckenlos 1..54). Statt je einem
+// Ordner pro Sound gibt es einen Ordner "Sounds" mit Auswahl "Sound Nr"
+// (gleich in allen Soundmodulen), dazu der Ordner "Funk".
+//
 //   0: Root  1: Info Version
 //   2: Folder Motor {3..14}
 //    3: Sel MotorMode  4: Sel EINModus  5: Sel QuelleEIN  6: U8 KanalEIN
 //    7: Sel QuelleSpd  8: U8 KanalSpd   9: U8 Vol
 //   10: U8 Drzmin  11: U8 Drzmax/2  12: U8 Standgas  13: U8 Rampe  14: U8 Totband
-//
-//   Sound s(1-4): fi=15+(s-1)*6  -> 15, 21, 27, 33 (endet bei 38)
-//    fi+0:Folder fi+1:Sel Quelle fi+2:U8 Kanal fi+3:U8 Vol fi+4:Sel Mode fi+5:Sel Test
-//
-//  39: Folder Einstellungen {40..49}
-//   40:U8 Modul Adresse
-//   41:U8 Gruppenadr.1  42:U8 Gruppenadr.2  (255=aus)
-//   43:Sel Port B Rolle  44:Sel Port B Baudrate  45:Sel Port C Rolle
-//      (Rollen aus RC_Common: Aus;CRSF;S.Port;GPS;Raw, bis v0.02 Aus;CRSF;S.Port;Raw;GPS)
-//   52:Sel Port C Baudrate (v0.02, hinten angehaengt, im Ordner nach 45)
-//   46:Sel WLAN jetzt (sofort, nicht persistiert)
-//   47:Sel Auto-WLAN bei Signalverlust  48:U8 Auto-WLAN Timeout (s)
-//   49:Sel WLAN dauerhaft an
-//   50:Info Sound-Speicher "Flash" (bis v0.03 Auswahl Auto/Flash/SD)
-//  51: Info Geraetename
-//  53: Folder Speicher {54..57} (v0.06, nur Anzeige)
-//   54:Info Firmware  55:Info Sounds  56:Info RAM frei  57:Info PSRAM frei
-//  58: Folder Sound-Zuordnung {59..61} (v0.12)
-//   59:Sel Platz (nur Auswahl, nicht gespeichert)  60:Sel Datei  61:Sel Groesse (nur Anzeige)
-//  62: Sel LED Farbfolge (v0.13, im Ordner Einstellungen)
-static constexpr uint8_t SOUND_FIRST_FI   = 15;
-static constexpr uint8_t FIELDS_PER_SOUND = 6;
-static constexpr uint8_t SOUND_LAST_FI    = SOUND_FIRST_FI + RCSOUND_NUM_SOUNDS*FIELDS_PER_SOUND - 1;
-static constexpr uint8_t SETTINGS_FI      = SOUND_LAST_FI + 1;
-static constexpr uint8_t DEVNAME_FI       = SETTINGS_FI + 12;
-static constexpr uint8_t PORTC_BAUD_FI    = DEVNAME_FI + 1;
-static constexpr uint8_t MEMORY_FI        = PORTC_BAUD_FI + 1;
-static constexpr uint8_t SOUNDMAP_FI      = MEMORY_FI + 5;
-static constexpr uint8_t LEDRGB_FI        = SOUNDMAP_FI + 4;
-static constexpr uint8_t CRSF_PARAM_COUNT = LEDRGB_FI;
-// Die festen IDs 40-50 in buildLuaMenu() setzen diese Lage voraus.
-static_assert(SOUND_LAST_FI == 38 && SETTINGS_FI == 39 && DEVNAME_FI == 51 && SOUNDMAP_FI == 58 && CRSF_PARAM_COUNT == 62,
-              "CRSF-Feld-IDs passen nicht mehr zu buildLuaMenu()");
+//  15: Folder Sounds {16..22}
+//   16: Sel Sound Nr (nur Auswahl, nicht gespeichert)  17: Sel Name (Datei, nur Anzeige)
+//   18: Sel Quelle  19: U8 Kanal  20: U8 Volumen  21: Sel Wiedergabe Mode  22: Sel Test Sound
+//  23: Folder Einstellungen {24..36}
+//   24: U8 Modul Adresse  25/26: U8 Gruppenadr. 1/2 (255=aus)
+//   27: Sel Port B Rolle  28: Sel Port B Baudrate  29: Sel Port C Rolle  30: Sel Port C Baudrate
+//   31: Sel WLAN jetzt (sofort, nicht gespeichert)  32: Sel Auto-WLAN  33: U8 Auto-WLAN Timeout (s)
+//   34: Sel WLAN dauerhaft an  35: Info Sound-Speicher "Flash"  36: Sel LED Farbfolge
+//  37: Info Geraetename
+//  38: Folder Speicher {39..42} (nur Anzeige): Firmware, Sounds, RAM frei, PSRAM frei
+//  43: Folder Sound-Zuordnung {44..46}: Platz (nicht gespeichert), Datei, Groesse
+//  47: Folder Funk {48..54}: 48 Betrieb, 49 Kennung, 50 Kanal, 51 Leistung,
+//      52 Kanaele alle (Zentrale), 53 Rueckkanal (Teilnehmer), 54 Info Verbindung
+static constexpr uint8_t SOUNDS_FI        = 15;
+static constexpr uint8_t SETTINGS_FI      = 23;
+static constexpr uint8_t DEVNAME_FI       = 37;
+static constexpr uint8_t MEMORY_FI        = 38;
+static constexpr uint8_t SOUNDMAP_FI      = 43;
+static constexpr uint8_t FUNK_FI          = 47;
+static constexpr uint8_t CRSF_PARAM_COUNT = 54;
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
 // Adresse = 0xC0 + WM-Adresse, Slot = WM-Adresse * 2. Die Ping-Antwort wird
@@ -369,12 +371,6 @@ static void luaSourceText(int cfg, char* out, size_t len) {
     if (sel <= 3) snprintf(out, len, "%s %d", N[sel], einNr(cfg));
     else          snprintf(out, len, "%s", N[sel]);
 }
-static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
-    char src[12];
-    luaSourceText(config.Source_Start_Sound[s], src, sizeof(src));
-    snprintf(buf, LUA_VIEW_BUF, "Sound %d (%s)", s, src);
-    v.name = buf;
-}
 static void luaShowMotorFolder(uint8_t, LuaView& v, char* buf) {
     char src[12];
     luaSourceText(config.Source_Start_Sound[0], src, sizeof(src));
@@ -449,9 +445,83 @@ static void    luaSetPlayMode(uint8_t s, uint8_t v) { config.Mode_Sound[s] = v; 
 static uint8_t luaGetTest(uint8_t s)                { return testSoundActive[s] ? 1 : 0; }
 static void    luaSetTest(uint8_t s, uint8_t v)     { if (v == 1) Sound_on_web[s] = true; testSoundActive[s] = (v == 1); }
 
+// ── Ordner "Sounds" (v0.14, gleich in allen Soundmodulen) ────────────────
+// "Sound Nr" waehlt nur aus, welcher Sound gerade bearbeitet wird (nicht
+// gespeichert, wie "Platz" bei der Sound-Zuordnung). Die Felder darunter
+// lesen und schreiben den gewaehlten Sound. Das ELRS-Lua laedt nach einer
+// Aenderung von "Sound Nr" die Zahlen-/Auswahlfelder im Ordner neu, darum
+// ist "Name" eine Auswahl mit nur einem Eintrag statt eines Info-Felds.
+static uint8_t luaSndSel = 1;   // 1..RCSOUND_NUM_SOUNDS
+static char    luaSndNrOpts[4 * RCSOUND_NUM_SOUNDS + 4];
+static uint8_t luaGetSndNr(uint8_t)                 { return luaSndSel - 1; }
+static void    luaSetSndNr(uint8_t, uint8_t v)      { if (v < RCSOUND_NUM_SOUNDS) luaSndSel = v + 1; }
+static void luaShowSndName(uint8_t, LuaView& v, char* buf) {
+    // Name = zugeordnete Datei ohne ".wav" (das Mini hat keine eigenen Sound-Namen)
+    const char* f = config.Sound_File[2 + luaSndSel];
+    size_t n = strlen(f);
+    if (n > 4 && strcasecmp(f + n - 4, ".wav") == 0) n -= 4;
+    if (!n) snprintf(buf, LUA_VIEW_BUF, "(leer)");
+    else    snprintf(buf, LUA_VIEW_BUF, "%.*s", (int)(n < 20 ? n : 20), f);
+    v.text = buf;
+    v.max  = 0;
+    v.value = 0;
+}
+static uint8_t luaGetSelSource(uint8_t)             { return luaGetSource(luaSndSel); }
+static void    luaSetSelSource(uint8_t, uint8_t v)  { luaSetSource(luaSndSel, v); }
+static void    luaShowSelChannel(uint8_t, LuaView& v, char* b) { luaShowChannel(luaSndSel, v, b); }
+static uint8_t luaGetSelChannel(uint8_t)            { return luaGetChannel(luaSndSel); }
+static void    luaSetSelChannel(uint8_t, uint8_t v) { luaSetChannel(luaSndSel, v); }
+static uint8_t luaGetSelVolume(uint8_t)             { return luaGetVolume(luaSndSel); }
+static void    luaSetSelVolume(uint8_t, uint8_t v)  { luaSetVolume(luaSndSel, v); }
+static uint8_t luaGetSelPlayMode(uint8_t)           { return luaGetPlayMode(luaSndSel); }
+static void    luaSetSelPlayMode(uint8_t, uint8_t v){ luaSetPlayMode(luaSndSel, v); }
+static uint8_t luaGetSelTest(uint8_t)               { return luaGetTest(luaSndSel); }
+static void    luaSetSelTest(uint8_t, uint8_t v)    { luaSetTest(luaSndSel, v); }
+
+// ── Ordner "Funk" (v0.14, wie Multiswitch v5.04), wirkt nach Neustart ────
+static uint8_t luaGetFunkMode(uint8_t)            { return config.FunkMode; }
+static void    luaSetFunkMode(uint8_t, uint8_t v) { config.FunkMode = v > 2 ? 2 : v; markDirty(); }
+static uint8_t luaGetFunk(uint8_t i) {
+    switch (i) {
+        case 0: return config.Funk.id;
+        case 1: return config.Funk.ch;
+        case 2: return funkPwrIndex(config.Funk.pwr);
+        case 3: return funkRateIndex(config.Funk.rateMs);
+        default: return config.Funk.back ? 1 : 0;
+    }
+}
+static void luaSetFunk(uint8_t i, uint8_t v) {
+    switch (i) {
+        case 0: config.Funk.id = v; break;
+        case 1: config.Funk.ch = v; break;
+        case 2: config.Funk.pwr = FUNK_PWR_VALUES[v < FUNK_PWR_COUNT ? v : FUNK_PWR_COUNT - 1]; break;
+        case 3: config.Funk.rateMs = FUNK_RATE_VALUES[v < FUNK_RATE_COUNT ? v : FUNK_RATE_COUNT - 1]; break;
+        default: config.Funk.back = (v != 0); break;
+    }
+    funkConfigClamp(config.Funk);
+    markDirty();
+}
+static void luaShowFunkFolder(uint8_t, LuaView& v, char* buf) {
+    if (!funk.active()) { v.name = "Funk (aus)"; return; }
+    snprintf(buf, LUA_VIEW_BUF, "Funk (%s, %s)", funkRoleName(funk.role()),
+             funk.connected() ? "verbunden" : "keine Verbindung");
+    v.name = buf;
+}
+static void luaViewFunkSet(uint8_t, LuaView& v, char*)  { if (config.FunkMode == 0) v.hidden = true; }
+static void luaViewFunkRate(uint8_t, LuaView& v, char*) { if (config.FunkMode != 1) v.hidden = true; }
+static void luaViewFunkBack(uint8_t, LuaView& v, char*) { if (config.FunkMode != 2) v.hidden = true; }
+static void luaViewFunkInfo(uint8_t, LuaView& v, char* buf) {
+    if (!funk.active()) { v.text = "Funk aus"; return; }
+    if (funk.conflict()) { v.text = "2. Zentrale!"; return; }
+    if (!funk.connected()) { v.text = "keine Gegenstelle"; return; }
+    snprintf(buf, LUA_VIEW_BUF, "%u Gegenst. %.1f%% %ddBm",
+             (unsigned)funk.partnerCount(), funk.worstLoss(), (int)funk.worstRssi());
+    v.text = buf;
+}
+
 // ── Einstellungen ────────────────────────────────────────────────────────
 static uint8_t luaGetModAdr(uint8_t)                { return (uint8_t)constrain(config.modul_adress, 0, 20); }
-static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; if (crsfActive) crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
+static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; if (crsfActive) crsf.setDeviceAddress(crsfAddrFromWM()); funk.setCrsfAddr(crsfAddrFromWM()); markDirty(); }
 static uint8_t luaGetGroupAdr(uint8_t a)            { return (uint8_t)constrain(config.EK_Gruppen_Adresse[a], 0, 255); }
 static void    luaSetGroupAdr(uint8_t a, uint8_t v) { config.EK_Gruppen_Adresse[a] = v; markDirty(); }
 // Port B (arg 0) / Port C (arg 1) wirken erst nach einem Neustart
@@ -575,40 +645,45 @@ static void buildLuaMenu() {
     m.u8(13, 2, "Motor Rampe %/s", 0, 50, "", luaGetRamp, luaSetRamp);
     m.u8(14, 2, "Standgas Totband", 0, 50, "%", luaGetDeadBand, luaSetDeadBand);
 
-    for (uint8_t s = 1; s <= RCSOUND_NUM_SOUNDS; s++) {
-        uint8_t fi = SOUND_FIRST_FI + (s - 1) * FIELDS_PER_SOUND;
-        LuaItem* f = m.folder(fi, 0, "Sound");
-        f->arg = s; f->view = luaShowSoundFolder;
-        m.select(fi + 1, fi, "Quelle", EIN_SEL_STR, luaGetSource, luaSetSource, s);
-        m.u8(fi + 2, fi, "Kanal Nr", 1, 16, "", luaGetChannel, luaSetChannel, s)->view = luaShowChannel;
-        m.u8(fi + 3, fi, "Volumen", 0, 200, "", luaGetVolume, luaSetVolume, s);
-        m.select(fi + 4, fi, "Wiedergabe Mode", "Normal;Loop;Tippbetrieb", luaGetPlayMode, luaSetPlayMode, s);
-        m.select(fi + 5, fi, "Test Sound", AUS_EIN, luaGetTest, luaSetTest, s);
+    // v0.14: ein Ordner "Sounds" mit Auswahl "Sound Nr"
+    {
+        size_t len = 0;
+        luaSndNrOpts[0] = '\0';
+        for (int i = 1; i <= RCSOUND_NUM_SOUNDS; i++)
+            len += snprintf(luaSndNrOpts + len, sizeof(luaSndNrOpts) - len, "%s%d", i > 1 ? ";" : "", i);
     }
+    const uint8_t S = SOUNDS_FI;
+    m.folder(S, 0, "Sounds");
+    m.select(S + 1, S, "Sound Nr", luaSndNrOpts, luaGetSndNr, luaSetSndNr);
+    m.select(S + 2, S, "Name", "-", luaGetZero, nullptr)->view = luaShowSndName;
+    m.select(S + 3, S, "Quelle", EIN_SEL_STR, luaGetSelSource, luaSetSelSource);
+    m.u8(S + 4, S, "Kanal Nr", 1, 16, "", luaGetSelChannel, luaSetSelChannel)->view = luaShowSelChannel;
+    m.u8(S + 5, S, "Volumen", 0, 200, "", luaGetSelVolume, luaSetSelVolume);
+    m.select(S + 6, S, "Wiedergabe Mode", "Normal;Loop;Tippbetrieb", luaGetSelPlayMode, luaSetSelPlayMode);
+    m.select(S + 7, S, "Test Sound", AUS_EIN, luaGetSelTest, luaSetSelTest);
 
-    m.folder(SETTINGS_FI, 0, "Einstellungen")->view = luaShowSettingsFolder;
-    m.u8(40, SETTINGS_FI, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
-    m.u8(41, SETTINGS_FI, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
-    m.u8(42, SETTINGS_FI, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
-    m.select(43, SETTINGS_FI, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
-    m.select(44, SETTINGS_FI, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0)->view = luaViewPortBaud;
+    const uint8_t E = SETTINGS_FI;
+    m.folder(E, 0, "Einstellungen")->view = luaShowSettingsFolder;
+    m.u8(E + 1, E, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
+    m.u8(E + 2, E, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
+    m.u8(E + 3, E, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
+    m.select(E + 4, E, "Port B Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 0);
+    m.select(E + 5, E, "Port B Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 0)->view = luaViewPortBaud;
 #if HAS_PORT_C
-    m.select(45, SETTINGS_FI, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
-    m.select(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1)->view = luaViewPortBaud;
+    m.select(E + 6, E, "Port C Rolle", uartRoleOptions(), luaGetPortRole, luaSetPortRole, 1);
+    m.select(E + 7, E, "Port C Baudrate", uartBaudOptions(), luaGetPortBaud, luaSetPortBaud, 1)->view = luaViewPortBaud;
 #else
-    // ESP32-C3: kein Port C. Felder bleiben als Anzeige, damit die
+    // ESP32-C3: kein Port C. Felder bleiben ausgeblendet, damit die
     // Feldnummern ohne Luecke bleiben.
-    m.info(45, SETTINGS_FI, "Port C", "nicht vorhanden (C3)")->view = luaHideAlways;
-    m.info(PORTC_BAUD_FI, SETTINGS_FI, "Port C Baudrate", "-")->view = luaHideAlways;
+    m.info(E + 6, E, "Port C", "nicht vorhanden (C3)")->view = luaHideAlways;
+    m.info(E + 7, E, "Port C Baudrate", "-")->view = luaHideAlways;
 #endif
-    m.select(46, SETTINGS_FI, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
-    m.select(47, SETTINGS_FI, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
-    m.u8(48, SETTINGS_FI, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
-    m.select(49, SETTINGS_FI, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
-    // v0.04: nur noch Anzeige (keine SD-Karte), Feld bleibt, damit die
-    // Feldnummern ohne Luecke bleiben
-    m.info(50, SETTINGS_FI, "Sound-Speicher", "Flash");
-    m.select(LEDRGB_FI, SETTINGS_FI, "LED Farbfolge", "RGB (S3-Zero);GRB", luaGetLedRgb, luaSetLedRgb);   // v0.13
+    m.select(E + 8, E, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
+    m.select(E + 9, E, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
+    m.u8(E + 10, E, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
+    m.select(E + 11, E, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
+    m.info(E + 12, E, "Sound-Speicher", "Flash");
+    m.select(E + 13, E, "LED Farbfolge", "RGB (S3-Zero);GRB", luaGetLedRgb, luaSetLedRgb);   // v0.13
     m.info(DEVNAME_FI, 0, "Geraetename", "")->view = luaShowDeviceName;
 
     static const char* MEM_NAMES[4] = {"Firmware", "Sounds", "RAM frei", "PSRAM frei"};
@@ -632,6 +707,18 @@ static void buildLuaMenu() {
     // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
     // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
     m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
+
+    // v0.14: Funk (ESP-NOW), gleich wie Multiswitch v5.04
+    const uint8_t F = FUNK_FI;
+    m.folder(F, 0, "Funk")->view = luaShowFunkFolder;
+    m.select(F + 1, F, "Betrieb (Neustart)", "Kabel;Kabel + Funk (Zentrale);Funk (Teilnehmer)", luaGetFunkMode, luaSetFunkMode);
+    m.u8(F + 2, F, "Kennung (Neustart)", 1, 255, "", luaGetFunk, luaSetFunk, 0)->view = luaViewFunkSet;
+    m.u8(F + 3, F, "Kanal (Neustart)", 1, 13, "", luaGetFunk, luaSetFunk, 1)->view = luaViewFunkSet;
+    m.select(F + 4, F, "Leistung (Neustart)", FUNK_PWR_OPTIONS, luaGetFunk, luaSetFunk, 2)->view = luaViewFunkSet;
+    m.select(F + 5, F, "Kanaele alle (Neustart)", FUNK_RATE_OPTIONS, luaGetFunk, luaSetFunk, 3)->view = luaViewFunkRate;
+    m.select(F + 6, F, "Rueckkanal (Neustart)", "Aus;An", luaGetFunk, luaSetFunk, 4)->view = luaViewFunkBack;
+    m.info(F + 7, F, "Verbindung", "")->view = luaViewFunkInfo;
+    static_assert(FUNK_FI + 7 == CRSF_PARAM_COUNT, "CRSF-Feld-IDs passen nicht zu buildLuaMenu()");
 }
 
 // WLAN-Taste: wartet nach dem Start WIFI_BUTTON_WINDOW_MS auf einen
@@ -696,9 +783,21 @@ void setup() {
     strncpy(ssid,    config.WiFi_SSID,    sizeof(ssid)-1);    ssid[sizeof(ssid)-1]='\0';
     strncpy(password,config.WiFi_Password,sizeof(password)-1); password[sizeof(password)-1]='\0';
 
-    if (crsfActive) {
+    // Port A: CRSF, v0.14 wahlweise mit Funk. Reed/Aus bleibt rein lokal:
+    // kein Funk, keine CRSF-Kanaele von aussen. Der Funk startet hier, also
+    // vor dem WLAN-AP und vor den Sound-Puffern (freier Heap).
+    FunkMode_boot = crsfActive ? config.FunkMode : 0;
+    if (FunkMode_boot == 2) {
+        // Teilnehmer: CRSF nur aus dem Funk, Port A bleibt frei
+        funk.begin(FUNK_TEILNEHMER, config.Funk, config.Device_Name, crsfAddrFromWM());
+        crsf.attach_stream(&funk);
+        crsf.setDeviceAddress(crsfAddrFromWM());
+        Serial.printf("CRSF aus Funk (Teilnehmer)  Geraeteadresse 0x%02X\n", crsfAddrFromWM());
+    } else if (crsfActive) {
         crsf.init_crsf(PORTA_SERIAL, PIN_CRSF_RX, PIN_CRSF_TX);
         crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
+        if (FunkMode_boot == 1 && funk.begin(FUNK_ZENTRALE, config.Funk, config.Device_Name, crsfAddrFromWM()))
+            crsf.attach_funk_stream(&funk);        // Zentrale: Funk als Router-Port D
         Serial.printf("CRSF (RX=%d, TX=%d)  Geraeteadresse 0x%02X  Slot %d\n",
                       PIN_CRSF_RX, PIN_CRSF_TX, crsfAddrFromWM(),
                       (uint8_t)constrain(config.modul_adress,0,15) * 2);
@@ -793,14 +892,15 @@ static void updateLed() {
     bool dup = false;
     if (crsfActive) {
         const LinkStatistics& ls = crsf.getLinkStatistics();
-        dup = crsf.isDuplicateAddress();
+        dup = crsf.isDuplicateAddress() || funk.dupAddr();
         in.crsf          = true;
         in.busOk         = BUS_OK;
         in.lastRcFrameMs = crsf.getLastRcFrameMs();
         in.linkStatsMs   = ls.lastUpdate;
         in.uplinkLQ      = ls.uplinkLQ;
     }
-    in.configError   = dup || PortC_Duplicate_boot;
+    // v0.15: zweite Funk-Zentrale = gelber Doppelblitz (nur mit CRSF aktiv)
+    in.configError   = dup || PortC_Duplicate_boot || (crsfActive && funk.conflict());
     statusLed.setRgbOrder(config.LedRgb);
     statusLed.update(statusLedMode(in, now), now, dup, WebServerManager::isApActive());
 }
@@ -812,6 +912,10 @@ void loop() {
 
     // Port B/C: S.Port und GPS einlesen (RC_Common, ohne aktive Rolle ohne Wirkung)
     uartPortsUpdate();
+
+    // Port A: Funk vor den CRSF-Paketen (v0.14). Bei Reed/Aus ist der Funk
+    // bootbedingt aus; die Reed-Impulse bleiben rein lokal.
+    if (funk.active()) funk.loop();
 
     // Reed-Impulse sammeln und die Kommandos abarbeiten (Reed, Web-Test).
     reedUpdate();

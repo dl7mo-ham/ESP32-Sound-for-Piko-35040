@@ -46,6 +46,8 @@ uint8_t     portaRoleClamp(int raw);
 const char* portaRoleOptions();   // "Aus;CRSF;Reed"
 const char* portaRoleValues();    // "0;1;100" (Werte fuer die Web-UI)
 
+#include "src/RC_Common/funk_link.h"   // v0.14: FunkConfig
+
 // Motor(0) + 4 Zusatzsounds = 5 Slots.
 static constexpr int RCSOUND_NUM_SOUNDS = 4;
 static constexpr int RCSOUND_NUM_SLOTS  = RCSOUND_NUM_SOUNDS + 1;
@@ -117,6 +119,11 @@ struct ConfigData {
 
     // v0.13: Farbfolge der Status-LED: true = RGB (S3-Zero), false = GRB
     bool     LedRgb;
+
+    // v0.14: Funk (ESP-NOW, RC_Common funk_link). FunkMode 0 = Kabel,
+    // 1 = Kabel + Funk (Zentrale), 2 = Funk (Teilnehmer). Wirkt nach Neustart.
+    uint8_t    FunkMode;
+    FunkConfig Funk;             // Kennung, Kanal, Leistung, Rate, Rueckkanal
 
     // v0.12: Dateiname je Platz (ohne "/"), siehe SND_FILE_SLOTS oben.
     // Werkseinstellung: loop.wav, shut.wav, start.wav, sound1.wav ...
