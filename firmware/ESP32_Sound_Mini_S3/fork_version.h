@@ -17,11 +17,11 @@
 #ifndef FORK_VERSION_H
 #define FORK_VERSION_H
 
-#define FORK_SEQ 9
-#define APP_PARAM_VERSION (200 + FORK_SEQ)   // aktuell 209
+#define FORK_SEQ 10
+#define APP_PARAM_VERSION (200 + FORK_SEQ)   // aktuell 210
 
 // Nur informativ (z. B. fuer serielle Ausgabe); passt nicht in
 // char versionString[6] und wird deshalb nicht ueber Web/Lua angezeigt.
-#define FORK_VERSION_LABEL "v0.15+dl7mo.9"
+#define FORK_VERSION_LABEL "v0.15+dl7mo.10"
 
 #endif

@@ -5,7 +5,7 @@
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
 steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Fork-Version:** v0.15+dl7mo.9 (Basis upstream v0.15, RC_Common 1.5.2 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen und GPIO-Anzeige im Web-Tab; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge auch im Web-Tab „Reed“ einstellbar; Status-LED dunkel im Reed-Modus ohne Flamme; Reed-Modus rein lokal: bei Port A = Reed/Aus bleibt der Funk aus; S3/Port-A-Pins jetzt IO44/43 statt IO5/6 – beim Update umstecken! Zuletzt auf Hardware getestet: v0.13+dl7mo.8 am 18.11.2026; C3-Variante weiterhin nicht auf Hardware getestet). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
+**Aktuelle Fork-Version:** v0.15+dl7mo.10 (Basis upstream v0.15, RC_Common 1.5.2 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen und GPIO-Anzeige im Web-Tab; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge auch im Web-Tab „Reed“ einstellbar; Status-LED dunkel im Reed-Modus ohne Flamme; Reed-Modus rein lokal: bei Port A = Reed/Aus bleibt der Funk aus; S3/Port-A-Pins jetzt IO44/43 statt IO5/6 – beim Update umstecken! Neu: IR-Serial-Monitor an IO12 (nur S3) mit Arduino-IRremote 5.0.0, CRSF-Cache-Token 210. Zuletzt auf Hardware getestet: v0.13+dl7mo.8 am 18.11.2026; C3-Variante weiterhin nicht auf Hardware getestet). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
@@ -27,6 +27,16 @@ Im Web-Tab **„Reed“** wird pro Pin (RX/TX) eines Reed-Ports die Aktion gewä
 Ein Reed-Impuls legt die Aktion in dieselbe kleine Kommando-Queue wie die Web-Testbuttons; ausgeführt wird sie zentral in `loop()`. Die Entprellzeit (5–500 ms, Default 50 ms) und alle Aktionen werden sofort übernommen und in der Konfiguration gespeichert (auch in Export/Backup).
 
 Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr und der Funk bleibt ebenfalls aus (Reed rein lokal): Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
+
+### IR-Monitor an IO12 (nur ESP32-S3)
+
+Seit `v0.15+dl7mo.10` kann ein IR-Empfänger (z. B. TSOP38238) direkt am S3 angeschlossen werden: **OUT → IO12**, **VCC → 3V3**, **GND → GND**. Die Firmware nutzt Arduino-IRremote 5.0.0 und gibt im Serial-Monitor (**115200 Baud**, USB-Konsole) jeden empfangenen Frame aus, zum Beispiel:
+
+```text
+IR: Protocol=NEC Address=0x0 Command=0x45 Raw-Data=0x45BF00FF 32 bits
+```
+
+Ist das Protokoll unbekannt, erscheint `Protocol=UNKNOWN Hash=…` plus die Roh-Timings – daran lässt sich der Sender erkennen, ohne die Sound- oder Reed-Funktion zu verändern. In der Arduino IDE muss zusätzlich die Bibliothek **IRremote** (Arduino-IRremote 5.0.0) installiert sein; PlatformIO holt sie automatisch. Der C3 ist bewusst ausgenommen: Dort liegt IO12 nicht am Header und der Flash ist fast voll; das Modul ist dort nur ein Stub.
 
 ### Versionen dieses Forks
 

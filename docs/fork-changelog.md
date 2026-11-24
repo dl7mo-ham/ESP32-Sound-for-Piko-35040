@@ -4,6 +4,12 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.15+dl7mo.10 (2026-11-24)
+
+- Neuer projektlokaler IR-Serial-Monitor `ir_monitor.{h,cpp}`: Arduino-IRremote 5.0.0 dekodiert am **ESP32-S3 an IO12** (IR-Empfänger OUT → IO12, VCC → 3V3, GND → GND). Jeder empfangene Frame erscheint im Serial-Monitor (115200 Baud) als `IR: Protocol=… Address=… Command=… Raw-Data=…`. Unbekannte Protokolle werden zusätzlich als Roh-Timings ausgegeben, damit sich der Sender trotzdem identifizieren lässt. Kein Eingriff in Sound-/Reed-Logik, keine neuen NVS-/JSON-Felder, `src/RC_Common/` unverändert.
+- Der Pin steht bewusst im lokalen Modul statt in der upstream-identischen `pins.h`. In der `.ino` nur zwei dünne Aufrufstellen; `lib_deps` nur bei `env:s3` (C3: IO12 nicht am Header, Flash knapp, daher Stub). CRSF-Cache-Token jetzt 210.
+- Host-Tests (3), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (96,3 % Flash) und `c3` (98,4 %) sind grün. **Noch nicht auf Hardware getestet.**
+
 ## v0.15+dl7mo.9 (2026-11-23)
 
 - Upstream-Merge auf `v0.15` eingespielt (Funk/ESP-NOW v0.14, Prüfstand, Browser-Sound-Aufbereitung, v0.15-Mischer-Reparatur). `RC_Common` ist damit upstream-identisch bei **1.5.2** (neu: `funk_link.{h,cpp}`, CRSF-Router-Port D); das Manifest ist grün.

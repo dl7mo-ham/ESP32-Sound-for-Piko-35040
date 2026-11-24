@@ -100,6 +100,7 @@
 #include "reed_trigger.h"   // v0.14: Reed-Trigger je Port/Pin
 #include "flame_led.h"      // v0.14: Flammen-LED ueber die Status-LED
 #include "status_led_arbiter.h" // v0.15: Prioritaet Flamme vs. Status-LED
+#include "ir_monitor.h"     // v0.15+dl7mo.10: IR-Eingang IO12 (Serial-Monitor)
 
 uint16_t Version = 15; // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (15 -> "0.15")
 char versionString[6];
@@ -772,6 +773,7 @@ static void checkWifiButton(unsigned long now) {
 // ======== Setup ======================================================
 void setup() {
     Serial.begin(115200);
+    irMonitorBegin();   // IR-Empfaenger an IO12 (nur S3)
     loadConfig();
 
     // Port A: Rolle aus der Konfiguration (Default CRSF). Nur bei CRSF wird
@@ -909,6 +911,7 @@ static void updateLed() {
 void loop() {
     currentTime = millis();
     if (WebServerManager::isApActive()) WebServerManager::Webpage();
+    irMonitorLoop();    // IR-Frames an IO12 ueber Serial ausgeben
 
     // Port B/C: S.Port und GPS einlesen (RC_Common, ohne aktive Rolle ohne Wirkung)
     uartPortsUpdate();
