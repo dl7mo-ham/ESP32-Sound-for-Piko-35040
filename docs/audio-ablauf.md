@@ -3,27 +3,27 @@
 ## 1. Trigger-Quellen
 
 ```
-CRSF-Bus (Port A, Default)  Reed-Trigger (A/B/C)   Web /api/reed/test   Lua "Test Sound"
-        │                        │                      │                    │
-   Config()              reedUpdate()+debounce   enqueueCommand()     Sound_on_web[i]=true
-   wertet Kanäle aus     Pin RX/TX -> Aktion            │                    │ (direkt, keine Queue)
-        │                        │                      ▼                    │
-        │                        └──────────┬───── Command-Queue (16)         │
-        │                                   │              │                  │
-        └───────────────────────────────────┼──────────────┼──────────────────┘
-                                            ▼              ▼
-                                   processCommandQueue() in loop()
-                                   (intern: executeCommand())
-                                            │
-                   Sound_on_web[i] / toggleMotorSound() / flameToggle()
-                                            │
-                                       handleSound(i)
+CRSF-Bus (Port A, Default)  Reed (A/B/C)   IR NEC/NEC2 (IO11)   Web /api/reed/test   Lua "Test Sound"
+        │                       │                │                    │                    │
+   Config()             reedUpdate()+debounce  irMonitorLoop()  enqueueCommand()   Sound_on_web[i]=true
+   wertet Kanäle aus    Pin RX/TX -> Aktion     Code -> Aktion          │                │ (direkt, keine Queue)
+        │                       │                │                    ▼                    │
+        │                       └────────────────┴────────┬──── Command-Queue (16) ─────────┤
+        │                                                 │                                │
+        └─────────────────────────────────────────────────┼────────────────────────────────┘
+                                                          ▼
+                                             processCommandQueue() in loop()
+                                             (intern: executeCommand())
+                                                          │
+                                  Sound_on_web[i] / toggleMotorSound() / flameToggle()
+                                                          │
+                                                     handleSound(i)
 ```
 
-Reed-Impulse und die Testbuttons des Web-Tabs „Reed“ benutzen dieselbe Queue
-(`enqueueCommand()` → `processCommandQueue()` → `executeCommand()`). Der Lua-Test
-setzt `Sound_on_web[i]` direkt – er läuft **nicht** über die Queue. `handleSound(i)`
-verarbeitet danach die One-Shot-Flags.
+Reed-Impulse, gelernte IR-Codes und die Testbuttons des Web-Tabs „Reed“ benutzen
+dieselbe Queue (`enqueueCommand()` → `processCommandQueue()` → `executeCommand()`).
+Der Lua-Test setzt `Sound_on_web[i]` direkt – er läuft **nicht** über die Queue.
+`handleSound(i)` verarbeitet danach die One-Shot-Flags.
 
 > [!NOTE]
 > `Sound_on[]` wird jeden Loop-Durchlauf neu gesetzt (dauerhaft, solange Quelle aktiv).
@@ -34,9 +34,10 @@ verarbeitet danach die One-Shot-Flags.
 > Seit `v0.13+dl7mo.2` (früher v0.15) ist sie projektlokal `APP_UROLE_REED` = 100 (`reed_roles.h`);
 > RC_Common 1.5.2 bleibt upstream-identisch.
 > Ein Reed-Port liest RX und TX mit Pull-up; ein Impuls (HIGH → LOW, nach Entprellzeit) löst die konfigurierte Aktion
-> aus: Sound 1–4, Motor Ein/Aus oder Flamme Ein/Aus. Aktionen sind pro Pin frei wählbar und im
-> Web-Tab „Reed“ einzeln testbar. Rollenwechsel brauchen einen Neustart, Aktionen/Entprellzeit
-> gelten sofort.
+> aus: Sound 1–4, Motor Ein/Aus oder Flamme Ein/Aus. Aktionen sind pro Pin frei wählbar. Seit `dl7mo.11`
+> zeigt der Web-Tab „Reed & IR“ die Zuordnung aktionszentriert und erlaubt zusätzlich, pro Aktion einen
+> NEC/NEC2-Code zu lernen (Empfänger an IO11, nur S3). Rollenwechsel brauchen einen Neustart,
+> Aktionen/Entprellzeit und IR-Codes gelten sofort.
 
 ---
 
@@ -235,8 +236,9 @@ loop()                                  (ESP32_Sound_Mini_S3.ino)
   ├─ WebServerManager::Webpage()        (nur wenn AP aktiv)
   ├─ uartPortsUpdate()                  (Port B/C: S.Port, GPS)
   ├─ funk.loop()                        (RC_Common/funk_link.cpp, nur bei Port A = CRSF und FunkMode != 0)
+  ├─ irMonitorLoop()                    (ir_monitor.cpp/ir_control.cpp: NEC/NEC2, IO11, nur S3)
   ├─ reedUpdate()                       (reed_trigger.cpp: RX/TX, Entprellung)
-  ├─ processCommandQueue()              (command_queue.cpp: Reed + Web-Test)
+  ├─ processCommandQueue()              (command_queue.cpp: Reed + IR + Web-Test)
   │    ├─► Sound_on_web[1..4] = true
   │    ├─► toggleMotorSound()           (motor_control.cpp)
   │    └─► flameToggle()                (flame_led.cpp)
@@ -253,8 +255,8 @@ loop()                                  (ESP32_Sound_Mini_S3.ino)
 ```
 
 > Bei Port A = Reed/Aus ist `FunkMode_boot = 0`: `funk.loop()` und `crsfLoopTasks()`
-> laufen nicht, die 16 CRSF-Kanäle bleiben ohne Wirkung. Reed-Aktionen und
-> Web-Test laufen rein lokal. Der Funk ist nur bei Port A = CRSF aktiv.
+> laufen nicht, die 16 CRSF-Kanäle bleiben ohne Wirkung. Reed-Aktionen, IR-Codes
+> und Web-Test laufen rein lokal. Der Funk ist nur bei Port A = CRSF aktiv.
 
 ---
 

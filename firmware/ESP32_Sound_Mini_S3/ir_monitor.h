@@ -7,17 +7,18 @@
 /*
  * ir_monitor.h - projektlokal (nicht upstream)
  *
- * Liest einen IR-Empfaenger (z. B. TSOP38238) an IO12 aus und gibt jeden
- * empfangenen Frame ueber Serial aus. Damit laesst sich mit dem PC ohne
- * weiteres Werkzeug herausfinden, welches Protokoll ein Sender spricht.
+ * Liest einen IR-Empfaenger (z. B. TSOP38238) an IO11 aus. NEC/NEC2-Frames
+ * werden auf gelernte Aktionen geprueft (ir_control.*); alle anderen Frames
+ * weiterhin ueber Serial ausgegeben, damit sich ein Sender identifizieren
+ * laesst.
  *
  * Der Pin liegt bewusst HIER und nicht in pins.h: pins.h ist upstream-
  * identisch und soll fuer den patchfreien Upstream-Sync unberuehrt bleiben.
- * Auf dem ESP32-C3 ist IO12 nicht am Header und der Flash fast voll, daher
+ * Auf dem ESP32-C3 ist IO11 nicht am Header und der Flash fast voll, daher
  * ist das Modul dort nur ein Stub.
  */
 #ifndef IR_MONITOR_PIN
-#define IR_MONITOR_PIN 12
+#define IR_MONITOR_PIN 11
 #endif
 
 void irMonitorBegin();

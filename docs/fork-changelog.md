@@ -4,6 +4,16 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.15+dl7mo.11 (2026-11-27)
+
+- **IR-Steuerung statt nur Serial-Monitor:** Der IR-Empfänger liegt jetzt an **IO11** (S3, `ir_monitor.h`), Arduino-IRremote 5.0.0 bleibt nur bei `env:s3`. NEC und NEC2 werden auf gelernte Aktionen geprüft; Repeat-Frames werden ignoriert. Andere Protokolle erscheinen weiterhin im Serial-Monitor.
+- Neue projektlokale Dateien `ir_code.{h,cpp}` (protokollunabhängige Code-Darstellung, host-testbar), `ir_control.{h,cpp}` (NVS-Key `ircode`, Lernmodus mit 10 s Timeout, Zuordnung `Code → Aktion`) und die zugehörigen REST-Routen in `reed_web.cpp`: `POST /api/ir/learn`, `POST /api/ir/clear`, `GET /api/ir/status`.
+- **Web-Tab „Reed & IR“ ist jetzt aktionszentriert:** Eine Zeile pro Aktion mit Radio-Buttons für die Reed-Pins (intern weiterhin `Pin → Aktion` in `reedact`) und dem gelernten IR-Code. „IR lernen“ startet den Lernmodus, die UI pollt den Status und zeigt den Code hex an. Bei Kollision gewinnt die neue Zuordnung; die alte wird gelöscht. Die gewählten Reed-Pins werden weiterhin über `/api/config` gespeichert.
+- **Additiv/rückwärtskompatibel:** `/api/config` liefert ein neues Feld `"ir"` mit `available`, `timeout_ms` und `codes`; der POST importiert `ir_<n>_protocol/_address/_command`. Alte Backups ohne IR-Feld bleiben gültig, `src/RC_Common/` bleibt unverändert. In `config.cpp` und `WebServerManager.cpp` nur je zwei dünne Aufrufstellen, in der `.ino` nur ein Kommentar (IO12 → IO11).
+- Die geplante Modellbahn-Konfiguration (Port A = Aus, Port B/C = Reed, Aktionen per Reed oder IR) wird damit unterstützt; Port A bleibt ohne CRSF und ohne Funk.
+- Der Tab heißt jetzt **„Reed & IR“** (vorher „Reed“); die interne Tab-ID `reed` bleibt unverändert, damit bestehende Links und JS-Aufrufe weiter funktionieren. Das Verdrahtungsdiagramm [`verdrahtung_mit_piko35040.drawio`](hardware-bilder/verdrahtung_mit_piko35040.drawio) und das zugehörige PNG zeigen jetzt den IR-Empfänger (TSOP31238) an IO11.
+- CRSF-Cache-Token jetzt 211. Host-Tests (5), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (96,9 % Flash) und `c3` (99,0 %) sind grün. **Auf Hardware getestet (ESP32-S3-Zero, 27.11.2026):** Port A ohne CRSF, Reed auf Port B/C, IR-Lernen an IO11 und die aktionszentrierte Web-UI funktionieren. Die C3-Variante bleibt weiterhin nicht auf Hardware getestet.
+
 ## v0.15+dl7mo.10 (2026-11-24)
 
 - Neuer projektlokaler IR-Serial-Monitor `ir_monitor.{h,cpp}`: Arduino-IRremote 5.0.0 dekodiert am **ESP32-S3 an IO12** (IR-Empfänger OUT → IO12, VCC → 3V3, GND → GND). Jeder empfangene Frame erscheint im Serial-Monitor (115200 Baud) als `IR: Protocol=… Address=… Command=… Raw-Data=…`. Unbekannte Protokolle werden zusätzlich als Roh-Timings ausgegeben, damit sich der Sender trotzdem identifizieren lässt. Kein Eingriff in Sound-/Reed-Logik, keine neuen NVS-/JSON-Felder, `src/RC_Common/` unverändert.

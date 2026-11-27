@@ -1,9 +1,13 @@
 /*
  * reed_web.cpp  -  Soundmodul Mini
  *
- * Reed-Web-Oberflaeche (siehe reed_web.h): das JS liegt als PROGMEM hinter
- * /reed_ui.js, der Testbutton-Handler hier. Beides war vorher mitten in
+ * Reed-/IR-Web-Oberflaeche (siehe reed_web.h): das JS liegt als PROGMEM hinter
+ * /reed_ui.js, die REST-Handler hier. Beides war vorher mitten in
  * WebServerManager.cpp und ist jetzt projektlokal.
+ *
+ * Die Tabelle ist action-centric: Zeile = Aktion, Spalten = Reed-Pins und
+ * IR-Code. Intern bleibt die Reed-Zuordnung unverändert "Pin -> Aktion"
+ * (NVS "reedact"), die IR-Zuordnung ist "Code -> Aktion" (NVS "ircode").
  */
 
 #include "reed_web.h"
@@ -11,20 +15,67 @@
 #include "config_reed.h"     // reedJsonGetInt()
 #include "command_queue.h"   // enqueueCommand()
 #include "reed_trigger.h"    // reedActionClamp()/Name()
+#include "ir_control.h"      // Lernmodus/IR-REST
 
 // Das externe Script wird VOR dem Haupt-<script> geladen. Die hier
 // definierten Funktionen greifen auf cfg/toast/xpost/fillSelNames/gi und
-// loadConfig() zu -globale Namen aus WebServerManager.cpp, die zum
+// loadConfig() zu - globale Namen aus WebServerManager.cpp, die zum
 // Zeitpunkt des Aufrufs (Tab-Klick bzw. Config-Laden) alle initialisiert
 // sind.
 static const char REED_UI_JS[] PROGMEM = R"JS(
-// ─── Reed-Trigger (v0.14) ────────────────────────────────────────────────
-// Aktionen/Entprellzeit kommen aus cfg.reed (GET /api/config). Die Testbuttons
-// rufen POST /api/reed/test auf - derselbe Kommando-Queue-Pfad wie ein echter
-// Reed-Impuls.
+// ─── Aktionen: Reed-Pins + IR-Code (dl7mo.11) ─────────────────────────────
+// cfg.reed und cfg.ir kommen aus GET /api/config. Reed-Test und IR-Trigger
+// laufen durch denselben Kommando-Queue-Pfad wie ein echter Impuls.
 function reedActionLabel(action){
   var names=((cfg.reed&&cfg.reed.action_options)||'').split(';');
   return names[action]||('Aktion '+action);
+}
+function irCodeText(proto,addr,cmd){
+  if(!proto) return 'nicht belegt';
+  return 'NEC'+(proto===2?'2':'')+' 0x'+('0000'+(addr||0).toString(16)).slice(-4)+
+         ' / 0x'+('0'+(cmd||0).toString(16)).slice(-2);
+}
+function irAvail(){ return !!(cfg.ir&&cfg.ir.available); }
+function irSetStatus(text){
+  var e=document.getElementById('ir-status');
+  if(!e) return;
+  e.textContent=text||'';
+  e.className=text?'':'hidden';
+}
+var irPollTimer=null;
+function irPollLearn(action){
+  if(irPollTimer){ clearTimeout(irPollTimer); irPollTimer=null; }
+  fetch('/api/ir/status').then(function(r){return r.json();}).then(function(d){
+    if(!d) return;
+    if(d.active){
+      var left=Math.ceil((d.remaining_ms||0)/1000);
+      irSetStatus('Warte auf IR-Taste fuer '+reedActionLabel(action)+' ... '+left+' s');
+      irPollTimer=setTimeout(function(){irPollLearn(action);},300);
+      return;
+    }
+    irSetStatus('');
+    if(d.result_action===action && d.result_protocol>0){
+      toast('IR-Command gelernt: '+irCodeText(d.result_protocol,d.result_address,d.result_command));
+      loadConfig();
+    } else {
+      toast('Kein IR-Command erkannt (Timeout)',1);
+    }
+  }).catch(function(){ irSetStatus(''); toast('IR-Status nicht erreichbar',1); });
+}
+function irLearn(action){
+  if(!irAvail()){ toast('IR nur auf dem S3 (IO11)',1); return; }
+  xpost('/api/ir/learn',{action:action},function(resp){
+    var d=null; try{ d=JSON.parse(resp); }catch(e){}
+    if(d&&d.ok){ irSetStatus('Warte auf IR-Taste ...'); irPollLearn(action); }
+    else toast('IR-Lernen nicht gestartet',1);
+  });
+}
+function irClear(action){
+  xpost('/api/ir/clear',{action:action},function(resp){
+    var d=null; try{ d=JSON.parse(resp); }catch(e){}
+    if(d&&d.ok){ toast('IR-Command geloescht'); loadConfig(); }
+    else toast('Fehler',1);
+  });
 }
 // ─── Sofortige Lautstaerke (v0.13+dl7mo.8) ───────────────────────────────
 // Frueher als Fork-Diff mitten in WebServerManager.cpp: zwei onchange-
@@ -45,7 +96,7 @@ function appLiveVol(id,v){
   if(s) s.addEventListener('change',function(){ appLiveVol(curSnd,this.value); });
 })();
 function renderReed(){
-  var r=cfg.reed;
+  var r=cfg.reed||{}, ir=cfg.ir||{};
   var box=document.getElementById('reed-ports');
   var empty=document.getElementById('reed-empty');
   var restart=document.getElementById('reed-restart');
@@ -63,40 +114,82 @@ function renderReed(){
     var lv=document.getElementById('lv-reed-db');
     if(lv) lv.textContent=r.debounce_ms+' ms';
   }
-  var shown=0, changed=[];
+  var changed=[], pins=[];
   (r.ports||[]).forEach(function(p){
     if(!p.present) return;
     if(!!p.configured!==!!p.active) changed.push(p.label);
     if(!p.configured) return;
-    shown++;
-    var head=document.createElement('div');
-    head.style.cssText='font-weight:600;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px';
-    head.textContent=p.label;
-    box.appendChild(head);
     ['rx','tx'].forEach(function(pin){
-      var row=document.createElement('div'); row.className='row';
-      var lab=document.createElement('span'); lab.className='lbl';
-      lab.style.cssText='flex:0 0 86px;font-size:12px';
-      var pinNo=p.pins?p.pins[pin]:undefined;
-      lab.textContent=pin.toUpperCase()+(pinNo!==undefined&&pinNo<255?' (IO'+pinNo+')':'');
-      row.appendChild(lab);
-      var sel=document.createElement('select');
-      sel.id='reed-'+p.key+'-'+pin;
-      fillSelNames(sel,r.action_options,null);
-      sel.value=(r.actions&&r.actions[p.key+'_'+pin]!==undefined)?r.actions[p.key+'_'+pin]:0;
-      row.appendChild(sel);
-      var btn=document.createElement('button');
-      btn.className='btn btn-s'; btn.textContent='Test';
-      btn.style.cssText='width:auto;padding:6px 12px;margin:0;flex:0 0 auto;font-size:12px';
-      btn.onclick=function(){
-        var a=parseInt(sel.value)||0;
-        testReed(a,reedActionLabel(a));
-      };
-      row.appendChild(btn);
-      box.appendChild(row);
+      var no=p.pins?p.pins[pin]:undefined;
+      var short=p.label.replace('Port ','')+'-'+pin.toUpperCase();
+      pins.push({key:p.key,pin:pin,label:short+(no!==undefined&&no<255?' IO'+no:'')});
     });
   });
-  if(empty) empty.className=shown?'hidden':'';
+  // Kopfzeile
+  var head=document.createElement('div'); head.className='row';
+  head.style.cssText='font-size:11px;color:var(--sub);border-bottom:1px solid var(--sub);padding-bottom:4px';
+  var c0=document.createElement('span'); c0.className='lbl';
+  c0.style.cssText='flex:1 1 120px'; c0.textContent='Aktion';
+  head.appendChild(c0);
+  pins.forEach(function(pn){
+    var c=document.createElement('span');
+    c.style.cssText='flex:0 0 42px;text-align:center;font-size:10px'; c.textContent=pn.label;
+    head.appendChild(c);
+  });
+  var ci=document.createElement('span');
+  ci.style.cssText='flex:1 1 200px;font-size:10px'; ci.textContent='IR-Code (IO11)';
+  head.appendChild(ci);
+  box.appendChild(head);
+
+  var names=((r.action_options||'').split(';'));
+  var codes=ir.codes||[];
+  for(var a=0;a<names.length;a++){
+    var row=document.createElement('div'); row.className='row';
+    row.style.cssText='align-items:center;border-bottom:1px solid rgba(255,255,255,.06);padding:3px 0';
+    var lab=document.createElement('span'); lab.className='lbl';
+    lab.style.cssText='flex:1 1 120px;font-size:12px'; lab.textContent=names[a];
+    if(a>0){
+      var tb=document.createElement('button'); tb.className='btn btn-s'; tb.textContent='Test';
+      tb.style.cssText='width:auto;padding:3px 7px;margin:0;font-size:11px';
+      tb.onclick=(function(act){return function(){testReed(act);};})(a);
+      lab.appendChild(document.createTextNode(' ')); lab.appendChild(tb);
+    }
+    row.appendChild(lab);
+    pins.forEach(function(pn){
+      var cell=document.createElement('span');
+      cell.style.cssText='flex:0 0 42px;text-align:center';
+      var rad=document.createElement('input'); rad.type='radio';
+      rad.name='reedpin_'+pn.key+'_'+pn.pin; rad.value=String(a);
+      var cur=(r.actions&&r.actions[pn.key+'_'+pn.pin]!==undefined)?r.actions[pn.key+'_'+pn.pin]:0;
+      rad.checked=(cur===a); rad.title=names[a];
+      cell.appendChild(rad); row.appendChild(cell);
+    });
+    var code=null;
+    for(var k=0;k<codes.length;k++) if(codes[k].action===a) code=codes[k];
+    var ic=document.createElement('span');
+    ic.style.cssText='flex:1 1 200px;font-size:11px;display:flex;gap:4px;align-items:center;flex-wrap:wrap';
+    var txt=document.createElement('span');
+    txt.style.cssText='min-width:104px;color:'+((code&&code.protocol)?'var(--txt)':'var(--sub)');
+    txt.textContent=(a===0?'\u2014':irCodeText(code&&code.protocol,code&&code.address,code&&code.command));
+    ic.appendChild(txt);
+    if(a>0){
+      var lb=document.createElement('button'); lb.className='btn btn-s'; lb.textContent='IR lernen';
+      lb.style.cssText='width:auto;padding:3px 7px;margin:0;font-size:11px'; lb.disabled=!irAvail();
+      lb.onclick=(function(act){return function(){irLearn(act);};})(a);
+      ic.appendChild(lb);
+      var db2=document.createElement('button'); db2.className='btn btn-s'; db2.textContent='L\u00f6schen';
+      db2.style.cssText='width:auto;padding:3px 7px;margin:0;font-size:11px';
+      db2.disabled=!(code&&code.protocol);
+      db2.onclick=(function(act){return function(){irClear(act);};})(a);
+      ic.appendChild(db2);
+    }
+    row.appendChild(ic);
+    box.appendChild(row);
+  }
+  if(empty){
+    empty.textContent='Kein Port auf "Reed" gestellt - die Reed-Spalten sind leer. IR-Codes lassen sich trotzdem lernen.';
+    empty.className=pins.length?'hidden':'';
+  }
   if(restart){
     if(changed.length){
       restart.textContent='\u26A0 '+changed.join(', ')+': Rollenaenderung wirkt erst nach einem Neustart des Moduls.';
@@ -120,8 +213,12 @@ function saveReed(){
   var r=cfg.reed||{};
   (r.ports||[]).forEach(function(p){
     if(!p.present||!p.configured) return;
-    d['reed_'+p.key+'_rx']=gi('reed-'+p.key+'-rx');
-    d['reed_'+p.key+'_tx']=gi('reed-'+p.key+'-tx');
+    ['rx','tx'].forEach(function(pin){
+      var sel=document.getElementsByName('reedpin_'+p.key+'_'+pin);
+      for(var i=0;i<sel.length;i++){
+        if(sel[i].checked){ d['reed_'+p.key+'_'+pin]=sel[i].value; break; }
+      }
+    });
   });
   xpost('/api/config',d,function(resp){
     try{var q=JSON.parse(resp);if(q.ok){ loadConfig(); toast('Reed-Einstellungen gespeichert');return;}}catch(e){}
@@ -182,6 +279,45 @@ static void reedWebHandleTest(WebServer& sv) {
   reedSendOk(sv);
 }
 
+// ── IR-Lernen (dl7mo.11) ──────────────────────────────────────────────────
+// POST /api/ir/learn  {"action":1..6}  startet das 10-s-Fenster, action=0
+// bricht ab. POST /api/ir/clear {"action":n} entfernt einen gelernten Code.
+// GET  /api/ir/status liefert Lernzustand und das letzte Ergebnis fuer die UI.
+static void reedWebHandleIrLearn(WebServer& sv) {
+  if (!sv.hasArg("plain")) { reedSendErr(sv); return; }
+  int v;
+  if (!reedJsonGetInt(sv.arg("plain"), "action", v) || v < 0 || v >= REED_ACTION_COUNT) {
+    reedSendErr(sv); return;
+  }
+  if (v == 0) irLearnCancel(); else irLearnStart((uint8_t)v);
+  reedSendOk(sv);
+}
+
+static void reedWebHandleIrClear(WebServer& sv) {
+  if (!sv.hasArg("plain")) { reedSendErr(sv); return; }
+  int v;
+  if (!reedJsonGetInt(sv.arg("plain"), "action", v) || v <= 0 || v >= REED_ACTION_COUNT) {
+    reedSendErr(sv); return;
+  }
+  irClearCode((uint8_t)v);
+  reedSendOk(sv);
+}
+
+static void reedWebHandleIrStatus(WebServer& sv) {
+  irLearnTick();
+  IrCode last = irLearnResultCode();
+  char buf[192];
+  snprintf(buf, sizeof(buf),
+           "{\"active\":%s,\"action\":%d,\"remaining_ms\":%lu,"
+           "\"result_action\":%d,\"result_protocol\":%d,"
+           "\"result_address\":%u,\"result_command\":%u}",
+           irLearnActive() ? "true" : "false", (int)irLearnAction(),
+           (unsigned long)irLearnRemainingMs(),
+           (int)irLearnResultAction(), (int)last.protocol,
+           (unsigned)last.address, (unsigned)last.command);
+  sv.send(200, "application/json", buf);
+}
+
 void reedWebRegister(WebServer& server) {
   reedServer = &server;
   server.on("/reed_ui.js", HTTP_GET, []() {
@@ -190,4 +326,7 @@ void reedWebRegister(WebServer& server) {
   server.on("/api/reed/test", HTTP_POST, []() { reedWebHandleTest(*reedServer); });
   server.on("/api/led-order", HTTP_GET,  []() { reedWebHandleLedOrderGet(*reedServer); });
   server.on("/api/led-order", HTTP_POST, []() { reedWebHandleLedOrderPost(*reedServer); });
+  server.on("/api/ir/learn",  HTTP_POST, []() { reedWebHandleIrLearn(*reedServer); });
+  server.on("/api/ir/clear",  HTTP_POST, []() { reedWebHandleIrClear(*reedServer); });
+  server.on("/api/ir/status", HTTP_GET,  []() { reedWebHandleIrStatus(*reedServer); });
 }

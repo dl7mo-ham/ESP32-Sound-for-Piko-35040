@@ -1,7 +1,7 @@
 /*
  * reed_web.h  -  Soundmodul Mini
  *
- * Reed-Web-Oberflaeche: HTML-Fragment (Compile-Time in RCSOUND_HTML
+ * Reed-/IR-Web-Oberflaeche: HTML-Fragment (Compile-Time in RCSOUND_HTML
  * eingefuegt, kein RAM- und kein zusaetzlicher Flash-Overhead durch einen
  * zweiten Request), externes JS (/reed_ui.js) und die REST-Routen.
  * Enthaelt auch die LED-Farbfolge (kein Lua-Menue im Reed-Betrieb) und die
@@ -17,19 +17,21 @@
 
 #include <WebServer.h>
 
-// Reed-Tab zwischen "Speicher" und "WiFi". Wird per Adjacent-String-
+// Reed-/IR-Tab zwischen "Speicher" und "WiFi". Wird per Adjacent-String-
 // Concatenation in das PROGMEM-HTML eingefuegt (siehe WebServerManager.cpp).
 #define REED_TAB_HTML \
 "<!-- ═══ REED-TRIGGER ════════════════════════════════════════════════════ -->\n" \
 "<div id=\"tab-reed\" class=\"hidden\">\n" \
 "  <div class=\"card\">\n" \
-"    <div class=\"card-title\">Reed-Trigger</div>\n" \
+"    <div class=\"card-title\">Aktionen: Reed &amp; IR (NEC)</div>\n" \
 "    <div style=\"font-size:12px;color:var(--sub);margin-bottom:10px\">\n" \
-"      Ist ein Port auf die Rolle &quot;Reed&quot; gestellt, werden beide Pins als\n" \
-"      Eingaenge mit Pull-up gelesen. Ein Impuls (Kontakt gegen GND) loest die\n" \
-"      hier gewaehlte Aktion aus - genau wie der Testbutton daneben.\n" \
+"      Jede Zeile ist eine Aktion. Reed-Pins (Rolle &quot;Reed&quot;, Pull-up,\n" \
+"      Kontakt gegen GND) und ein gelernter IR-Code koennen dieselbe Aktion\n" \
+"      ausloesen. IR-Empfaenger: IO11 (nur S3). IR lernen: Button klicken und\n" \
+"      innerhalb von 10 s eine Taste der Fernbedienung druecken.\n" \
 "    </div>\n" \
 "    <div id=\"reed-restart\" class=\"hidden\" style=\"color:var(--yellow);font-size:12px;margin-bottom:10px\"></div>\n" \
+"    <div id=\"ir-status\" class=\"hidden\" style=\"color:var(--yellow);font-size:12px;margin-bottom:10px\"></div>\n" \
 "    <div id=\"reed-ports\"></div>\n" \
 "    <div id=\"reed-empty\" class=\"hidden\" style=\"font-size:12px;color:var(--sub)\">\n" \
 "      Noch kein Port auf &quot;Reed&quot; gestellt. Unter Einstellungen bei Port A/B/C\n" \

@@ -12,6 +12,7 @@
 #include "src/RC_Common/settings_common.h"
 #include "sound_map.h"
 #include "config_reed.h"    // Reed-NVS (Debounce + Aktionen), projektlokal
+#include "ir_control.h"     // IR-NVS (gelernte NEC-Codes), projektlokal
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -181,6 +182,7 @@ void loadConfig() {
     bool roleMigrated = (rawRoleB == APP_UROLE_REED_LEGACY || rawRoleC == APP_UROLE_REED_LEGACY
                          || !p.isKey("approleb") || !p.isKey("approlec"));
     if (reedConfigLoad(p)) configDirty = true;
+    if (irConfigLoad(p)) configDirty = true;
     // WLAN, Modul-Adresse, Port B/C: gemeinsame Schluessel (RC_Common).
     // Fehlen sie, werden einmalig die alten (pbmode/pcmode/pcgps, pbbaud,
     // pcbaud, ...) umgerechnet und beim naechsten Speichern unter den neuen
@@ -243,6 +245,7 @@ void saveConfigForce() {
     p.putInt("approleb", (int)config.PortB_Role);
     p.putInt("approlec", (int)config.PortC_Role);
     reedConfigSave(p);
+    irConfigSave(p);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
     RcCommonSettings cs;
     configToCommon(cs);

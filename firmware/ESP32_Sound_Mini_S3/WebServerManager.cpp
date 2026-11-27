@@ -18,7 +18,8 @@
 #include "sound_map.h"       // v0.12: Sound-Zuordnung
 #include "reed_roles.h"      // v0.15: APP_UROLE_REED = 100 (projektlokal)
 #include "config_reed.h"     // Reed-JSON/POST/NVS (projektlokal)
-#include "reed_web.h"        // Reed-Tab HTML, /reed_ui.js, /api/reed/test
+#include "ir_control.h"      // IR-Codes/JSON/POST (projektlokal)
+#include "reed_web.h"        // Reed-/IR-Tab HTML, /reed_ui.js, /api/reed/test
 #include "src/RC_Common/funk_link.h"   // v0.14: Funk (ESP-NOW)
 extern FunkLink funk;
 extern uint8_t FunkMode_boot;
@@ -143,7 +144,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
   <div class="tab" onclick="showTab('sounds')">Sounds</div>
   <div class="tab" onclick="showTab('store')">Speicher</div>
   <div class="tab" onclick="showTab('settings')">Einstellung</div>
-  <div class="tab" onclick="showTab('reed')">Reed</div>
+  <div class="tab" onclick="showTab('reed')">Reed &amp; IR</div>
   <div class="tab" id="tab-btn-funk" style="display:none" onclick="showTab('funk')">Funk</div>
   <div class="tab" onclick="showTab('wifi')">WiFi</div>
   <div class="tab" onclick="showTab('lipo')">LiPo</div>
@@ -429,7 +430,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Aenderungen an Port A/B/C wirken erst nach einem Neustart des Moduls.
-      Reed-Aktionen und Entprellzeit (Tab &quot;Reed&quot;) gelten dagegen sofort.
+      Reed-Aktionen und Entprellzeit (Tab &quot;Reed &amp; IR&quot;) gelten dagegen sofort.
     </div>
   </div>
   <button class="btn btn-p" onclick="saveSettings()">Speichern</button>
@@ -1967,6 +1968,7 @@ void WebServerManager::handleApiConfigPost() {
   // sofort (reedUpdate() liest config bei jedem Impuls frisch), im Gegensatz
   // zur Port-Rolle oben.
   if (reedConfigApplyPost(body)) changed = true;
+  if (irConfigApplyPost(body)) changed = true;   // gelernte NEC-Codes (Backup/Import)
 
   // WiFi
   { char tmp[64];
@@ -2091,6 +2093,7 @@ String WebServerManager::buildConfigJson() {
   j += "\"mkan_adr1\":"  + String(config.EK_Gruppen_Adresse[1])   + "},";
 
   reedConfigAppendJson(j);
+  irConfigAppendJson(j);
 
   // S.Port Poll-IDs
   char p0[4], p1[4];

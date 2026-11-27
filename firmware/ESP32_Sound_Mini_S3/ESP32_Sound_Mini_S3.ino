@@ -911,7 +911,7 @@ static void updateLed() {
 void loop() {
     currentTime = millis();
     if (WebServerManager::isApActive()) WebServerManager::Webpage();
-    irMonitorLoop();    // IR-Frames an IO12 ueber Serial ausgeben
+    irMonitorLoop();    // IR an IO11: NEC/NEC2 -> Aktionen, sonst Serial-Log
 
     // Port B/C: S.Port und GPS einlesen (RC_Common, ohne aktive Rolle ohne Wirkung)
     uartPortsUpdate();
