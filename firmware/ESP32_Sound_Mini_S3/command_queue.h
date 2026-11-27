@@ -20,7 +20,9 @@ static constexpr uint8_t REED_ACTION_PLAY_SOUND_3  = 3;
 static constexpr uint8_t REED_ACTION_PLAY_SOUND_4  = 4;
 static constexpr uint8_t REED_ACTION_TOGGLE_MOTOR  = 5;
 static constexpr uint8_t REED_ACTION_TOGGLE_FLAME  = 6;
-static constexpr uint8_t REED_ACTION_COUNT         = 7;
+static constexpr uint8_t REED_ACTION_SPEED_UP      = 7;
+static constexpr uint8_t REED_ACTION_SPEED_DOWN    = 8;
+static constexpr uint8_t REED_ACTION_COUNT         = 9;
 
 // Nur gueltige Aktionen werden aufgenommen (Queue voll -> verworfen).
 void enqueueCommand(uint8_t cmd);

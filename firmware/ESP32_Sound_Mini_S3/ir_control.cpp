@@ -13,11 +13,20 @@ static uint32_t learnStarted  = 0;
 static bool     resultPending = false;
 static uint8_t  resultAction  = REED_ACTION_NONE;
 static IrCode   resultCode    = { IR_PROTO_NONE, 0, 0 };
+static IrCode   lastCode      = { IR_PROTO_NONE, 0, 0 };
+static uint8_t  lastAction    = REED_ACTION_NONE;
+static uint32_t lastMs        = 0;
 
 static void irCodeClear(IrCode& code) {
     code.protocol = IR_PROTO_NONE;
     code.address  = 0;
     code.command  = 0;
+}
+
+static void irNoteLast(const IrCode& code, uint8_t action) {
+    lastCode   = code;
+    lastAction = action;
+    lastMs     = millis();
 }
 
 // ── NVS / JSON ────────────────────────────────────────────────────────────
@@ -27,18 +36,19 @@ bool irConfigLoad(Preferences& p) {
     size_t len = p.getBytesLength("ircode");
     if (len == sizeof(irCodes)) {
         p.getBytes("ircode", irCodes, sizeof(irCodes));
-        for (uint8_t a = 0; a < REED_ACTION_COUNT; a++) {
-            uint8_t proto = irCodeClampProtocol(irCodes[a].protocol);
-            if (proto != irCodes[a].protocol) corrected = true;
-            irCodes[a].protocol = proto;
-            if (proto == IR_PROTO_NONE) {
-                if (irCodes[a].address || irCodes[a].command) corrected = true;
-                irCodeClear(irCodes[a]);
-            }
-        }
     } else {
+        // Bewusst kein Migrationspfad: dl7mo.12 war nur lokal im Einsatz.
+        if (len > 0) corrected = true;
         for (uint8_t a = 0; a < REED_ACTION_COUNT; a++) irCodeClear(irCodes[a]);
-        if (len > 0) corrected = true;   // alter/unkuemmlicher Schluessel
+    }
+    for (uint8_t a = 0; a < REED_ACTION_COUNT; a++) {
+        uint8_t proto = irCodeClampProtocol(irCodes[a].protocol);
+        if (proto != irCodes[a].protocol) corrected = true;
+        irCodes[a].protocol = proto;
+        if (proto == IR_PROTO_NONE) {
+            if (irCodes[a].address || irCodes[a].command) corrected = true;
+            irCodeClear(irCodes[a]);
+        }
     }
     return corrected;
 }
@@ -159,23 +169,32 @@ bool irLearnResultPending() { return resultPending; }
 uint8_t irLearnResultAction() { return resultAction; }
 IrCode irLearnResultCode()  { return resultCode; }
 
+void irLastReceived(IrCode& code, uint8_t& action, uint32_t& ageMs) {
+    code   = lastCode;
+    action = lastAction;
+    ageMs  = (lastCode.protocol == IR_PROTO_NONE) ? 0 : (millis() - lastMs);
+}
+
 bool irHandleNec(uint8_t protocol, uint16_t address, uint8_t command) {
     IrCode code = { protocol, address, command };
     if (!irCodeValid(code)) return false;
     irLearnTick();
 
+    uint8_t action = learnAction ? learnAction : irFindAction(code);
+    irNoteLast(code, action);   // auch ohne Zuordnung fuer die Web-UI sichtbar
+
     if (learnAction) {
         // "Letzter gewinnt": derselbe Code darf nicht auf zwei Aktionen liegen.
         for (uint8_t a = 1; a < REED_ACTION_COUNT; a++) {
-            if (a != learnAction && irCodeValid(irCodes[a]) && irCodeEqual(irCodes[a], code)) {
+            if (a != action && irCodeValid(irCodes[a]) && irCodeEqual(irCodes[a], code)) {
                 Serial.printf("[IR] Code war Aktion %d, jetzt Aktion %d\n",
-                              (int)a, (int)learnAction);
+                              (int)a, (int)action);
                 irCodeClear(irCodes[a]);
             }
         }
-        irCodes[learnAction] = code;
+        irCodes[action] = code;
         resultPending = true;
-        resultAction  = learnAction;
+        resultAction  = action;
         resultCode    = code;
         learnAction   = REED_ACTION_NONE;
         markDirty();
@@ -185,7 +204,6 @@ bool irHandleNec(uint8_t protocol, uint16_t address, uint8_t command) {
         return true;
     }
 
-    uint8_t action = irFindAction(code);
     if (action == REED_ACTION_NONE) return false;
     enqueueCommand(action);
     Serial.printf("[IR] Trigger -> %s\n", reedActionName(action));

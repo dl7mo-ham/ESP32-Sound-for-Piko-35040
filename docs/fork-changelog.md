@@ -4,6 +4,45 @@ Versionsschema: `<upstream-Basis>+dl7mo.<Zähler>`. Der Zähler läuft über all
 
 Die Versionszeichenfolge ist rein dokumentarisch: Sie passt nicht in `char versionString[6]`. Web und Lua zeigen deshalb weiter die Upstream-Basis (aktuell `0.13`). Der CRSF-„Parameter Version Number“ kommt projektlokal aus `firmware/ESP32_Sound_Mini_S3/fork_version.h` (`APP_PARAM_VERSION = 200 + FORK_SEQ`) und wird bei jeder Änderung sowie bei jedem Upstream-Merge erhöht.
 
+## v0.15+dl7mo.19 (2026-11-28)
+
+- **Gaswert-Reset beim Ausschalten:** Wird der Motorsound ausgeschaltet, verwirft `motorSpeedUpdate()` den gemerkten virtuellen Gaswert. Der nächste Start beginnt damit wieder bei `Drehzahl min` (z. B. 100 %) und rampt von 0 dorthin, statt den zuletzt gefahrenen Wert (z. B. 150 %) wieder aufzunehmen. Die Logik steckt in der host-testbaren Hilfsfunktion `motorSpeedResetOnStop()`; die `.ino` bleibt unverändert, `src/RC_Common/` ebenfalls.
+- CRSF-Cache-Token jetzt 219. Host-Tests (10), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.18 (2026-11-28)
+
+- **Rampenrichtung host-seitig abgesichert:** Die einzige Rampe aus `dl7mo.17` steckt jetzt in der Arduino-freien Hilfsfunktion `motorSpeedRampStep()` (`motor_speed_control.h`). Der neue Host-Test prüft explizit, dass „+“ den Wert erhöht, „−“ ihn verringert, die Rampe nicht überschwingt und nie negativ wird. Damit ist die beobachtete Invertierung direkt testbar; der bisherige Code-Pfad bleibt unverändert.
+- CRSF-Cache-Token jetzt 218. Host-Tests (9), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.17 (2026-11-28)
+
+- **Kein Überlauf, aber eine Logikkorrektur:** Nach Prüfung aller Zwischenwerte ist nirgends ein Integer-Überlauf im Speed-Pfad. Die beobachteten „Minus wird schneller / Plus wird langsamer“ kamen von der zusätzlichen 0→1-Hüllkurve aus `dl7mo.16`: Sie lief unabhängig von den Tasten weiter, während der Gas-Sollwert gleichzeitig geändert wurde. Jetzt gibt es **nur noch eine Speed-Rampe** (`actualSpeed` in `motor_speed_control.cpp`), die direkt auf das Ziel aus Gaswert und `Drehzahl min/max` zuläuft – beim Start von 0, beim Stopp nach 0. Ein Minus-Druck setzt ein `speedCap` auf den aktuell erreichten Wert, ein Plus-Druck hebt es auf; damit kann kein Befehl mehr in die falsche Richtung wirken.
+- Der Aufruf in der `.ino` bleibt eine Zeile; kein neuer NVS-Key, keine UI-Änderung, `src/RC_Common/` unverändert. Der Gas-Ramppenwert aus dem Sketch wird nicht mehr gebraucht.
+- CRSF-Cache-Token jetzt 217. Host-Tests (8), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.16 (2026-11-28)
+
+- **Start-/Stopp-Rampe bis 0:** In der Fahrt bleibt die bekannte Abbildung Gas 0 % → `Drehzahl min`, Gas 100 % → `Drehzahl max` (z. B. 100 % → 200 %). Beim Einsetzen der `loop.wav` setzt eine Hüllkurve bei 0 an und läuft mit der eingestellten „Motor Rampe“ auf 1; beim Stopp läuft sie wieder auf 0, bevor die loop angehalten wird. Damit gibt es keinen Sprung auf `Drehzahl min` beim Start bzw. ein abruptes Ende beim Stopp.
+- Dafür ersetzt eine einzige projektlokale Aufrufstelle in der `.ino` die bisherige Mapping-Zeile; die Logik samt host-testbarer `motorSpeedPlaybackBase()` liegt in `motor_speed_control.*`. Kein neuer NVS-Key, keine Web-UI-Änderung, `src/RC_Common/` unverändert.
+- CRSF-Cache-Token jetzt 216. Host-Tests (9), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.15 (2026-11-27)
+
+- **Fix für „Minus beschleunigt“:** Wenn der virtuelle Gaswert schnell auf 100 % hochgezählt wurde, lief die Rampe noch hinterher. Ein Minus-Schritt setzte den Sollwert z. B. nur von 100 auf 80 %, was über dem bereits erreichten Ramppenwert lag – die Rampe beschleunigte also weiter. `motorSpeedStepDown()` begrenzt den neuen Sollwert jetzt auf den bereits erreichten Wert (`last_throttle` aus dem Sketch, dort keine Änderung). Neue host-testbare Hilfsfunktion `motorSpeedDownClamp()`.
+- CRSF-Cache-Token jetzt 215. Host-Tests (8), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.14 (2026-11-27)
+
+- **Letzter IR-Befehl im Web-Tab:** Die Reed-&-IR-Seite zeigt in einer neuen Karte Protokoll, Adresse, Command, die zugeordnete Aktion (oder „ohne Zuordnung“) und das Alter des letzten empfangenen NEC/NEC2-Frames. Der Frame wird zentral in `ir_control.cpp` beim Empfang notiert – auch ohne Zuordnung und während des Lernmodus. `GET /api/ir/status` liefert dazu die Felder `last_protocol/_address/_command/_action/_age_ms`; der Tab pollt nur, solange er sichtbar ist (1 s). Alles flüchtig, kein NVS-Key, keine Änderung an `WebServerManager.cpp` oder `src/RC_Common/`.
+- CRSF-Cache-Token jetzt 214. Host-Tests (7), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,2 % Flash) und `c3` (99,3 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
+## v0.15+dl7mo.13 (2026-11-27)
+
+- **Motorsound-Drehzahl per IR/Reed:** Zwei neue Aktionen `Drehzahl +` und `Drehzahl -` (IDs 7/8, alte IDs 0..6 unverändert) erhöhen/verringern einen virtuellen Gaswert von 0–100 %. Er greift nur bei eingeschaltetem Motor und ohne konfigurierten CRSF-Speed-Kanal, läuft durch die bestehende Gasrampe und die Skalierung „Drehzahl min/max“ und ist flüchtig (nach Neustart wieder 0 %). Im Reed-Betrieb (Port A ohne CRSF) lässt sich der Motorsound damit per Fernbedienung oder Reed-Kontakt stufenweise verändern.
+- Die Schrittweite ist im Web-Tab **„Reed & IR“** einstellbar (5–50 % in 5-%-Schritten, Default 20 %). Neue projektlokale Dateien `motor_speed_control.{h,cpp}` mit host-testbaren Hilfsfunktionen, neuer NVS-Key `vspstp`, JSON-Felder `reed.speed_step/_min/_max` und POST-Feld `reed_speed_step`. In `config.cpp` und `WebServerManager.cpp` kam keine neue Zeile hinzu; in der `.ino` nur ein Include und eine `else if`-Zeile in `Config()`.
+- **IR-Speicher bewusst ohne Migrationspfad:** Gelernte IR-Codes bleiben unter dem vorhandenen NVS-Key `ircode`, der Blob enthält jetzt 9 statt 7 Einträge. Ein alter 7-Eintrags-Blob wird beim Laden verworfen; die Codes werden dann neu gelernt. Der nie veröffentlichte Zwischenstand `dl7mo.12` mit `ircode2` und Dual-Write wurde vor dem Commit wieder entfernt – daher der Zählersprung. Alle anderen Bestandsformate (Aktions-IDs 0..6, JSON-Defaults, `src/RC_Common/`) bleiben unverändert.
+- CRSF-Cache-Token jetzt 213. Host-Tests (7), RC_Common-Tests (55), Manifest-Prüfung sowie Builds für `s3` (97,1 % Flash) und `c3` (99,2 % Flash) sind grün. **Noch nicht auf Hardware getestet.**
+
 ## v0.15+dl7mo.11 (2026-11-27)
 
 - **IR-Steuerung statt nur Serial-Monitor:** Der IR-Empfänger liegt jetzt an **IO11** (S3, `ir_monitor.h`), Arduino-IRremote 5.0.0 bleibt nur bei `env:s3`. NEC und NEC2 werden auf gelernte Aktionen geprüft; Repeat-Frames werden ignoriert. Andere Protokolle erscheinen weiterhin im Serial-Monitor.

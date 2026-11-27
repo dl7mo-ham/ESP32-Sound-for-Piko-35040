@@ -6,6 +6,7 @@
 
 #include "config_reed.h"
 #include "reed_roles.h"
+#include "motor_speed_control.h"
 
 // Schluessel der Reed-Aktionen fuer /api/config (POST) und das JSON-
 // Exportformat. Ports A/B/C, Pins 0=RX, 1=TX.
@@ -25,6 +26,7 @@ uint16_t reedDebounceClamp(int raw) {
 bool reedConfigLoad(Preferences& p) {
     bool corrected = false;
     config.ReedDebounceMs = reedDebounceClamp(p.getInt("reeddb", REED_DEBOUNCE_DEFAULT_MS));
+    if (motorSpeedConfigLoad(p)) corrected = true;
     if (p.getBytesLength("reedact") == sizeof(config.ReedAction)) {
         p.getBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
     }
@@ -42,6 +44,7 @@ bool reedConfigLoad(Preferences& p) {
 
 void reedConfigSave(Preferences& p) {
     p.putInt("reeddb", (int)config.ReedDebounceMs);
+    motorSpeedConfigSave(p);
     p.putBytes("reedact", config.ReedAction, sizeof(config.ReedAction));
 }
 
@@ -79,6 +82,7 @@ bool reedConfigApplyPost(const String& body) {
         config.ReedDebounceMs = reedDebounceClamp(v);
         changed = true;
     }
+    if (motorSpeedConfigApplyPost(body)) changed = true;
     for (uint8_t p = 0; p < REED_PORTS; p++) {
         for (uint8_t i = 0; i < REED_PINS; i++) {
             if (reedJsonGetInt(body, REED_CONFIG_KEYS[p][i], v)) {
@@ -99,6 +103,7 @@ void reedConfigAppendJson(String& j) {
     j += "\"debounce_min\":" + String(REED_DEBOUNCE_MIN_MS)         + ",";
     j += "\"debounce_max\":" + String(REED_DEBOUNCE_MAX_MS)         + ",";
     j += "\"action_options\":\"" + String(reedActionOptions())      + "\",";
+    motorSpeedConfigAppendJson(j);   // "speed_step" + Min/Max fuer die Web-UI
     j += "\"actions\":{";
     for (uint8_t p = 0; p < REED_PORTS; p++) {
         for (uint8_t i = 0; i < REED_PINS; i++) {

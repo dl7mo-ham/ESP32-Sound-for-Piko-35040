@@ -13,5 +13,7 @@ FLAGS="-DRC_COMMON_HOST_TEST -std=c++17 -Wall -Wno-unused-function -I$S -I$R -I$
 "${CC:-gcc}" -I"$U/src" "$U/src/unity.c" -c -o "$B/unity.o"
 "$CXX" $FLAGS "$T/test_app_roles.cpp" "$S/reed_roles.cpp" "$R/uart_roles.cpp" "$B/unity.o" -o "$B/test_app_roles"
 "$CXX" $FLAGS "$T/test_ir_code.cpp" "$S/ir_code.cpp" "$B/unity.o" -o "$B/test_ir_code"
+"$CXX" $FLAGS "$T/test_motor_speed.cpp" "$B/unity.o" -o "$B/test_motor_speed"
 "$B/test_app_roles"
 "$B/test_ir_code"
+"$B/test_motor_speed"

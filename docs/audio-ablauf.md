@@ -16,6 +16,7 @@ CRSF-Bus (Port A, Default)  Reed (A/B/C)   IR NEC/NEC2 (IO11)   Web /api/reed/te
                                              (intern: executeCommand())
                                                           │
                                   Sound_on_web[i] / toggleMotorSound() / flameToggle()
+                                              / motorSpeedStepUp/Down() (virtueller Gaswert)
                                                           │
                                                      handleSound(i)
 ```
@@ -146,6 +147,8 @@ Im Zustand `RUNNING` passt das Modul die Wiedergabe kontinuierlich an den aktuel
    ```
    Ein höherer `Speed`-Wert führt dazu, dass die Samples der `loop.wav` schneller durchlaufen werden. Dadurch steigen sowohl die **Tonhöhe (Pitch)** als auch die **Taktfrequenz der Motorgeräusche** proportional an.
 
+Seit `v0.15+dl7mo.13` ersetzt ein **virtueller Gaswert** den fehlenden CRSF-Kanal: Die Reed-/IR-Aktionen „Drehzahl +/−“ verändern ihn in konfigurierbaren Schritten (5–50 %, Default 20 %, Web-Tab „Reed & IR“). Er greift nur bei eingeschaltetem Motor und wenn `Source_Speed_Sound_0` deaktiviert ist (999) und wird nicht in NVS gespeichert (0 % nach Neustart). In der Fahrt gilt die Abbildung Gas 0 % → `Drehzahl min`, Gas 100 % → `Drehzahl max` (z. B. 100 % → 200 %). Die Wiedergabegeschwindigkeit wird von **einer einzigen Rampe** („Motor Rampe“) geführt: Start bei 0, Stopp auf 0. Ein Minus-Druck setzt zusätzlich ein Speed-Cap auf den gerade erreichten Wert, damit nicht trotz Minus weiterbeschleunigt wird; Plus hebt das Cap wieder auf. Beim Ausschalten des Motors wird der gemerkte Gaswert verworfen, sodass der nächste Start wieder bei `Drehzahl min` beginnt.
+
 ### Einstellbare Parameter (Web-UI & Lua-Menü)
 
 Die Parameter können über die Weboberfläche (Tab *Motor*) oder das Lua-Menü am Fernsteuersender angepasst werden:
@@ -156,13 +159,14 @@ Die Parameter können über die Weboberfläche (Tab *Motor*) oder das Lua-Menü 
 | **Drehzahl max** | `maxsp` | `300 %` | Abspielgeschwindigkeit bei Vollgas (z.B. 300 % = 3-fache Geschwindigkeit/Tonhöhe) |
 | **Motor Rampe** | `thrr` | `20 %/s` | Maximale Gasänderungsrate pro Sekunde für sanftes Beschleunigen/Abtouren |
 | **Standgas Totband** | `thrdb` | `10 %` | Nullbereich um die Ruhestellung, in dem der Motor im Standgas bleibt |
+| **Drehzahl-Schritt (IR/Reed)** | `vspstp` | `20 %` | Schrittweite der Aktionen „Drehzahl +/−“ (5–50 %, nur Web-Tab „Reed & IR“) |
 | **Motor Mode** | `thrm` | `0` | `0` = Eine Richtung (0–100 %); `1` = Zwei Richtungen (Mitte 0 %, Ausschlag vor/zurück 0–100 %) |
 | **Quelle Speed** | `spd` | *deaktiviert* | CRSF-Kanal für den Gashebel (0–15) |
 | **Motor aus Standgas** | `shdly` | `0 s` | Abschalt-Timer nach Inaktivität im Standgas (0 = dauerhaft an) |
 | **Motor EIN Modus** | `entog` | `0` | `0` = Taster/Schalter direkt; `1` = Toggle (Schalterimpuls schaltet ein/aus) |
 
 > [!NOTE]
-> Die Drehzahl-Variation erfordert das dynamische Gas-Signal eines RC-Empfängers (CRSF). Steht Port A auf Reed/Aus, gibt es keinen Gaskanal; der Motor läuft dann mit der Mindestdrehzahl (`Drehzahl min`). Dennoch lässt sich der Motorsound per Reed-Aktion „Motor Ein/Aus“ oder dem Web-Testbutton schalten.
+> Die dynamische Drehzahl-Variation erfordert normalerweise das Gas-Signal eines RC-Empfängers (CRSF). Steht Port A auf Reed/Aus, gibt es keinen Gaskanal; der Motor läuft dann mit der Mindestdrehzahl (`Drehzahl min`), solange kein virtueller Gaswert gesetzt wurde. Seit `dl7mo.13` übernehmen die Aktionen „Drehzahl +/−“ per Reed, IR oder Web-Testbutton diese Rolle; „Motor Ein/Aus“ schaltet weiterhin den Motorsound.
 
 ---
 
@@ -241,7 +245,8 @@ loop()                                  (ESP32_Sound_Mini_S3.ino)
   ├─ processCommandQueue()              (command_queue.cpp: Reed + IR + Web-Test)
   │    ├─► Sound_on_web[1..4] = true
   │    ├─► toggleMotorSound()           (motor_control.cpp)
-  │    └─► flameToggle()                (flame_led.cpp)
+  │    ├─► flameToggle()                (flame_led.cpp)
+  │    └─► motorSpeedStepUp/Down()      (motor_speed_control.cpp, virtueller Gas)
   ├─ crsfLoopTasks()                    (crsf_bridge.cpp, nur bei Port A = CRSF)
   │    ├─► Pakete/Router, BUS_OK, channel_output[], uartPortsTelemetry()
   │    └─► Lua-Menü: Ping/Read/Write/Command-Replies

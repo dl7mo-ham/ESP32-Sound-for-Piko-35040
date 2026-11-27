@@ -3,13 +3,14 @@
 ## Eigene Ergänzungen für Piko 35040
 
 Kompaktes Eisenbahn-Soundmodul aus Mikrocontroller ESP32-S3-Zero (ESP32-S3FH4R2) und Verstärker MAX98357A,
-steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040, und abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
+steuerbar via Reed-Trigger vom R/C Empfänger Piko 35040 sowie über einen IR-Empfänger (z. B. TSOP38238).
+Abgeleitet von https://github.com/mnorden81/ESP32-Sound-Mini-S3.
 
-**Aktuelle Fork-Version:** v0.15+dl7mo.11 (Basis upstream v0.15, RC_Common 1.5.2 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; Web-Tab „Reed & IR“ jetzt aktionszentriert: pro Aktion Reed-Pins und ein gelernter NEC/NEC2-IR-Code; IR-Empfänger an IO11 (nur S3), Lernen per „IR lernen“ und Fernbedienungstaste; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge im selben Web-Tab einstellbar; Status-LED dunkel im Reed-Modus ohne Flamme; Reed-Modus rein lokal: bei Port A = Reed/Aus bleibt der Funk aus; S3/Port-A-Pins IO44/43, Port-B 7/8, Port-C 5/6 – beim Update umstecken! CRSF-Cache-Token 211. Zuletzt auf Hardware getestet: v0.15+dl7mo.11 am 27.11.2026 (ESP32-S3-Zero: Reed auf Port B/C, IR-Lernen an IO11, Web-UI); C3-Variante weiterhin nicht auf Hardware getestet). Details: [docs/fork-changelog.md](docs/fork-changelog.md).
+**Aktuelle Fork-Version:** v0.15+dl7mo.19 (Basis upstream v0.15, RC_Common 1.5.2 upstream-identisch; Reed-Rolle projektlokal `APP_UROLE_REED` = 100; Reed-Trigger pro Port A/B/C mit frei wählbaren Pin-Aktionen; Web-Tab „Reed & IR“ jetzt aktionszentriert: pro Aktion Reed-Pins und ein gelernter NEC/NEC2-IR-Code; IR-Empfänger an IO11 (nur S3), Lernen per „IR lernen“ und Fernbedienungstaste; leere Sound-Plätze blockieren Motorsound und One-Shots nicht mehr; LED-Farbfolge im selben Web-Tab einstellbar; neue Aktionen „Drehzahl +/−“ als virtueller Gaswert ohne CRSF-Kanal (Schrittweite 5–50 %, Default 20 %, im Reed-/IR-Tab einstellbar); Status-LED dunkel im Reed-Modus ohne Flamme; Reed-Modus rein lokal: bei Port A = Reed/Aus bleibt der Funk aus; S3/Port-A-Pins IO44/43, Port-B 7/8, Port-C 5/6 – beim Update umstecken! CRSF-Cache-Token 219. Zuletzt auf Hardware getestet: v0.15+dl7mo.11 am 27.11.2026 (ESP32-S3-Zero: Reed auf Port B/C, IR-Lernen an IO11, Web-UI); die neuen Drehzahl-Aktionen, die Start-/Stopp-Rampe, die Anzeige des letzten IR-Befehls und die C3-Variante sind noch nicht auf Hardware getestet. Details: [docs/fork-changelog.md](docs/fork-changelog.md).
 
 **Ablauf-Übersicht:** [docs/audio-ablauf.md](docs/audio-ablauf.md) – wie Trigger, Motorsound und die Zusatzsounds im Code zusammenwirken.
 
-### Reed-Betrieb (Piko 35040)
+### Reed- und IR-Betrieb (Piko 35040, TSOP38238)
 
 ![Verdrahtungsplan mit Piko 35040 und LM2596](docs/hardware-bilder/verdrahtung_mit_piko35040.png)
 
@@ -23,16 +24,21 @@ Im Web-Tab **„Reed & IR“** steht seit `dl7mo.11` die **Aktion im Mittelpunkt
 | Sound 1–4 | spielt den entsprechenden Sound-Slot (One-Shot, wie ein Web-Test) |
 | Motor Ein/Aus | schaltet den Motorsound ein/aus (Toggle) |
 | Flamme Ein/Aus | schaltet den Flammeneffekt der Status-LED ein/aus (Toggle) |
+| Drehzahl + / Drehzahl − | erhöht/verringert den virtuellen Gaswert in Schritten (nur ohne CRSF-Speed-Kanal) |
 
-Ein Reed-Impuls, ein gelernter IR-Code und ein Web-Testbutton legen die Aktion in dieselbe kleine Kommando-Queue; ausgeführt wird sie zentral in `loop()`. Die Entprellzeit (5–500 ms, Default 50 ms), die Reed-Zuordnung und die IR-Codes werden sofort übernommen und in der Konfiguration gespeichert (auch in Export/Backup; alte Backups ohne IR-Feld bleiben lesbar).
+Ein Reed-Impuls, ein gelernter IR-Code und ein Web-Testbutton legen die Aktion in dieselbe kleine Kommando-Queue; ausgeführt wird sie zentral in `loop()`. Die Entprellzeit (5–500 ms, Default 50 ms), die Schrittweite der Drehzahl-Aktionen (5–50 %, Default 20 %), die Reed-Zuordnung und die IR-Codes werden sofort übernommen und in der Konfiguration gespeichert (auch in Export/Backup; alte Backups ohne IR-Feld bleiben lesbar).
 
-Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr und der Funk bleibt ebenfalls aus (Reed rein lokal): Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein, und der Motorsound läuft ohne Gaskanal mit der Mindestdrehzahl. Die Flamme überlagert in diesem Fall die Status-LED.
+Der virtuelle Gaswert läuft von 0–100 % durch die bestehende Gasrampe und die Einstellungen „Drehzahl min/max“. Er wirkt nur, wenn der Motor eingeschaltet ist und kein CRSF-Gaskanal konfiguriert ist; er wird nicht dauerhaft gespeichert (nach Neustart wieder 0 %).
+
+Lange Tastendrücke werden nicht ausgewertet, weil sie sich mit dem Piko 35040 nicht zuverlässig unterscheiden lassen. Wird Port A auf Reed/Aus gestellt, gibt es kein CRSF-Signal mehr und der Funk bleibt ebenfalls aus (Reed rein lokal): Der Auto-WLAN-Failsafe schaltet dann nach der eingestellten Zeit das WLAN ein. Ohne Gaskanal läuft der Motorsound mit der Mindestdrehzahl, sofern nicht per „Drehzahl +/−“ ein virtueller Gaswert gesetzt wurde. Die Flamme überlagert in diesem Fall die Status-LED.
 
 ### IR-Steuerung an IO11 (nur ESP32-S3)
 
 Ein IR-Empfänger (z. B. TSOP38238) kommt direkt an den S3: **OUT → IO11**, **VCC → 3V3**, **GND → GND** (bis `dl7mo.10` war der Monitor an IO12). Die Firmware nutzt Arduino-IRremote 5.0.0.
 
 Im Web-Tab **„Reed & IR“** bei der gewünschten Aktion auf **„IR lernen“** klicken und innerhalb von 10 Sekunden eine Taste der Fernbedienung drücken. Der empfangene NEC-/NEC2-Code (Adresse + Command) wird angezeigt und dauerhaft gespeichert; ein weiterer Tastendruck löst die Aktion über dieselbe Queue aus wie ein Reed-Impuls. Wird dieselbe Taste später einer anderen Aktion zugeordnet, verliert die alte Aktion ihren Code. Über **„Löschen“** wird ein Code entfernt. NEC-Wiederholframes werden ignoriert, damit eine gedrückt gehaltene Taste nicht mehrfach triggert.
+
+Eine zusätzliche Karte im selben Tab zeigt **Protokoll, Adresse, Command, die zugeordnete Aktion** (oder „ohne Zuordnung“) und das Alter des **letzten empfangenen NEC/NEC2-Befehls**. Die Anzeige ist flüchtig und aktualisiert sich sekündlich, solange der Tab geöffnet ist.
 
 Andere Protokolle erscheinen weiterhin im Serial-Monitor (**115200 Baud**, USB-Konsole) als `IR: Protocol=… Address=… Command=…`; unbekannte zusätzlich mit Roh-Timings. In der Arduino IDE muss die Bibliothek **IRremote** (Arduino-IRremote 5.0.0) installiert sein; PlatformIO holt sie automatisch. Der C3 ist bewusst ausgenommen: Dort liegt IO11 nicht am Header und der Flash ist fast voll; das Modul ist dort nur ein Stub.
 

@@ -50,6 +50,22 @@
 "    <button class=\"btn btn-p\" onclick=\"saveReed()\">Speichern</button>\n" \
 "  </div>\n" \
 "  <div class=\"card\">\n" \
+"    <div class=\"card-title\">Drehzahl per IR / Reed</div>\n" \
+"    <div class=\"sl-wrap\">\n" \
+"      <div class=\"sl-head\"><span>Schritt pro Drehzahl +/-</span><span id=\"lv-reed-speed-step\">-</span></div>\n" \
+"      <input type=\"range\" id=\"reed-speed-step\" min=\"5\" max=\"50\" step=\"5\" oninput=\"reedSpeedUpd()\">\n" \
+"    </div>\n" \
+"    <div style=\"font-size:11px;color:var(--sub);margin-bottom:10px\">\n" \
+"      Gilt fuer die Aktionen \"Drehzahl +\" und \"Drehzahl -\", wenn kein CRSF-Gaskanal\n" \
+"      konfiguriert ist und der Motor eingeschaltet ist. Rampe sowie Drehzahl min/max bleiben aktiv.\n" \
+"    </div>\n" \
+"    <button class=\"btn btn-p\" onclick=\"saveReed()\">Speichern</button>\n" \
+"  </div>\n" \
+"  <div class=\"card\">\n" \
+"    <div class=\"card-title\">Letzter IR-Befehl (NEC/NEC2)</div>\n" \
+"    <div id=\"ir-last\" style=\"font-size:12px;color:var(--sub)\">Noch keiner empfangen</div>\n" \
+"  </div>\n" \
+"  <div class=\"card\">\n" \
 "    <div class=\"card-title\">LED-Farbfolge (Status &amp; Flamme)</div>\n" \
 "    <div class=\"row\" style=\"margin-bottom:10px\">\n" \
 "      <span class=\"lbl\">Farbfolge der WS2812</span>\n" \

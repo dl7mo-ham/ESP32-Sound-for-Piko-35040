@@ -30,7 +30,7 @@ static bool    portActive[REED_PORTS];
 
 static const char* const REED_ACTION_NAMES[REED_ACTION_COUNT] = {
     "Keine", "Sound 1", "Sound 2", "Sound 3", "Sound 4",
-    "Motor Ein/Aus", "Flamme Ein/Aus"
+    "Motor Ein/Aus", "Flamme Ein/Aus", "Drehzahl +", "Drehzahl -"
 };
 
 const char* reedActionName(uint8_t action) {
@@ -38,7 +38,7 @@ const char* reedActionName(uint8_t action) {
 }
 
 const char* reedActionOptions() {
-    return "Keine;Sound 1;Sound 2;Sound 3;Sound 4;Motor Ein/Aus;Flamme Ein/Aus";
+    return "Keine;Sound 1;Sound 2;Sound 3;Sound 4;Motor Ein/Aus;Flamme Ein/Aus;Drehzahl +;Drehzahl -";
 }
 
 uint8_t reedActionClamp(int raw) {

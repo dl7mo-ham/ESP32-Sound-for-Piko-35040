@@ -7,6 +7,7 @@
 #include "command_queue.h"
 #include "config.h"
 #include "flame_led.h"
+#include "motor_speed_control.h"
 
 // Zustand des Hauptsketchs (bis zur Auslagerung der Motor-/Soundlogik).
 extern bool Sound_on_web[RCSOUND_NUM_SLOTS];
@@ -36,8 +37,10 @@ static void executeCommand(uint8_t cmd) {
         case REED_ACTION_PLAY_SOUND_4:
             Sound_on_web[cmd] = true;   // ID 1-4 == Sound-Slot 1-4
             break;
-        case REED_ACTION_TOGGLE_MOTOR: toggleMotorSound(); break;
-        case REED_ACTION_TOGGLE_FLAME: flameToggle();      break;
+        case REED_ACTION_TOGGLE_MOTOR: toggleMotorSound();  break;
+        case REED_ACTION_TOGGLE_FLAME: flameToggle();       break;
+        case REED_ACTION_SPEED_UP:     motorSpeedStepUp();   break;
+        case REED_ACTION_SPEED_DOWN:   motorSpeedStepDown(); break;
         default: break;
     }
 }

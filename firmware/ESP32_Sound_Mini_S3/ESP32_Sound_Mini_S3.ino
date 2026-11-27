@@ -85,6 +85,7 @@
 #include "command_queue.h"  // v0.15: Reed-/Web-Kommandos
 #include "crsf_bridge.h"    // v0.15: CRSF-Loop-Aufgaben ausgelagert
 #include "motor_control.h"  // v0.15: Motor-Toggle / Direktsteuerung
+#include "motor_speed_control.h" // dl7mo.13: virtueller Gaswert (IR/Reed)
 #include "sound_trigger.h"  // v0.15: handleSound()/One-Shot
 #include "pins.h"
 #include "WebServerManager.h"
@@ -961,8 +962,7 @@ void loop() {
         case STOPPING: if(!Sound_loop.Playing){I2SAudio.Play(&Sound_shut,true,config.Volumen_Sound[0]);engine_State=OFF;} break;
     }
     throttle=ramp_throttle(throttle);
-    if(config.Min_Speed_Sound_0!=config.Max_Speed_Sound_0)
-        Sound_loop.Speed=floatMap(throttle,0,100,config.Min_Speed_Sound_0,config.Max_Speed_Sound_0)/100.0f;
+    Sound_loop.Speed=motorSpeedUpdate(config.Min_Speed_Sound_0,config.Max_Speed_Sound_0,Sound_play[0],config.throttle_ramp)/100.0f;
 }
 
 // ======== Sound ======================================================
@@ -988,6 +988,7 @@ void Config() {
     // Motor Speed
     int spd = config.Source_Speed_Sound_0;
     if (spdActive(spd)) throttle = map(channel_output[spd], 82, 1900, 0, 100);
+    else if (Sound_on_Motor||Sound_on_web[0]) throttle = motorSpeedVirtualThrottle(); // dl7mo.13: IR/Reed
     else                throttle = 0;
     throttle = constrain(throttle, 0, 100);
 

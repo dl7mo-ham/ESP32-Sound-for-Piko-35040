@@ -36,6 +36,10 @@ function irCodeText(proto,addr,cmd){
          ' / 0x'+('0'+(cmd||0).toString(16)).slice(-2);
 }
 function irAvail(){ return !!(cfg.ir&&cfg.ir.available); }
+function reedSpeedUpd(){
+  var e=document.getElementById('lv-reed-speed-step');
+  if(e) e.textContent=gi('reed-speed-step')+' %';
+}
 function irSetStatus(text){
   var e=document.getElementById('ir-status');
   if(!e) return;
@@ -43,10 +47,35 @@ function irSetStatus(text){
   e.className=text?'':'hidden';
 }
 var irPollTimer=null;
+var irLastTmr=null;
+function irRenderLast(d){
+  var e=document.getElementById('ir-last');
+  if(!e||!d) return;
+  if(!(d.last_protocol>0)){
+    e.textContent=irAvail()?'Noch kein NEC/NEC2-Befehl empfangen':'IR nicht verfuegbar (C3)';
+    e.style.color='var(--sub)';
+    return;
+  }
+  var txt=irCodeText(d.last_protocol,d.last_address,d.last_command);
+  if(d.last_action>0) txt+=' \u2192 '+reedActionLabel(d.last_action);
+  else txt+=' (ohne Zuordnung)';
+  if(typeof d.last_age_ms==='number' && d.last_age_ms<60000)
+    txt+=' \u00b7 vor '+Math.round(d.last_age_ms/1000)+' s';
+  e.textContent=txt; e.style.color='var(--txt)';
+}
+function irPollLast(){
+  var tab=document.getElementById('tab-reed');
+  if(!tab || tab.className.indexOf('hidden')>=0){
+    if(irLastTmr){ clearInterval(irLastTmr); irLastTmr=0; }
+    return;
+  }
+  fetch('/api/ir/status').then(function(r){return r.json();}).then(irRenderLast).catch(function(){});
+}
 function irPollLearn(action){
   if(irPollTimer){ clearTimeout(irPollTimer); irPollTimer=null; }
   fetch('/api/ir/status').then(function(r){return r.json();}).then(function(d){
     if(!d) return;
+    irRenderLast(d);
     if(d.active){
       var left=Math.ceil((d.remaining_ms||0)/1000);
       irSetStatus('Warte auf IR-Taste fuer '+reedActionLabel(action)+' ... '+left+' s');
@@ -113,6 +142,16 @@ function renderReed(){
     db.value=r.debounce_ms;
     var lv=document.getElementById('lv-reed-db');
     if(lv) lv.textContent=r.debounce_ms+' ms';
+  }
+  var ss=document.getElementById('reed-speed-step');
+  if(ss){
+    ss.min=r.speed_step_min||5; ss.max=r.speed_step_max||50;
+    ss.value=r.speed_step||20;
+    reedSpeedUpd();
+  }
+  if(!irLastTmr && document.getElementById('tab-reed') &&
+     document.getElementById('tab-reed').className.indexOf('hidden')<0){
+    irPollLast(); irLastTmr=setInterval(irPollLast,1000);
   }
   var changed=[], pins=[];
   (r.ports||[]).forEach(function(p){
@@ -209,7 +248,7 @@ function testReed(action){
   });
 }
 function saveReed(){
-  var d={reed_debounce_ms:gi('reed-db')};
+  var d={reed_debounce_ms:gi('reed-db'),reed_speed_step:gi('reed-speed-step')};
   var r=cfg.reed||{};
   (r.ports||[]).forEach(function(p){
     if(!p.present||!p.configured) return;
@@ -282,7 +321,8 @@ static void reedWebHandleTest(WebServer& sv) {
 // ── IR-Lernen (dl7mo.11) ──────────────────────────────────────────────────
 // POST /api/ir/learn  {"action":1..6}  startet das 10-s-Fenster, action=0
 // bricht ab. POST /api/ir/clear {"action":n} entfernt einen gelernten Code.
-// GET  /api/ir/status liefert Lernzustand und das letzte Ergebnis fuer die UI.
+// GET  /api/ir/status liefert Lernzustand, das letzte Lernergebnis und den
+// letzten empfangenen NEC/NEC2-Frame (Proto/Adresse/Command/Aktion/Alter).
 static void reedWebHandleIrLearn(WebServer& sv) {
   if (!sv.hasArg("plain")) { reedSendErr(sv); return; }
   int v;
@@ -305,16 +345,24 @@ static void reedWebHandleIrClear(WebServer& sv) {
 
 static void reedWebHandleIrStatus(WebServer& sv) {
   irLearnTick();
-  IrCode last = irLearnResultCode();
-  char buf[192];
+  IrCode res = irLearnResultCode();
+  IrCode rx;
+  uint8_t rxAction;
+  uint32_t rxAge;
+  irLastReceived(rx, rxAction, rxAge);
+  char buf[320];
   snprintf(buf, sizeof(buf),
            "{\"active\":%s,\"action\":%d,\"remaining_ms\":%lu,"
            "\"result_action\":%d,\"result_protocol\":%d,"
-           "\"result_address\":%u,\"result_command\":%u}",
+           "\"result_address\":%u,\"result_command\":%u,"
+           "\"last_protocol\":%d,\"last_address\":%u,\"last_command\":%u,"
+           "\"last_action\":%d,\"last_age_ms\":%lu}",
            irLearnActive() ? "true" : "false", (int)irLearnAction(),
            (unsigned long)irLearnRemainingMs(),
-           (int)irLearnResultAction(), (int)last.protocol,
-           (unsigned)last.address, (unsigned)last.command);
+           (int)irLearnResultAction(), (int)res.protocol,
+           (unsigned)res.address, (unsigned)res.command,
+           (int)rx.protocol, (unsigned)rx.address, (unsigned)rx.command,
+           (int)rxAction, (unsigned long)rxAge);
   sv.send(200, "application/json", buf);
 }
 

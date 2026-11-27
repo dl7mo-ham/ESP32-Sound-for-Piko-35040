@@ -52,6 +52,9 @@ bool irLearnResultPending();
 uint8_t irLearnResultAction();
 IrCode irLearnResultCode();
 
+// Letzter empfangener NEC/NEC2-Frame fuer den Web-Tab (fluechtig, kein NVS).
+void irLastReceived(IrCode& code, uint8_t& action, uint32_t& ageMs);
+
 // Von ir_monitor.cpp fuer jeden NEC/NEC2-Frame ohne Repeat gerufen.
 // true = Frame wurde verarbeitet (dann kein Serial-Monitor-Log noetig).
 bool irHandleNec(uint8_t protocol, uint16_t address, uint8_t command);

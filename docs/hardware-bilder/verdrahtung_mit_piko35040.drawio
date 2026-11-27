@@ -737,7 +737,7 @@
         <mxCell id="36ot7wbat5s2GHiNO8KL-3" parent="1" style="text;html=1;align=left;fontStyle=1" value="Port C" vertex="1">
           <mxGeometry height="24" width="80" x="728" y="741" as="geometry" />
         </mxCell>
-        <mxCell id="36ot7wbat5s2GHiNO8KL-4" parent="1" style="rounded=1;fillColor=#647687;fontColor=#ffffff;strokeColor=#314354;" value="IR-Empfäner&#xa;(z. B. TSOP31238)" vertex="1">
+        <mxCell id="36ot7wbat5s2GHiNO8KL-4" parent="1" style="rounded=1;fillColor=#647687;fontColor=#ffffff;strokeColor=#314354;" value="IR-Empfänger&#xa;(z. B. TSOP31238)" vertex="1">
           <mxGeometry height="40" width="120" x="1000" y="80" as="geometry" />
         </mxCell>
         <mxCell id="36ot7wbat5s2GHiNO8KL-7" edge="1" parent="1" style="endArrow=none;strokeWidth=3;strokeColor=#e67e22;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="36ot7wbat5s2GHiNO8KL-4" value="">
